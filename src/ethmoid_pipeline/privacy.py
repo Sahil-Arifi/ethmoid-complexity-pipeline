@@ -12,6 +12,15 @@ from .util import PipelineError, atomic_write_json
 
 
 UID_PATTERN = re.compile(r"(?<![0-9])(?:[0-9]{1,3}\.){3,}[0-9]+(?![0-9])")
+EMAIL_PATTERN = re.compile(r"\b[^\s@]+@[^\s@]+\.[^\s@]+\b")
+_BACKSLASH = chr(92)
+WINDOWS_ABSOLUTE_PATH_PATTERN = re.compile(
+    r"(?i)(?<![A-Za-z0-9])(?:[A-Z]:["
+    + re.escape(_BACKSLASH)
+    + r"/]|"
+    + re.escape(_BACKSLASH * 2)
+    + r")[^\r\n\x00]+"
+)
 SAFE_SIDECAR_KEYS = {
     "Modality",
     "SliceThickness",
@@ -56,6 +65,8 @@ def redact_text(text: str, sensitive_values: Iterable[str], replacements: Iterab
         redacted = redacted.replace(value, "<REDACTED>")
     for value in sorted({item for item in replacements if item}, key=len, reverse=True):
         redacted = redacted.replace(value, "<LOCAL_PATH>")
+    redacted = WINDOWS_ABSOLUTE_PATH_PATTERN.sub("<LOCAL_PATH>", redacted)
+    redacted = EMAIL_PATTERN.sub("<EMAIL_REDACTED>", redacted)
     return UID_PATTERN.sub("<UID_REDACTED>", redacted)
 
 

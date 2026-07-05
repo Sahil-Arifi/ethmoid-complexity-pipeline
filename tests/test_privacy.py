@@ -6,7 +6,12 @@ from pathlib import Path
 import nibabel as nib
 import numpy as np
 
-from ethmoid_pipeline.privacy import sanitize_sidecar, scrub_nifti_header, verify_sanitized_sidecar
+from ethmoid_pipeline.privacy import (
+    redact_text,
+    sanitize_sidecar,
+    scrub_nifti_header,
+    verify_sanitized_sidecar,
+)
 
 
 def test_sidecar_is_rewritten_from_allowlist(tmp_path: Path) -> None:
@@ -73,3 +78,14 @@ def test_sidecar_rejects_arbitrary_text_in_allowed_field(tmp_path: Path) -> None
 
     with pytest.raises(PipelineError, match="Modality"):
         sanitize_sidecar(path)
+
+
+def test_log_redaction_removes_unanticipated_windows_path_and_email() -> None:
+    separator = chr(92)
+    path = "C:" + separator + "SyntheticUser" + separator + "tools" + separator + "helper.exe"
+    redacted = redact_text(
+        "Compression helper: " + path + "\nContact: synthetic.person@example.invalid",
+        sensitive_values=(),
+    )
+    assert redacted == "Compression helper: <LOCAL_PATH>\nContact: <EMAIL_REDACTED>"
+    assert "SyntheticUser" not in redacted
