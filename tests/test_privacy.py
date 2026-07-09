@@ -83,9 +83,24 @@ def test_sidecar_rejects_arbitrary_text_in_allowed_field(tmp_path: Path) -> None
 def test_log_redaction_removes_unanticipated_windows_path_and_email() -> None:
     separator = chr(92)
     path = "C:" + separator + "SyntheticUser" + separator + "tools" + separator + "helper.exe"
+    forward_unc = "/" * 2 + "synthetic-host/share/private-file"
+    device_path = separator * 2 + "." + separator + "SyntheticDevice"
     redacted = redact_text(
-        "Compression helper: " + path + "\nContact: synthetic.person@example.invalid",
+        "Compression helper: "
+        + path
+        + "\nNetwork source: "
+        + forward_unc
+        + "\nDevice source: "
+        + device_path
+        + "\nPublic URL: https://example.invalid/resource"
+        + "\nContact: synthetic.person@example.invalid",
         sensitive_values=(),
     )
-    assert redacted == "Compression helper: <LOCAL_PATH>\nContact: <EMAIL_REDACTED>"
+    assert redacted == (
+        "Compression helper: <LOCAL_PATH>"
+        "\nNetwork source: <LOCAL_PATH>"
+        "\nDevice source: <LOCAL_PATH>"
+        "\nPublic URL: https://example.invalid/resource"
+        "\nContact: <EMAIL_REDACTED>"
+    )
     assert "SyntheticUser" not in redacted

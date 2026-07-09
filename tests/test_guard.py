@@ -3,7 +3,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from ethmoid_pipeline.guard import scan_staged
+from ethmoid_pipeline.guard import _blocked_text_content, scan_staged
 
 from .synthetic import write_ct_series
 
@@ -82,10 +82,22 @@ def test_guard_rejects_nifti2_uid_and_absolute_path_text(tmp_path: Path) -> None
         + ".".join(["1", "2", "826", "0", "1", "3680043", "10", "543", "999"]),
         encoding="utf-8",
     )
-    (repo / "docs" / "path.md").write_text(
-        "synthetic path " + "C:" + chr(92) + "Synthetic" + chr(92) + "Private",
-        encoding="utf-8",
+    separator = chr(92)
+    path_payloads = [
+        "C:" + separator + "Synthetic" + separator + "Private",
+        "/" * 2 + "synthetic-host/share/private",
+        separator * 2 + "." + separator + "SyntheticDevice",
+    ]
+    assert all(
+        _blocked_text_content(("synthetic path " + payload).encode())
+        == "an absolute Windows/UNC path"
+        for payload in path_payloads
     )
+    for index, payload in enumerate(path_payloads):
+        (repo / "docs" / f"path_{index}.md").write_text(
+            "synthetic path " + payload,
+            encoding="utf-8",
+        )
     _git(repo, "add", ".")
     failures = scan_staged(repo)
     assert any("NIfTI-2" in failure for failure in failures)

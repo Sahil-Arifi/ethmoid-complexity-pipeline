@@ -58,11 +58,16 @@ FORBIDDEN_SUFFIXES = {
 UID_TEXT_PATTERN = re.compile(r"(?<![0-9])(?:[0-9]{1,3}\.){3,}[0-9]+(?![0-9])")
 _BACKSLASH = chr(92)
 ABSOLUTE_WINDOWS_PATH_PATTERN = re.compile(
-    r"(?i)(?<![A-Za-z0-9])(?:[A-Z]:["
+    r"(?i)(?<![A-Za-z0-9:])(?:[A-Z]:["
     + re.escape(_BACKSLASH)
     + r"/]|"
     + re.escape(_BACKSLASH * 2)
     + r"[A-Za-z0-9][A-Za-z0-9._-]{0,62}"
+    + re.escape(_BACKSLASH)
+    + r"|//[A-Za-z0-9][A-Za-z0-9._-]{0,62}/"
+    + r"|"
+    + re.escape(_BACKSLASH * 2)
+    + r"[.?]"
     + re.escape(_BACKSLASH)
     + r")[^\r\n\x00]+"
 )
