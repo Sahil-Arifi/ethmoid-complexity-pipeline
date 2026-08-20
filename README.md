@@ -64,7 +64,7 @@ These names are a temporary protocol configuration, not a clinical decision. The
 - Installed `ethmoid-app` command, health endpoint, static frontend, protocol endpoint, case API, and 117,440,864-byte pilot-volume delivery: **PASS**.
 - Real browser: dashboard, NIfTI decoding, 2D/3D CT display, drawing, autosave, reload, coordinates, and metrics: **PASS**.
 
-The current web-app implementation is in the local working tree and has not yet been committed or pushed. The private GitHub repository still has validated baseline commit `e95b1c9` on `main`.
+The current web-app implementation is committed and published to the private GitHub repository on branch `feature/function-first-webapp`. The protected baseline on `main` remains commit `e95b1c9` until the feature branch is reviewed and merged.
 
 ## What the conversion means
 
