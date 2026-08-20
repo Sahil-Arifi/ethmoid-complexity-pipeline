@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "python": {
+    "version": "3.13.12",
+    "platform": "win_amd64",
+    "requirements_file": "requirements.lock",
+    "require_hashes": true
+  },
+  "dcm2niix": {
+    "version": "v1.0.20260724",
+    "tag_commit": "8282dbf7d37d34b29ef008061622a44077e24707",
+    "windows_archive": "dcm2niix_win.zip",
+    "windows_archive_sha256": "8310549ef7340b1b169c26f4721aeac69423fd73643fbbd22eec47b36cc70ada",
+    "windows_executable_sha256": "de2466c1e31bb0114ad2c5a3fdfa08be62447b25beb4f4f6a426c314797e48d8",
+    "windows_files_sha256": {
+      "concrt140.dll": "2405355f0a58067b258f8df33c327e3a3d716eaac5a3a5aebb757842d85bd376",
+      "dcm2niix.exe": "de2466c1e31bb0114ad2c5a3fdfa08be62447b25beb4f4f6a426c314797e48d8",
+      "msvcp140.dll": "0f885b509a685d2bbfa652fed26b5fb31d88fbdab0a978c641d1c7b8aa460aa9",
+      "msvcp140_1.dll": "bfad5aef4c63a669e3c140655cdfdf395b6c979b400a447bd5dcb65ed8826c3d",
+      "msvcp140_2.dll": "3ea06f0ee098b4823cb79599df3780e7f23cce52c19aac31d2a0d47efe33a5e9",
+      "msvcp140_atomic_wait.dll": "640b2aefced484d0368eea5bdd06addd0658a3a70a49256e560d6923b404a479",
+      "msvcp140_codecvt_ids.dll": "f2069a52880ec885ee7f0511186100eb7fada0411a2b4948fafea7735b878a18",
+      "vcruntime140.dll": "d5e4d9a3e835fa679450145d6a7d94e36573a509317111904d9b3712c30d9066",
+      "vcruntime140_1.dll": "1f2d41c4aa5db0bc33ebf7b66d72943a817d7ce6cbe880502a9403823633093f"
+    },
+    "url": "https://github.com/rordenlab/dcm2niix/releases/download/v1.0.20260724/dcm2niix_win.zip"
+  },
+  "slicer": {
+    "version": "5.12.3",
+    "revision": 34627,
+    "tag_commit": "9034c71a8fce68ab312458b3d7d16f610562263d",
+    "windows_installer": "Slicer-5.12.3-win-amd64.exe",
+    "windows_installer_sha512": "109508d54b204f75371f6ae99b9951993a6b753a91c855cd223fcb8eeb65b37bac4f1096d13c1cae89b4d525910b238239a5fb05c98d49874ff090315cd19315",
+    "url": "https://download.slicer.org/bitstream/6a61770a2eb3d967f03268b4"
+  }
+}
