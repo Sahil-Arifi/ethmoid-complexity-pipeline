@@ -6,9 +6,14 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
-from .dicom import assert_pilot_fingerprint, preflight_series, sensitive_values
+from .dicom import (
+    PreflightResult,
+    assert_pilot_fingerprint,
+    preflight_series,
+    sensitive_values,
+)
 from .inventory import resolve_selection
 from .privacy import redact_text, sanitize_sidecar, scrub_nifti_header
 from .provenance import current_code_provenance
@@ -16,10 +21,12 @@ from .util import (
     PipelineError,
     atomic_write_json,
     atomic_write_text,
+    is_within,
     repo_root,
     sha256_file,
     sha256_canonical_json,
     utc_now,
+    validate_labels,
     validate_roots,
 )
 
@@ -112,7 +119,6 @@ def _dangerous_log_categories(text: str) -> list[str]:
     lowered = text.lower()
     categories: list[str] = []
     patterns = {
-        "converter warning": "warning",
         "converter error": "error",
         "unequal spacing": "unequal",
         "gantry tilt handling": "gantry tilt",
@@ -177,7 +183,9 @@ def build_dcm2niix_command(
     ]
 
 
-def _write_manual_checklist(path: Path, case_label: str, series_label: str) -> None:
+def _write_manual_checklist(
+    path: Path, case_label: str, series_label: str, slice_count: int
+) -> None:
     text = f"""# Manual Slicer QC: {case_label}/{series_label}
 
 Status: PENDING
@@ -190,7 +198,7 @@ Installer SHA-512 verified: ____________________
 - [ ] Record DICOM-loaded and NIfTI dimensions, spacing, directions, IJK-to-RAS, and physical bounds.
 - [ ] Overlay/fade in axial, coronal, and sagittal views; check first, middle, and last slices.
 - [ ] Confirm L/R, A/P, and S/I orientation with no translation, reflection, rotation, or truncation.
-- [ ] Scroll the complete 224-slice stack and confirm no missing, duplicate, reordered, blank, localizer, or derived slices.
+- [ ] Scroll the complete {slice_count}-slice stack and confirm no missing, duplicate, reordered, blank, localizer, or derived slices.
 - [ ] Sanity-check representative air, soft-tissue/water, and bone HU values.
 - [ ] Engineer confirms geometry, intensity, and provenance.
 - [ ] Study clinician confirms the intended series and complete ethmoid-region coverage.
@@ -200,28 +208,48 @@ Do not save a Slicer scene bundle, screenshot, database, or log to Git. Any fail
     atomic_write_text(path, text)
 
 
-def convert_pilot(
-    dicom_root: Path,
+def _validate_selected_paths(dicom_root: Path, paths: Iterable[Path]) -> list[Path]:
+    source = dicom_root.resolve(strict=True)
+    selected: list[Path] = []
+    for path in paths:
+        try:
+            candidate = Path(path).resolve(strict=True)
+        except OSError as exc:
+            raise PipelineError("A selected DICOM path is unavailable.") from exc
+        if not candidate.is_file() or not is_within(candidate, source):
+            raise PipelineError("A selected DICOM path is outside the source root.")
+        selected.append(candidate)
+    if not selected:
+        raise PipelineError("No source files were selected.")
+    return selected
+
+
+def _convert_preflighted_series(
+    *,
     work_root: Path,
+    preflight: PreflightResult,
     case_label: str,
     series_label: str,
     dcm2niix: Path,
+    final_dir: Path,
+    inventory_map_path: Path | None,
+    pipeline_provenance: dict[str, Any] | None,
+    require_clean_provenance: bool,
 ) -> dict[str, Any]:
-    validate_roots(dicom_root, work_root, repo_root())
-    work_root.mkdir(parents=True, exist_ok=True)
-    validate_roots(dicom_root, work_root, repo_root())
-    paths, study_uid, series_uid = resolve_selection(
-        dicom_root, work_root, case_label, series_label
+    code = (
+        dict(pipeline_provenance)
+        if pipeline_provenance is not None
+        else current_code_provenance(require_clean=require_clean_provenance)
     )
-    preflight = preflight_series(paths, study_uid, series_uid)
-    assert_pilot_fingerprint(preflight, case_label, series_label)
-    code = current_code_provenance(require_clean=True)
     tool = _verify_dcm2niix(dcm2niix)
 
     neutral_name = f"{case_label}_{series_label}"
-    final_dir = work_root / "pilot" / neutral_name
+    final_dir = final_dir.resolve()
+    work = work_root.resolve()
+    if final_dir == work or not is_within(final_dir, work):
+        raise PipelineError("The conversion artifact directory must be inside the work root.")
     if final_dir.exists():
-        raise PipelineError("The pilot output already exists; refusing to overwrite it.")
+        raise PipelineError("The conversion output already exists; refusing to overwrite it.")
     run_parent = work_root / "_runs"
     run_parent.mkdir(parents=True, exist_ok=True)
     final_dir.parent.mkdir(parents=True, exist_ok=True)
@@ -235,8 +263,8 @@ def convert_pilot(
         hashes_before = _source_hash_manifest(preflight.records)
         source_manifest_sha256 = sha256_canonical_json(hashes_before)
         selection_identity_sha256 = _selection_identity_sha256(preflight.records)
-        inventory_map_sha256 = sha256_file(
-            work_root / "inventory" / "uid_map.local.json"
+        inventory_map_sha256 = (
+            sha256_file(inventory_map_path) if inventory_map_path is not None else None
         )
         for index, record in enumerate(preflight.records):
             shutil.copyfile(record.path, stage_dir / f"slice_{index:06d}.dcm")
@@ -305,45 +333,49 @@ def convert_pilot(
                 "pipeline": code,
             },
         )
-        atomic_write_json(
-            run_dir / "conversion_report.json",
-            {
-                "schema_version": 1,
-                "status": "PASS",
-                "generated_at_utc": utc_now(),
-                "case": case_label,
-                "series": series_label,
-                "input_slices": len(preflight.records),
-                "output_nifti": nifti.name,
-                "output_sidecar": sidecar.name,
-                "source_hashes_unchanged": True,
-                "inventory_uid_map_sha256": inventory_map_sha256,
-                "ordered_source_manifest_sha256": source_manifest_sha256,
-                "selection_identity_sha256": selection_identity_sha256,
-                "dcm2niix_options": [
-                    "-g i",
-                    "-a y",
-                    "-b y",
-                    "-ba y",
-                    "-c <empty>",
-                    "-d 0",
-                    "-e n",
-                    f"-f {neutral_name}",
-                    "-i n",
-                    "-l o",
-                    "-p y",
-                    "-q n",
-                    "-r n",
-                    "-s n",
-                    "-v 1",
-                    "-w 0",
-                    "-x i",
-                    "-z n",
-                ],
-                "warnings": list(preflight.warnings),
-            },
+        conversion_report = {
+            "schema_version": 1,
+            "status": "PASS",
+            "generated_at_utc": utc_now(),
+            "case": case_label,
+            "series": series_label,
+            "input_slices": len(preflight.records),
+            "output_nifti": nifti.name,
+            "output_sidecar": sidecar.name,
+            "source_hashes_unchanged": True,
+            "ordered_source_manifest_sha256": source_manifest_sha256,
+            "selection_identity_sha256": selection_identity_sha256,
+            "dcm2niix_options": [
+                "-g i",
+                "-a y",
+                "-b y",
+                "-ba y",
+                "-c <empty>",
+                "-d 0",
+                "-e n",
+                f"-f {neutral_name}",
+                "-i n",
+                "-l o",
+                "-p y",
+                "-q n",
+                "-r n",
+                "-s n",
+                "-v 1",
+                "-w 0",
+                "-x i",
+                "-z n",
+            ],
+            "warnings": list(preflight.warnings),
+        }
+        if inventory_map_sha256 is not None:
+            conversion_report["inventory_uid_map_sha256"] = inventory_map_sha256
+        atomic_write_json(run_dir / "conversion_report.json", conversion_report)
+        _write_manual_checklist(
+            run_dir / "SLICER_QC_CHECKLIST.md",
+            case_label,
+            series_label,
+            len(preflight.records),
         )
-        _write_manual_checklist(run_dir / "SLICER_QC_CHECKLIST.md", case_label, series_label)
         shutil.rmtree(stage_dir)
         shutil.rmtree(output_dir)
         os.replace(run_dir, final_dir)
@@ -353,9 +385,77 @@ def convert_pilot(
             "series": series_label,
             "output_dir": final_dir,
             "nifti": final_dir / nifti.name,
+            "ordered_source_manifest_sha256": source_manifest_sha256,
+            "selection_identity_sha256": selection_identity_sha256,
         }
     except subprocess.TimeoutExpired as exc:
         raise PipelineError("dcm2niix exceeded the 10-minute conversion timeout.") from exc
     finally:
         if run_dir.exists():
             shutil.rmtree(run_dir, ignore_errors=True)
+
+
+def convert_series(
+    dicom_root: Path,
+    work_root: Path,
+    paths: Iterable[Path],
+    case_label: str,
+    series_label: str,
+    dcm2niix: Path,
+    *,
+    expected_study_uid: str | None = None,
+    expected_series_uid: str | None = None,
+    final_dir: Path | None = None,
+    pipeline_provenance: dict[str, Any] | None = None,
+    require_clean_provenance: bool = True,
+) -> dict[str, Any]:
+    """Convert one caller-selected clean CT series without pilot fingerprinting."""
+    validate_labels(case_label, series_label)
+    validate_roots(dicom_root, work_root, repo_root())
+    work_root.mkdir(parents=True, exist_ok=True)
+    validate_roots(dicom_root, work_root, repo_root())
+    selected = _validate_selected_paths(dicom_root, paths)
+    preflight = preflight_series(selected, expected_study_uid, expected_series_uid)
+    neutral_name = f"{case_label}_{series_label}"
+    destination = final_dir or (work_root / "conversions" / neutral_name)
+    return _convert_preflighted_series(
+        work_root=work_root,
+        preflight=preflight,
+        case_label=case_label,
+        series_label=series_label,
+        dcm2niix=dcm2niix,
+        final_dir=destination,
+        inventory_map_path=None,
+        pipeline_provenance=pipeline_provenance,
+        require_clean_provenance=require_clean_provenance,
+    )
+
+
+def convert_pilot(
+    dicom_root: Path,
+    work_root: Path,
+    case_label: str,
+    series_label: str,
+    dcm2niix: Path,
+) -> dict[str, Any]:
+    validate_roots(dicom_root, work_root, repo_root())
+    work_root.mkdir(parents=True, exist_ok=True)
+    validate_roots(dicom_root, work_root, repo_root())
+    paths, study_uid, series_uid = resolve_selection(
+        dicom_root, work_root, case_label, series_label
+    )
+    preflight = preflight_series(paths, study_uid, series_uid)
+    assert_pilot_fingerprint(preflight, case_label, series_label)
+    neutral_name = f"{case_label}_{series_label}"
+    final_dir = work_root / "pilot" / neutral_name
+    return _convert_preflighted_series(
+        work_root=work_root,
+        preflight=preflight,
+        case_label=case_label,
+        series_label=series_label,
+        dcm2niix=dcm2niix,
+        final_dir=final_dir,
+        inventory_map_path=work_root / "inventory" / "uid_map.local.json",
+        pipeline_provenance=None,
+        require_clean_provenance=True,
+    )

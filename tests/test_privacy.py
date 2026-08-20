@@ -7,6 +7,7 @@ import nibabel as nib
 import numpy as np
 
 from ethmoid_pipeline.privacy import (
+    NEUTRAL_NIFTI_DESCRIPTION,
     redact_text,
     sanitize_sidecar,
     scrub_nifti_header,
@@ -53,6 +54,7 @@ def test_nifti_privacy_fields_are_scrubbed_without_changing_voxels(tmp_path: Pat
     scrub_nifti_header(path)
     reloaded = nib.load(path)
     assert np.array_equal(np.asanyarray(reloaded.dataobj), data)
+    assert bytes(reloaded.header["descrip"]).rstrip(b"\x00") == NEUTRAL_NIFTI_DESCRIPTION
     assert bytes(reloaded.header["aux_file"]).rstrip(b"\x00") == b""
     assert bytes(reloaded.header["intent_name"]).rstrip(b"\x00") == b""
     assert bytes(reloaded.header["data_type"]).rstrip(b"\x00") == b""

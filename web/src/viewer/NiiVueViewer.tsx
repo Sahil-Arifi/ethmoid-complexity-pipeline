@@ -1,0 +1,466 @@
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from "react";
+import type { Niivue } from "@niivue/niivue";
+import { api } from "../api/client";
+import type { ViewerState } from "../api/types";
+import { annotationLabels, type ProtocolDefinition } from "../config/protocol";
+
+export type ViewerTool = "navigate" | "window" | "draw" | "erase" | "fill";
+export type ViewMode = "multiplanar" | "render";
+
+export type ViewerLocation = {
+  voxel: string;
+  millimeters: string;
+};
+
+export type NiiVueViewerHandle = {
+  exportMask: () => Promise<Blob>;
+  getViewerState: () => ViewerState;
+  undo: () => void;
+  redo: () => void;
+  canUndo: () => boolean;
+  canRedo: () => boolean;
+  resetView: () => void;
+};
+
+type Props = {
+  caseId: string;
+  volumeFileType: "nii" | "nii.gz";
+  protocol: ProtocolDefinition;
+  hasAnnotation: boolean;
+  initialState?: ViewerState | null;
+  tool: ViewerTool;
+  selectedLabel: number;
+  brushSize: number;
+  overlayOpacity: number;
+  overlayVisible: boolean;
+  viewMode: ViewMode;
+  windowCenter: number;
+  windowWidth: number;
+  onReady: () => void;
+  onError: (message: string) => void;
+  onDirty: () => void;
+  onViewStateChange: () => void;
+  onLocationChange: (location: ViewerLocation) => void;
+  onHistoryChange: (canUndo: boolean, canRedo: boolean) => void;
+};
+
+type LocationPayload = {
+  mm?: ArrayLike<number>;
+  vox?: ArrayLike<number>;
+};
+
+type DrawingHistory = {
+  snapshots: Uint8Array[];
+  index: number;
+};
+
+const emptyHistory = (): DrawingHistory => ({ snapshots: [], index: -1 });
+
+function hexToRgb(hex: string): [number, number, number] {
+  return [
+    Number.parseInt(hex.slice(1, 3), 16),
+    Number.parseInt(hex.slice(3, 5), 16),
+    Number.parseInt(hex.slice(5, 7), 16),
+  ];
+}
+
+function formatTriplet(values: ArrayLike<number> | undefined, digits: number): string {
+  if (!values || values.length < 3) return "—";
+  return Array.from(values)
+    .slice(0, 3)
+    .map((value) => Number(value).toFixed(digits))
+    .join(", ");
+}
+
+export const NiiVueViewer = forwardRef<NiiVueViewerHandle, Props>(
+  function NiiVueViewer(
+    {
+      caseId,
+      volumeFileType,
+      protocol,
+      hasAnnotation,
+      initialState,
+      tool,
+      selectedLabel,
+      brushSize,
+      overlayOpacity,
+      overlayVisible,
+      viewMode,
+      windowCenter,
+      windowWidth,
+      onReady,
+      onError,
+      onDirty,
+      onViewStateChange,
+      onLocationChange,
+      onHistoryChange,
+    },
+    ref,
+  ) {
+    const canvasRef = useRef<HTMLCanvasElement>(null);
+    const niivueRef = useRef<Niivue | null>(null);
+    const historyRef = useRef<DrawingHistory>(emptyHistory());
+    const initialStateRef = useRef(initialState);
+    const initialHasAnnotationRef = useRef(hasAnnotation);
+    const callbacksRef = useRef({
+      onReady,
+      onError,
+      onDirty,
+      onViewStateChange,
+      onLocationChange,
+      onHistoryChange,
+    });
+    const controlStateRef = useRef({
+      tool,
+      selectedLabel,
+      brushSize,
+      overlayOpacity,
+      viewMode,
+      windowCenter,
+      windowWidth,
+    });
+    const [loading, setLoading] = useState(true);
+
+    callbacksRef.current = {
+      onReady,
+      onError,
+      onDirty,
+      onViewStateChange,
+      onLocationChange,
+      onHistoryChange,
+    };
+    controlStateRef.current = {
+      tool,
+      selectedLabel,
+      brushSize,
+      overlayOpacity,
+      viewMode,
+      windowCenter,
+      windowWidth,
+    };
+
+    const reportHistory = () => {
+      const history = historyRef.current;
+      callbacksRef.current.onHistoryChange(
+        history.index > 0,
+        history.index >= 0 && history.index < history.snapshots.length - 1,
+      );
+    };
+
+    const addHistorySnapshot = (bitmap: Uint8Array | null) => {
+      if (!bitmap) return;
+      const history = historyRef.current;
+      history.snapshots = history.snapshots.slice(0, history.index + 1);
+      history.snapshots.push(bitmap.slice());
+      if (history.snapshots.length > 30) history.snapshots.shift();
+      history.index = history.snapshots.length - 1;
+      reportHistory();
+    };
+
+    const restoreHistorySnapshot = (nextIndex: number) => {
+      const nv = niivueRef.current;
+      const history = historyRef.current;
+      const snapshot = history.snapshots[nextIndex];
+      if (!nv || !snapshot) return;
+      history.index = nextIndex;
+      nv.drawBitmap = snapshot.slice();
+      nv.refreshDrawing(true);
+      callbacksRef.current.onDirty();
+      reportHistory();
+    };
+
+    useImperativeHandle(
+      ref,
+      () => ({
+        async exportMask() {
+          const nv = niivueRef.current;
+          if (!nv) throw new Error("The image viewer is not ready.");
+          const result = await nv.saveImage({
+            filename: "",
+            isSaveDrawing: true,
+            volumeByIndex: 0,
+          });
+          if (!(result instanceof Uint8Array)) {
+            throw new Error("The annotation could not be serialized as NIfTI.");
+          }
+          const bytes = result.slice();
+          return new Blob([bytes.buffer as ArrayBuffer], { type: "application/octet-stream" });
+        },
+        getViewerState() {
+          const nv = niivueRef.current;
+          const controls = controlStateRef.current;
+          if (!nv) {
+            return {
+              view_mode: controls.viewMode,
+              selected_label: controls.selectedLabel,
+              brush_size: controls.brushSize,
+              overlay_opacity: controls.overlayOpacity,
+              active_tool: controls.tool,
+              window_center: controls.windowCenter,
+              window_width: controls.windowWidth,
+            };
+          }
+          const crosshair = Array.from(nv.scene.crosshairPos).slice(0, 3) as [
+            number,
+            number,
+            number,
+          ];
+          const panZoom = Array.from(nv.scene.pan2Dxyzmm).slice(0, 4) as [
+            number,
+            number,
+            number,
+            number,
+          ];
+          return {
+            crosshair,
+            pan_zoom: panZoom,
+            view_mode: controls.viewMode,
+            selected_label: controls.selectedLabel,
+            brush_size: controls.brushSize,
+            overlay_opacity: controls.overlayOpacity,
+            active_tool: controls.tool,
+            window_center: controls.windowCenter,
+            window_width: controls.windowWidth,
+            render_azimuth: nv.scene.renderAzimuth,
+            render_elevation: nv.scene.renderElevation,
+            volume_scale: nv.volScaleMultiplier,
+          };
+        },
+        undo() {
+          const history = historyRef.current;
+          if (history.index > 0) restoreHistorySnapshot(history.index - 1);
+        },
+        redo() {
+          const history = historyRef.current;
+          if (history.index < history.snapshots.length - 1) {
+            restoreHistorySnapshot(history.index + 1);
+          }
+        },
+        canUndo() {
+          return historyRef.current.index > 0;
+        },
+        canRedo() {
+          const history = historyRef.current;
+          return history.index >= 0 && history.index < history.snapshots.length - 1;
+        },
+        resetView() {
+          const nv = niivueRef.current;
+          if (!nv) return;
+          nv.scene.crosshairPos = new Float32Array([0.5, 0.5, 0.5]);
+          nv.scene.pan2Dxyzmm = new Float32Array([0, 0, 0, 1]);
+          nv.volScaleMultiplier = 1;
+          nv.setRenderAzimuthElevation(110, 10);
+          nv.drawScene();
+          callbacksRef.current.onViewStateChange();
+        },
+      }),
+      [],
+    );
+
+    useEffect(() => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      let cancelled = false;
+      let instance: Niivue | null = null;
+      const notifyViewStateAfterInteraction = () => {
+        window.setTimeout(() => callbacksRef.current.onViewStateChange(), 0);
+      };
+      canvas.addEventListener("pointerup", notifyViewStateAfterInteraction);
+      canvas.addEventListener("wheel", notifyViewStateAfterInteraction, { passive: true });
+
+      const initialize = async () => {
+        try {
+          setLoading(true);
+          const { Niivue: NiivueClass, cmapper } = await import("@niivue/niivue");
+          if (cancelled) return;
+          const nv = new NiivueClass({
+            backColor: [0.02, 0.025, 0.035, 1],
+            crosshairColor: [0.2, 0.9, 0.95, 1],
+            crosshairWidth: 1,
+            dragAndDropEnabled: false,
+            isRadiologicalConvention: true,
+            isOrientationTextVisible: true,
+            showAllOrientationMarkers: true,
+            show3Dcrosshair: true,
+            drawingEnabled: true,
+            maxDrawUndoBitmaps: 30,
+            loadingText: "Loading CT…",
+            logLevel: "error",
+          });
+          instance = nv;
+          niivueRef.current = nv;
+          await nv.attachToCanvas(canvas);
+          if (cancelled) return;
+          await nv.loadVolumes([
+            {
+              url: api.volumeUrl(caseId),
+              // NiiVue infers the decoder from the supplied name. The API URL
+              // is intentionally extensionless, so preserve the stored format
+              // explicitly for both uncompressed and gzipped NIfTI inputs.
+              name: `CT.${volumeFileType}`,
+              colormap: "gray",
+              cal_min: -1200,
+              cal_max: 1800,
+              trustCalMinMax: true,
+            },
+          ]);
+          if (cancelled) return;
+
+          if (initialHasAnnotationRef.current) {
+            const loaded = await nv.loadDrawingFromUrl(api.latestAnnotationUrl(caseId));
+            if (!loaded) throw new Error("The saved annotation does not match this CT volume.");
+          } else {
+            nv.createEmptyDrawing();
+          }
+
+          const labels = annotationLabels(protocol);
+          const labelColors = labels.map((label) => hexToRgb(label.color));
+          const protocolColorMap = {
+            R: [0, ...labelColors.map((color) => color[0])],
+            G: [0, ...labelColors.map((color) => color[1])],
+            B: [0, ...labelColors.map((color) => color[2])],
+            A: [0, 255, 255, 255, 255],
+            I: [0, 1, 2, 3, 4],
+            labels: ["Background", ...labels.map((label) => label.name)],
+          };
+          nv.addColormap(protocol.protocol_version, protocolColorMap);
+          // NiiVue's public setter initializes the drawing texture; its 0.69.0
+          // custom-name lookup does not include runtime-added drawing maps, so
+          // apply the exact protocol LUT immediately afterward.
+          nv.setDrawColormap("$itksnap");
+          nv.drawLut = cmapper.makeDrawLut(protocolColorMap);
+          nv.updateGLVolume();
+
+          const saved = initialStateRef.current;
+          if (saved?.crosshair?.length === 3) {
+            nv.scene.crosshairPos = new Float32Array(saved.crosshair);
+          }
+          if (saved?.pan_zoom?.length === 4) {
+            nv.scene.pan2Dxyzmm = new Float32Array(saved.pan_zoom);
+          }
+          if (typeof saved?.render_azimuth === "number") {
+            nv.scene.renderAzimuth = saved.render_azimuth;
+          }
+          if (typeof saved?.render_elevation === "number") {
+            nv.scene.renderElevation = saved.render_elevation;
+          }
+          if (typeof saved?.volume_scale === "number" && saved.volume_scale > 0) {
+            nv.volScaleMultiplier = saved.volume_scale;
+          }
+
+          const controls = controlStateRef.current;
+          nv.opts.penSize = controls.brushSize;
+          nv.setDrawOpacity(controls.overlayOpacity);
+          nv.setSliceType(
+            controls.viewMode === "render" ? nv.sliceTypeRender : nv.sliceTypeMultiplanar,
+          );
+          nv.setDrawingEnabled(controls.tool !== "navigate" && controls.tool !== "window");
+          nv.setPenValue(
+            controls.tool === "erase" ? 0 : controls.selectedLabel,
+            controls.tool === "fill",
+          );
+          nv.onLocationChange = (payload) => {
+            const location = payload as LocationPayload;
+            callbacksRef.current.onLocationChange({
+              voxel: formatTriplet(location.vox, 0),
+              millimeters: formatTriplet(location.mm, 1),
+            });
+          };
+          nv.onAzimuthElevationChange = () => {
+            callbacksRef.current.onViewStateChange();
+          };
+          nv.onDrawingChanged = (action) => {
+            if (action === "draw") {
+              addHistorySnapshot(nv.drawBitmap);
+              callbacksRef.current.onDirty();
+            }
+          };
+          historyRef.current = emptyHistory();
+          addHistorySnapshot(nv.drawBitmap);
+          nv.drawScene();
+          const initialFraction = Array.from(nv.scene.crosshairPos).slice(0, 3) as [
+            number,
+            number,
+            number,
+          ];
+          callbacksRef.current.onLocationChange({
+            voxel: formatTriplet(nv.frac2vox(initialFraction), 0),
+            millimeters: formatTriplet(nv.frac2mm(initialFraction), 1),
+          });
+          setLoading(false);
+          callbacksRef.current.onReady();
+        } catch (error) {
+          if (cancelled) return;
+          setLoading(false);
+          const message = error instanceof Error ? error.message : "The CT viewer failed to load.";
+          callbacksRef.current.onError(message);
+        }
+      };
+
+      void initialize();
+      return () => {
+        cancelled = true;
+        canvas.removeEventListener("pointerup", notifyViewStateAfterInteraction);
+        canvas.removeEventListener("wheel", notifyViewStateAfterInteraction);
+        instance?.cleanup();
+        if (niivueRef.current === instance) niivueRef.current = null;
+      };
+    }, [caseId, protocol, volumeFileType]);
+
+    useEffect(() => {
+      const nv = niivueRef.current;
+      if (!nv) return;
+      nv.opts.penSize = brushSize;
+      if (tool === "navigate") {
+        nv.setDrawingEnabled(false);
+        nv.setDragMode("pan");
+      } else if (tool === "window") {
+        nv.setDrawingEnabled(false);
+        nv.setDragMode("windowing");
+      } else {
+        nv.setDrawingEnabled(true);
+        nv.setPenValue(tool === "erase" ? 0 : selectedLabel, tool === "fill");
+      }
+      nv.drawScene();
+    }, [brushSize, selectedLabel, tool]);
+
+    useEffect(() => {
+      const nv = niivueRef.current;
+      if (!nv) return;
+      nv.setDrawOpacity(overlayVisible ? overlayOpacity : 0);
+    }, [overlayOpacity, overlayVisible]);
+
+    useEffect(() => {
+      const nv = niivueRef.current;
+      if (!nv) return;
+      nv.setSliceType(viewMode === "render" ? nv.sliceTypeRender : nv.sliceTypeMultiplanar);
+    }, [viewMode]);
+
+    useEffect(() => {
+      const nv = niivueRef.current;
+      const volume = nv?.volumes[0];
+      if (!nv || !volume || windowWidth <= 0) return;
+      volume.cal_min = windowCenter - windowWidth / 2;
+      volume.cal_max = windowCenter + windowWidth / 2;
+      nv.updateGLVolume();
+    }, [windowCenter, windowWidth]);
+
+    return (
+      <div className="viewer-frame" aria-busy={loading}>
+        {loading ? <div className="viewer-loading">Loading CT volume…</div> : null}
+        <canvas
+          ref={canvasRef}
+          className="viewer-canvas"
+          aria-label="Linked axial, coronal, sagittal, and 3D CT viewer"
+          tabIndex={0}
+        />
+      </div>
+    );
+  },
+);

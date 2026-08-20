@@ -8,19 +8,26 @@ version = "0.1.0"
 description = "Local, PHI-aware DICOM to NIfTI conversion and QC pilot"
 requires-python = "==3.13.*"
 dependencies = [
+  "fastapi==0.141.1",
   "nibabel==5.3.2",
   "numpy==2.3.5",
   "pydicom==3.0.1",
+  "python-multipart==0.0.32",
+  "uvicorn==0.52.4",
 ]
 
 [project.optional-dependencies]
-test = ["pytest==9.1.1"]
+test = ["httpx==0.28.1", "pytest==9.1.1"]
 
 [project.scripts]
 ethmoid-pipeline = "ethmoid_pipeline.cli:main"
+ethmoid-app = "ethmoid_pipeline.webapp.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"ethmoid_pipeline.webapp" = ["protocol.v1.json"]
 
 [tool.pytest.ini_options]
 addopts = "-ra --strict-markers"

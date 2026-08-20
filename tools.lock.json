@@ -6,6 +6,15 @@
     "requirements_file": "requirements.lock",
     "require_hashes": true
   },
+  "web": {
+    "node": "24.14.1",
+    "npm": "11.11.0",
+    "package_lock": "web/package-lock.json",
+    "react": "19.2.8",
+    "vite": "8.2.2",
+    "niivue": "0.69.0",
+    "playwright": "1.62.1"
+  },
   "dcm2niix": {
     "version": "v1.0.20260724",
     "tag_commit": "8282dbf7d37d34b29ef008061622a44077e24707",

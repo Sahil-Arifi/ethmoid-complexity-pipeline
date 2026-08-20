@@ -50,6 +50,8 @@ def write_ct_series(
         dataset.SeriesInstanceUID = series
         dataset.FrameOfReferenceUID = frame
         dataset.Modality = "CT"
+        dataset.Manufacturer = "SIEMENS"
+        dataset.PatientPosition = "HFS"
         dataset.PatientName = "SYNTHETIC^ONLY"
         dataset.PatientID = "SYNTHETIC"
         dataset.StudyDate = "20000101"

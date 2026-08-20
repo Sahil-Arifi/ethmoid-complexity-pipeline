@@ -95,4 +95,24 @@ if ($LASTEXITCODE -ne 0) { throw 'The project virtual environment must use Pytho
 & $python -m pip install --disable-pip-version-check --require-hashes -r (Join-Path $repo 'requirements.lock')
 & $python -m pip install --disable-pip-version-check --no-build-isolation --no-deps -e $repo
 
-Write-Host 'Bootstrap complete. All PHI-sensitive work must remain outside this repository.'
+$nodeVersion = (& node --version 2>$null)
+if ($LASTEXITCODE -ne 0 -or $nodeVersion -ne 'v24.14.1') {
+    throw 'Node.js 24.14.1 is required by the pinned web application environment.'
+}
+$npmVersion = (& npm --version 2>$null)
+if ($LASTEXITCODE -ne 0 -or $npmVersion -ne '11.11.0') {
+    throw 'npm 11.11.0 is required by the pinned web application environment.'
+}
+$webRoot = Join-Path $repo 'web'
+Push-Location $webRoot
+try {
+    & npm ci
+    if ($LASTEXITCODE -ne 0) { throw 'npm ci failed.' }
+    & npm run build
+    if ($LASTEXITCODE -ne 0) { throw 'The web application build failed.' }
+}
+finally {
+    Pop-Location
+}
+
+Write-Host 'Bootstrap complete. Start the local application with: ethmoid-app start'

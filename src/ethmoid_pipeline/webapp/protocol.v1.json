@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "protocol_version": "ethmoid-provisional-v1",
+  "training_eligibility": "PROVISIONAL_NOT_FOR_TRAINING",
+  "labels": [
+    {
+      "value": 0,
+      "name": "Background",
+      "color": "#000000",
+      "laterality": null,
+      "region": null
+    },
+    {
+      "value": 1,
+      "name": "Left anterior ethmoid",
+      "color": "#2F80ED",
+      "laterality": "left",
+      "region": "anterior_ethmoid"
+    },
+    {
+      "value": 2,
+      "name": "Right anterior ethmoid",
+      "color": "#EB5757",
+      "laterality": "right",
+      "region": "anterior_ethmoid"
+    },
+    {
+      "value": 3,
+      "name": "Left posterior ethmoid",
+      "color": "#56CCF2",
+      "laterality": "left",
+      "region": "posterior_ethmoid"
+    },
+    {
+      "value": 4,
+      "name": "Right posterior ethmoid",
+      "color": "#F2994A",
+      "laterality": "right",
+      "region": "posterior_ethmoid"
+    }
+  ]
+}

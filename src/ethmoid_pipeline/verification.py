@@ -2,31 +2,30 @@ from __future__ import annotations
 
 import math
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 import nibabel as nib
 import numpy as np
 import pydicom
 
-from .conversion import _selection_identity_sha256
-from .dicom import assert_pilot_fingerprint, preflight_series
+from .conversion import _selection_identity_sha256, _validate_selected_paths
+from .dicom import PreflightResult, assert_pilot_fingerprint, preflight_series
 from .inventory import resolve_selection
-from .privacy import verify_sanitized_sidecar
+from .privacy import NEUTRAL_NIFTI_DESCRIPTION, verify_sanitized_sidecar
 from .provenance import current_code_provenance
 from .util import (
     PipelineError,
     atomic_write_json,
     atomic_write_text,
+    is_within,
     read_json,
     repo_root,
     sha256_canonical_json,
     sha256_file,
     utc_now,
+    validate_labels,
     validate_roots,
 )
-
-
-NEUTRAL_DESCRIPTION = b"dcm2niix v1.0.20260724; neutral pilot"
 
 
 def _dicom_pixel_ras(record: Any, row: int, column: int) -> np.ndarray:
@@ -164,29 +163,35 @@ Manual 3D Slicer and clinical review remain **PENDING** after automated checks p
 """
 
 
-def verify_pilot(
-    dicom_root: Path,
+def _verify_preflighted_conversion(
+    *,
     work_root: Path,
+    preflight: PreflightResult,
     case_label: str,
     series_label: str,
+    artifact_dir: Path,
+    inventory_map_path: Path | None,
+    pipeline_provenance: dict[str, Any] | None,
+    require_clean_provenance: bool,
+    strict_storage_encoding: tuple[str, float, float] | None,
 ) -> dict[str, Any]:
-    validate_roots(dicom_root, work_root, repo_root())
-    paths, study_uid, series_uid = resolve_selection(
-        dicom_root, work_root, case_label, series_label
-    )
-    preflight = preflight_series(paths, study_uid, series_uid)
-    assert_pilot_fingerprint(preflight, case_label, series_label)
-
     neutral_name = f"{case_label}_{series_label}"
-    pilot_dir = work_root / "pilot" / neutral_name
+    pilot_dir = artifact_dir.resolve()
+    work = work_root.resolve()
+    if pilot_dir == work or not is_within(pilot_dir, work):
+        raise PipelineError("The conversion artifact directory must be inside the work root.")
     nifti_path = pilot_dir / f"{neutral_name}.nii"
     sidecar_path = pilot_dir / f"{neutral_name}.json"
     if not pilot_dir.is_dir() or not nifti_path.is_file() or not sidecar_path.is_file():
-        raise PipelineError("The converted pilot output is incomplete; run convert first.")
+        raise PipelineError("The converted output is incomplete; run conversion first.")
 
     checks: list[dict[str, Any]] = []
     issues: list[str] = []
-    current_pipeline = current_code_provenance(require_clean=True)
+    current_pipeline = (
+        dict(pipeline_provenance)
+        if pipeline_provenance is not None
+        else current_code_provenance(require_clean=require_clean_provenance)
+    )
 
     def add_check(name: str, passed: bool, summary: str, failure: str | None = None) -> None:
         checks.append({"name": name, "passed": bool(passed), "summary": summary})
@@ -315,7 +320,7 @@ def verify_pilot(
     header_auxiliary = bytes(image.header["aux_file"]).rstrip(b"\x00")
     header_intent = bytes(image.header["intent_name"]).rstrip(b"\x00")
     header_safe = (
-        header_description == NEUTRAL_DESCRIPTION
+        header_description == NEUTRAL_NIFTI_DESCRIPTION
         and not header_data_type
         and not header_database_name
         and not header_auxiliary
@@ -359,40 +364,53 @@ def verify_pilot(
         and conversion_report.get("ordered_source_manifest_sha256")
         == current_manifest_digest
         and conversion_report.get("selection_identity_sha256") == selection_identity
-        and conversion_report.get("inventory_uid_map_sha256")
-        == sha256_file(work_root / "inventory" / "uid_map.local.json")
+    )
+    if inventory_map_path is not None:
+        selection_binding_ok = (
+            selection_binding_ok
+            and conversion_report.get("inventory_uid_map_sha256")
+            == sha256_file(inventory_map_path)
+        )
+    binding_summary = (
+        "ordered source manifest and local UID identity digest match"
+        if inventory_map_path is None
+        else "inventory, ordered source manifest, and local UID identity digests match"
     )
     add_check(
         "approved selection binding",
         selection_binding_ok,
-        "inventory, ordered source manifest, and local UID identity digests match"
-        if selection_binding_ok
-        else "selection binding mismatch",
-        "pilot output is not bound to the current local inventory and ordered source manifest",
+        binding_summary if selection_binding_ok else "selection binding mismatch",
+        "conversion output is not bound to the current ordered source manifest",
     )
     provenance_ok = tool_provenance.get("pipeline") == current_pipeline
+    if current_pipeline.get("git_dirty") is True:
+        provenance_summary = "pipeline and lock hashes match; uncommitted changes were recorded"
+    elif current_pipeline.get("git_commit"):
+        provenance_summary = "clean committed pipeline and lock hashes match conversion provenance"
+    else:
+        provenance_summary = "supplied pipeline provenance matches conversion provenance"
     add_check(
         "pipeline provenance",
         provenance_ok,
-        "clean committed pipeline and lock hashes match conversion provenance"
-        if provenance_ok
-        else "pipeline provenance mismatch",
+        provenance_summary if provenance_ok else "pipeline provenance mismatch",
         "the current pipeline revision or dependency locks differ from conversion provenance",
     )
 
     proxy_slope = _safe_float(getattr(image.dataobj, "slope", None))
     proxy_intercept = _safe_float(getattr(image.dataobj, "inter", None))
-    dtype_scaling_ok = (
-        str(image.get_data_dtype()) == "int16"
-        and proxy_slope == 1.0
-        and proxy_intercept == -1024.0
-    )
-    add_check(
-        "NIfTI dtype and scaling",
-        dtype_scaling_ok,
-        f"dtype={image.get_data_dtype()}; slope={proxy_slope}; intercept={proxy_intercept}",
-        "NIfTI storage dtype or scaling differs from the audited CT encoding",
-    )
+    if strict_storage_encoding is not None:
+        expected_dtype, expected_slope, expected_intercept = strict_storage_encoding
+        dtype_scaling_ok = (
+            str(image.get_data_dtype()) == expected_dtype
+            and proxy_slope == expected_slope
+            and proxy_intercept == expected_intercept
+        )
+        add_check(
+            "NIfTI dtype and scaling",
+            dtype_scaling_ok,
+            f"dtype={image.get_data_dtype()}; slope={proxy_slope}; intercept={proxy_intercept}",
+            "NIfTI storage dtype or scaling differs from the audited CT encoding",
+        )
 
     hu_metrics = _full_volume_hu_metrics(image, preflight.records, inverse_affine)
     expected_voxels = len(preflight.records) * preflight.rows * preflight.columns
@@ -418,7 +436,18 @@ def verify_pilot(
         "series": series_label,
         "checks": checks,
         "issues": list(dict.fromkeys(issues)),
-        "warnings": list(preflight.warnings),
+        "warnings": list(
+            dict.fromkeys(
+                [
+                    *preflight.warnings,
+                    *(
+                        ["pipeline provenance records uncommitted source changes"]
+                        if current_pipeline.get("git_dirty") is True
+                        else []
+                    ),
+                ]
+            )
+        ),
         "metrics": {
             "nifti_shape": list(shape),
             "nifti_dtype": str(image.get_data_dtype()),
@@ -438,3 +467,62 @@ def verify_pilot(
     atomic_write_json(pilot_dir / "qc_report.json", report)
     atomic_write_text(pilot_dir / "qc_report.md", _report_markdown(report))
     return report
+
+
+def verify_conversion(
+    dicom_root: Path,
+    work_root: Path,
+    paths: Iterable[Path],
+    case_label: str,
+    series_label: str,
+    *,
+    expected_study_uid: str | None = None,
+    expected_series_uid: str | None = None,
+    artifact_dir: Path | None = None,
+    pipeline_provenance: dict[str, Any] | None = None,
+    require_clean_provenance: bool = True,
+) -> dict[str, Any]:
+    """Verify one generic conversion against its selected source series."""
+    validate_labels(case_label, series_label)
+    validate_roots(dicom_root, work_root, repo_root())
+    selected = _validate_selected_paths(dicom_root, paths)
+    preflight = preflight_series(selected, expected_study_uid, expected_series_uid)
+    neutral_name = f"{case_label}_{series_label}"
+    destination = artifact_dir or (work_root / "conversions" / neutral_name)
+    return _verify_preflighted_conversion(
+        work_root=work_root,
+        preflight=preflight,
+        case_label=case_label,
+        series_label=series_label,
+        artifact_dir=destination,
+        inventory_map_path=None,
+        pipeline_provenance=pipeline_provenance,
+        require_clean_provenance=require_clean_provenance,
+        strict_storage_encoding=None,
+    )
+
+
+def verify_pilot(
+    dicom_root: Path,
+    work_root: Path,
+    case_label: str,
+    series_label: str,
+) -> dict[str, Any]:
+    validate_roots(dicom_root, work_root, repo_root())
+    paths, study_uid, series_uid = resolve_selection(
+        dicom_root, work_root, case_label, series_label
+    )
+    preflight = preflight_series(paths, study_uid, series_uid)
+    assert_pilot_fingerprint(preflight, case_label, series_label)
+    neutral_name = f"{case_label}_{series_label}"
+    return _verify_preflighted_conversion(
+        work_root=work_root,
+        preflight=preflight,
+        case_label=case_label,
+        series_label=series_label,
+        artifact_dir=work_root / "pilot" / neutral_name,
+        inventory_map_path=work_root / "inventory" / "uid_map.local.json",
+        pipeline_provenance=None,
+        require_clean_provenance=True,
+        strict_storage_encoding=("int16", 1.0, -1024.0),
+    )

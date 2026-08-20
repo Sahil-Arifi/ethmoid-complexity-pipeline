@@ -9,7 +9,11 @@ import numpy as np
 import pydicom
 import pytest
 
-from ethmoid_pipeline.conversion import _verify_dcm2niix, build_dcm2niix_command
+from ethmoid_pipeline.conversion import (
+    _dangerous_log_categories,
+    _verify_dcm2niix,
+    build_dcm2niix_command,
+)
 from ethmoid_pipeline.dicom import preflight_series
 from ethmoid_pipeline.util import default_dcm2niix, sha256_file
 from ethmoid_pipeline.verification import (
@@ -19,6 +23,14 @@ from ethmoid_pipeline.verification import (
 )
 
 from .synthetic import write_ct_series
+
+
+def test_converter_log_allows_harmless_warning_but_blocks_geometry_warning() -> None:
+    harmless = "Warning: Patient Position (0018,5100) not specified."
+    geometry = "Warning: unequal spacing between DICOM slices."
+
+    assert _dangerous_log_categories(harmless) == []
+    assert _dangerous_log_categories(geometry) == ["unequal spacing"]
 
 
 @pytest.mark.integration

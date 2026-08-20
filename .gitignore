@@ -11,6 +11,11 @@ build/
 .env.*
 .local/
 .tools/
+web/node_modules/
+web/dist/
+web/coverage/
+web/playwright-report/
+web/test-results/
 
 # Medical images, derived artifacts, and Slicer state must never enter Git.
 *.dcm

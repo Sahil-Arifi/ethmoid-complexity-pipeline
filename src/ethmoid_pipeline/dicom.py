@@ -113,6 +113,15 @@ def _string_or_none(value: Any) -> str | None:
     return str(value)
 
 
+def _optional_int(value: Any, field: str) -> int | None:
+    if value is None or str(value).strip() == "":
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{field} is non-numeric") from exc
+
+
 def _angle_degrees(
     left: np.ndarray, right: np.ndarray, *, undirected: bool = False
 ) -> float:
@@ -179,6 +188,12 @@ def preflight_series(
             ipp = _as_float_tuple(dataset.ImagePositionPatient, 3, "ImagePositionPatient")
             slope = _as_float(dataset.RescaleSlope, "RescaleSlope")
             intercept = _as_float(dataset.RescaleIntercept, "RescaleIntercept")
+            number_of_frames = _optional_int(
+                getattr(dataset, "NumberOfFrames", 1), "NumberOfFrames"
+            )
+            instance_number = _optional_int(
+                getattr(dataset, "InstanceNumber", None), "InstanceNumber"
+            )
             if slope == 0:
                 raise ValueError("RescaleSlope is zero")
         except (AttributeError, KeyError, TypeError, ValueError) as exc:
@@ -195,7 +210,6 @@ def preflight_series(
         modality = str(getattr(dataset, "Modality", "")).upper()
         sop_class = str(getattr(dataset, "SOPClassUID", ""))
         photometric = str(getattr(dataset, "PhotometricInterpretation", "")).upper()
-        number_of_frames = int(getattr(dataset, "NumberOfFrames", 1))
         bits = (
             int(getattr(dataset, "BitsAllocated", -1)),
             int(getattr(dataset, "BitsStored", -1)),
@@ -270,9 +284,7 @@ def preflight_series(
                 "ipp": ipp,
                 "slope": slope,
                 "intercept": intercept,
-                "instance_number": (
-                    int(dataset.InstanceNumber) if hasattr(dataset, "InstanceNumber") else None
-                ),
+                "instance_number": instance_number,
                 "coordinate": coordinate,
                 "image_type": image_type,
                 "kernel": kernel,

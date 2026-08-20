@@ -21,13 +21,16 @@ EXACT_ALLOWED = {
     "SECURITY.md",
     "pyproject.toml",
     "requirements.lock",
+    "src/ethmoid_pipeline/webapp/protocol.v1.json",
     "tools.lock.json",
+    "web/.gitignore",
 }
 PREFIX_SUFFIX_ALLOWED = {
     "src/": {".py"},
     "tests/": {".py"},
     "scripts/": {".py", ".ps1"},
     "docs/": {".md"},
+    "web/": {".css", ".html", ".js", ".json", ".ts", ".tsx"},
 }
 FORBIDDEN_SUFFIXES = {
     ".dcm",
@@ -71,7 +74,7 @@ ABSOLUTE_WINDOWS_PATH_PATTERN = re.compile(
     + re.escape(_BACKSLASH)
     + r")[^\r\n\x00]+"
 )
-SAFE_SYNTHETIC_UIDS = {"9.9.9.9.9"}
+SAFE_DOTTED_VALUES = {"9.9.9.9.9", "127.0.0.1"}
 
 
 def _git(repo: Path, *args: str) -> bytes:
@@ -161,7 +164,7 @@ def _blocked_text_content(blob: bytes) -> str | None:
     if ABSOLUTE_WINDOWS_PATH_PATTERN.search(text):
         return "an absolute Windows/UNC path"
     uids = {match.group(0) for match in UID_TEXT_PATTERN.finditer(text)}
-    if uids - SAFE_SYNTHETIC_UIDS:
+    if uids - SAFE_DOTTED_VALUES:
         return "a non-allowlisted UID-like value"
     return None
 

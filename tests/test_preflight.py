@@ -4,6 +4,8 @@ from pathlib import Path
 
 import pytest
 from pydicom import dcmread
+from pydicom.dataelem import DataElement
+from pydicom.tag import Tag
 from pydicom.uid import JPEG2000Lossless, generate_uid
 
 from ethmoid_pipeline.dicom import PreflightFailure, preflight_series
@@ -74,6 +76,25 @@ def test_rejects_duplicate_sop_uid(tmp_path: Path) -> None:
     first = dcmread(paths[0], stop_before_pixels=True)
     rewrite(paths[-1], SOPInstanceUID=first.SOPInstanceUID)
     with pytest.raises(PreflightFailure, match="duplicate SOPInstanceUID"):
+        preflight_series(paths)
+
+
+@pytest.mark.parametrize(
+    ("tag", "message"),
+    [
+        (Tag(0x0028, 0x0008), "NumberOfFrames is non-numeric"),
+        (Tag(0x0020, 0x0013), "InstanceNumber is non-numeric"),
+    ],
+)
+def test_malformed_integer_metadata_is_a_preflight_failure(
+    tmp_path: Path, tag: Tag, message: str
+) -> None:
+    paths = write_ct_series(tmp_path)
+    dataset = dcmread(paths[0])
+    dataset[tag] = DataElement(tag, "LO", "not-an-integer")
+    dataset.save_as(paths[0], enforce_file_format=True)
+
+    with pytest.raises(PreflightFailure, match=message):
         preflight_series(paths)
 
 

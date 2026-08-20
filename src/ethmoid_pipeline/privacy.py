@@ -31,6 +31,12 @@ SAFE_SIDECAR_KEYS = {
     "ConversionSoftwareVersion",
 }
 
+# Keep one byte-for-byte description for both conversion-time scrubbing and
+# verification.  The value intentionally remains compatible with the audited
+# pilot artifact even though the same sanitizer is now used by generic series
+# conversions.
+NEUTRAL_NIFTI_DESCRIPTION = b"dcm2niix v1.0.20260724; neutral pilot"
+
 
 def _sidecar_semantic_issues(value: dict[str, Any]) -> list[str]:
     issues: list[str] = []
@@ -101,14 +107,13 @@ def scrub_nifti_header(path: Path) -> None:
     if len(image.header.extensions) != 0:
         raise PipelineError("The generated NIfTI contains unexpected header extensions.")
 
-    neutral_description = b"dcm2niix v1.0.20260724; neutral pilot"
     with path.open("r+b") as stream:
         stream.seek(4)
         stream.write(b"\x00" * 10)
         stream.seek(14)
         stream.write(b"\x00" * 18)
         stream.seek(148)
-        stream.write(neutral_description.ljust(80, b"\x00"))
+        stream.write(NEUTRAL_NIFTI_DESCRIPTION.ljust(80, b"\x00"))
         stream.seek(228)
         stream.write(b"\x00" * 24)
         stream.seek(328)
@@ -122,7 +127,7 @@ def scrub_nifti_header(path: Path) -> None:
     auxiliary = bytes(reloaded.header["aux_file"]).rstrip(b"\x00")
     intent = bytes(reloaded.header["intent_name"]).rstrip(b"\x00")
     if (
-        description != neutral_description
+        description != NEUTRAL_NIFTI_DESCRIPTION
         or legacy_data_type
         or legacy_database_name
         or auxiliary

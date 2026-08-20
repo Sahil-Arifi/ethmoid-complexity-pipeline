@@ -103,3 +103,22 @@ def test_guard_rejects_nifti2_uid_and_absolute_path_text(tmp_path: Path) -> None
     assert any("NIfTI-2" in failure for failure in failures)
     assert any("UID-like" in failure for failure in failures)
     assert any("Windows/UNC" in failure for failure in failures)
+
+
+def test_guard_allows_web_source_but_rejects_web_image_content(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    web = repo / "web" / "src"
+    web.mkdir(parents=True)
+    (web / "App.tsx").write_text(
+        "export function App() { return <main>Ethmoid viewer</main>; }\n",
+        encoding="utf-8",
+    )
+    (repo / "web" / "package.json").write_text(
+        '{"name":"synthetic-web","private":true}\n', encoding="utf-8"
+    )
+    _git(repo, "add", "web/src/App.tsx", "web/package.json")
+    assert scan_staged(repo) == []
+
+    (web / "hidden.ts").write_bytes(b"\x89PNG\r\n\x1a\nsynthetic-only")
+    _git(repo, "add", "web/src/hidden.ts")
+    assert any("image content" in failure for failure in scan_staged(repo))

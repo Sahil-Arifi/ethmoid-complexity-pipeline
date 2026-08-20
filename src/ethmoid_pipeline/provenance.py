@@ -28,7 +28,17 @@ def current_code_provenance(*, require_clean: bool = True) -> dict[str, Any]:
         raise PipelineError("The pipeline repository must be committed and clean before conversion or QC.")
     dependencies = {
         name: importlib.metadata.version(name)
-        for name in ("nibabel", "numpy", "pip", "pydicom", "pytest", "setuptools")
+        for name in (
+            "fastapi",
+            "nibabel",
+            "numpy",
+            "pip",
+            "pydicom",
+            "python-multipart",
+            "pytest",
+            "setuptools",
+            "uvicorn",
+        )
     }
     return {
         "git_commit": commit,
@@ -42,5 +52,6 @@ def current_code_provenance(*, require_clean: bool = True) -> dict[str, Any]:
         "requirements_lock_sha256": sha256_file(root / "requirements.lock"),
         "pyproject_sha256": sha256_file(root / "pyproject.toml"),
         "tools_lock_sha256": sha256_file(root / "tools.lock.json"),
+        "web_package_lock_sha256": sha256_file(root / "web" / "package-lock.json"),
         "executable_bits": 64 if sys.maxsize > 2**32 else 32,
     }
