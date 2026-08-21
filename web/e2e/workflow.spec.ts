@@ -9,6 +9,13 @@ test("directional NIfTI can be viewed, annotated, resumed, finalized, and export
   if (!fixture || !fs.existsSync(fixture)) throw new Error("Synthetic E2E fixture is unavailable.");
 
   await page.goto("/");
+  await expect(page.getByRole("dialog", { name: "Import a scan" })).toBeVisible();
+  for (const title of ["Review every view", "Mark the ethmoid regions", "Check, review, and export"]) {
+    await page.getByRole("button", { name: "Next" }).click();
+    await expect(page.getByRole("heading", { name: title })).toBeVisible();
+  }
+  await page.getByRole("button", { name: "Finish" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
   await page.getByRole("button", { name: "Import scan" }).last().click();
   await page.getByRole("textbox", { name: /Neutral case label/ }).fill("Case901");
   await page.getByLabel(/NIfTI volume/).setInputFiles(fixture);
@@ -26,6 +33,31 @@ test("directional NIfTI can be viewed, annotated, resumed, finalized, and export
   const multiplanarImage = await canvas.screenshot();
   expect(multiplanarImage.byteLength).toBeGreaterThan(5_000);
   const multiplanarHash = createHash("sha256").update(multiplanarImage).digest("hex");
+
+  const brightness = page.getByRole("slider", { name: "Brightness" });
+  const contrast = page.getByRole("slider", { name: "Contrast" });
+  await expect(brightness).toHaveValue("300");
+  await expect(contrast).toHaveValue("3000");
+  await brightness.focus();
+  await brightness.press("Home");
+  await contrast.focus();
+  await contrast.press("Home");
+  await expect(brightness).toHaveValue("-1000");
+  await expect(contrast).toHaveValue("100");
+  await page.waitForTimeout(500);
+  const brightenedImage = await canvas.screenshot();
+  expect(createHash("sha256").update(brightenedImage).digest("hex")).not.toBe(multiplanarHash);
+  await page.waitForTimeout(1_000);
+  await page.reload();
+  await expect(brightness).toHaveValue("-1000");
+  await expect(contrast).toHaveValue("100");
+  await expect(canvas).toBeVisible();
+  await page.waitForTimeout(500);
+  const restoredBrightnessImage = await canvas.screenshot();
+  expect(createHash("sha256").update(restoredBrightnessImage).digest("hex")).not.toBe(multiplanarHash);
+  await page.getByRole("button", { name: "Bone · 300/3000" }).click();
+  await expect(brightness).toHaveValue("300");
+  await expect(contrast).toHaveValue("3000");
 
   await page.getByRole("button", { name: "3D", exact: true }).click();
   await expect(page.getByRole("button", { name: "3D", exact: true })).toHaveAttribute(
@@ -68,7 +100,7 @@ test("directional NIfTI can be viewed, annotated, resumed, finalized, and export
   // the same guard with an annotation change pending.
   await page.getByRole("textbox", { name: "Reviewer notes" }).fill("Browser-back persistence check");
   await page.goBack();
-  await expect(page.getByRole("heading", { name: "Ethmoid annotation" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Map anatomy with confidence." })).toBeVisible();
   await page.getByRole("button", { name: "Continue annotation" }).click();
   await expect(page.locator(".metadata-grid").getByText("1", { exact: true })).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Reviewer notes" })).toHaveValue(

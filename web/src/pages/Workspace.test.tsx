@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle } from "react";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "../api/client";
@@ -20,12 +20,23 @@ vi.mock("../api/client", () => ({
 
 vi.mock("../viewer/NiiVueViewer", () => ({
   NiiVueViewer: forwardRef(function MockViewer(
-    props: { onReady: () => void; onDirty: () => void },
+    props: {
+      onReady: () => void;
+      onDirty: () => void;
+      onWindowChange: (center: number, width: number) => void;
+      windowCenter: number;
+      windowWidth: number;
+    },
     ref,
   ) {
     useImperativeHandle(ref, () => ({
       exportMask: async () => new Blob([new Uint8Array([1, 2, 3])]),
-      getViewerState: () => ({ view_mode: "multiplanar", selected_label: 1 }),
+      getViewerState: () => ({
+        view_mode: "multiplanar",
+        selected_label: 1,
+        window_center: props.windowCenter,
+        window_width: props.windowWidth,
+      }),
       undo: vi.fn(),
       redo: vi.fn(),
       canUndo: () => false,
@@ -36,7 +47,9 @@ vi.mock("../viewer/NiiVueViewer", () => ({
     return (
       <div>
         <div role="img" aria-label="Mock linked medical viewer" />
+        <output data-testid="mock-window">{props.windowCenter}/{props.windowWidth}</output>
         <button type="button" onClick={props.onDirty}>Simulate drawing</button>
+        <button type="button" onClick={() => props.onWindowChange(120, 1800)}>Simulate windowing</button>
       </div>
     );
   }),
@@ -70,6 +83,7 @@ const caseDetail: CaseDetail = {
 describe("Workspace", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.localStorage.setItem("ethmoid:first-run-guide", "2");
     vi.mocked(api.getCase).mockResolvedValue(caseDetail);
     vi.mocked(api.getProtocol).mockResolvedValue({
       schema_version: 1,
@@ -135,9 +149,98 @@ describe("Workspace", () => {
     await waitFor(() => expect(api.saveAnnotation).toHaveBeenCalledTimes(1));
     const [, mask, state] = vi.mocked(api.saveAnnotation).mock.calls[0];
     expect(mask).toBeInstanceOf(Blob);
-    expect(state).toEqual({ view_mode: "multiplanar", selected_label: 1 });
+    expect(state).toEqual({
+      view_mode: "multiplanar",
+      selected_label: 1,
+      window_center: 300,
+      window_width: 3000,
+    });
     expect(await screen.findByText("Saved revision 3")).toBeVisible();
     expect(screen.getByText("8 voxels · 1.3 mm³")).toBeVisible();
+  });
+
+  it("offers synchronized brightness and contrast sliders with an exact bone preset", async () => {
+    const user = userEvent.setup();
+    render(<Workspace caseId="case-1" onBack={vi.fn()} registerNavigationGuard={vi.fn()} />);
+    await screen.findByRole("heading", { name: "Case003" });
+
+    const brightness = screen.getByRole("slider", { name: "Brightness" });
+    const contrast = screen.getByRole("slider", { name: "Contrast" });
+    expect(brightness).toHaveValue("300");
+    expect(contrast).toHaveValue("3000");
+    expect(screen.getByLabelText("Brightness exact value")).toHaveValue(300);
+    expect(screen.getByLabelText("Contrast exact value")).toHaveValue(3000);
+
+    fireEvent.change(brightness, { target: { value: "-500" } });
+    fireEvent.change(contrast, { target: { value: "1200" } });
+    expect(screen.getByTestId("mock-window")).toHaveTextContent("-500/1200");
+    await waitFor(
+      () => expect(api.saveViewerState).toHaveBeenCalledWith(
+        "case-1",
+        expect.objectContaining({ window_center: -500, window_width: 1200 }),
+        false,
+      ),
+      { timeout: 2000 },
+    );
+
+    await user.click(screen.getByRole("button", { name: "Simulate windowing" }));
+    expect(brightness).toHaveValue("120");
+    expect(contrast).toHaveValue("1800");
+
+    await user.click(screen.getByRole("button", { name: "Bone · 300/3000" }));
+    expect(brightness).toHaveValue("300");
+    expect(contrast).toHaveValue("3000");
+  });
+
+  it("restores saved brightness and contrast before rendering the viewer", async () => {
+    vi.mocked(api.getCase).mockResolvedValue({
+      ...caseDetail,
+      viewer_state: {
+        view_mode: "multiplanar",
+        crosshair: [0.5, 0.5, 0.5],
+        pan_zoom: [0, 0, 0, 1],
+        selected_label: 1,
+        brush_size: 4,
+        overlay_opacity: 0.65,
+        active_tool: "navigate",
+        window_center: -240,
+        window_width: 1450,
+        render_azimuth: 110,
+        render_elevation: 20,
+        volume_scale: 1,
+      },
+    });
+
+    render(<Workspace caseId="case-1" onBack={vi.fn()} registerNavigationGuard={vi.fn()} />);
+    await screen.findByRole("heading", { name: "Case003" });
+    expect(screen.getByRole("slider", { name: "Brightness" })).toHaveValue("-240");
+    expect(screen.getByRole("slider", { name: "Contrast" })).toHaveValue("1450");
+    expect(screen.getByTestId("mock-window")).toHaveTextContent("-240/1450");
+  });
+
+  it("clamps old saved display values and rejects an invalid width", async () => {
+    vi.mocked(api.getCase).mockResolvedValue({
+      ...caseDetail,
+      viewer_state: {
+        view_mode: "multiplanar",
+        crosshair: [0.5, 0.5, 0.5],
+        pan_zoom: [0, 0, 0, 1],
+        selected_label: 1,
+        brush_size: 4,
+        overlay_opacity: 0.65,
+        active_tool: "navigate",
+        window_center: 9000,
+        window_width: 0,
+        render_azimuth: 110,
+        render_elevation: 20,
+        volume_scale: 1,
+      },
+    });
+
+    render(<Workspace caseId="case-1" onBack={vi.fn()} registerNavigationGuard={vi.fn()} />);
+    await screen.findByRole("heading", { name: "Case003" });
+    expect(screen.getByRole("slider", { name: "Brightness" })).toHaveValue("2000");
+    expect(screen.getByRole("slider", { name: "Contrast" })).toHaveValue("3000");
   });
 
   it("requires all QC checks before final approval", async () => {

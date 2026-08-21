@@ -42,7 +42,19 @@ A functional single-user MVP now runs at `http://127.0.0.1:8765` with:
 - per-label voxel counts and physical volumes; and
 - neutral ZIP export containing the mask, manifest, protocol, QC, notes, status, and measurements.
 
-The existing verified `Case003` NIfTI and QC report are loaded into the local app as a clean, unannotated `VERIFIED` case. The import was repeated after tightening the QC-report contract and still passed. A real-browser smoke test confirmed CT rendering, multiplanar/3D switching, drawing, autosave, mask reload, viewer-state persistence, and measurement display. The deliberately drawn test annotation was removed afterward.
+The interface now uses a purpose-built **Ethmoid Atlas** visual system rather than a generic admin layout. It includes:
+
+- a four-step first-run guide that can be replayed from the persistent `Help` button;
+- keyboard-, hover-, and click-accessible explanations beside the main viewer, annotation, image, validation, and QC controls;
+- grouped annotation and image-display controls that keep the CT canvas visually neutral;
+- dedicated `Brightness` (`-1000` to `2000 HU`) and `Contrast` (`100` to `5000 HU`) sliders with exact numeric entry; and
+- the exact `Bone · 300/3000` display preset.
+
+Saved brightness and contrast are applied when a scan first opens. Changes made with the canvas window/level tool also synchronize back to the sliders and saved viewer state. These controls alter only the display; they do not alter the CT voxel values.
+
+The CT volume and saved annotation are served to the embedded viewer as inline resources. Opening or navigating a case therefore does not trigger browser download requests. Only the explicit `Export` action is served as a downloadable attachment.
+
+The existing verified `Case003` NIfTI and QC report are loaded into the local app as a `VERIFIED` case. Its current local `Draft` contains saved annotation revisions; those marks are provisional and must not be treated as clinical ground truth or training data. The import was repeated after tightening the QC-report contract and still passed. Real-browser checks confirmed CT rendering, multiplanar/3D switching, drawing, autosave, mask reload, viewer-state persistence, and measurement display.
 
 Application labels are explicitly `PROVISIONAL_NOT_FOR_TRAINING`:
 
@@ -56,15 +68,15 @@ These names are a temporary protocol configuration, not a clinical decision. The
 ### Validation evidence
 
 - Python suite: **48 passed**; one third-party Starlette TestClient deprecation warning.
-- Frontend suite: **17 passed** across five test files, including pending-change navigation and approved-case read-only behavior.
-- Automated Microsoft Edge/WebGL workflow: **1 passed**. It imports a synthetic directional NIfTI, verifies orientation-aware 2D and 3D rendering, draws and autosaves a mask, reloads the annotation and viewer mode, proves browser-Back review persistence, completes QC, finalizes for review, and downloads the ZIP export.
+- Frontend suite: **27 passed** across seven test files, including first-use guidance, hoverable contextual help, modal focus containment, brightness/contrast synchronization and safe restore bounds, pending-change navigation, and approved-case read-only behavior.
+- Automated Microsoft Edge/WebGL workflow: **1 passed**. It completes the first-run guide, imports a synthetic directional NIfTI, verifies orientation-aware 2D and 3D rendering, proves that slider changes alter the rendered image, reloads and restores exact non-default brightness and contrast, draws and autosaves a mask, reloads the annotation and viewer mode, proves browser-Back review persistence, completes QC, finalizes for review, and downloads the ZIP export.
 - Production TypeScript/Vite build: **PASS**.
 - Runtime/development dependency audit: **0 vulnerabilities**.
 - The repository guard passed against an isolated index containing the complete would-be commit.
 - Installed `ethmoid-app` command, health endpoint, static frontend, protocol endpoint, case API, and 117,440,864-byte pilot-volume delivery: **PASS**.
 - Real browser: dashboard, NIfTI decoding, 2D/3D CT display, drawing, autosave, reload, coordinates, and metrics: **PASS**.
 
-The current web-app implementation is committed and published to the private GitHub repository on branch `feature/function-first-webapp`. The protected baseline on `main` remains commit `e95b1c9` until the feature branch is reviewed and merged.
+The current web-app implementation is committed and published to the private GitHub repository on branch `feature/function-first-webapp`. The protected baseline on `main` remains commit `e95b1c9`; this feature branch has not been merged.
 
 ## What the conversion means
 
@@ -86,6 +98,8 @@ The axial cine is not a 3D rendering. It is a slideshow through the 224 two-dime
 - Added cleanup for converted, failed, and cancelled DICOM import staging areas.
 - Added a navigation guard that flushes pending annotation, review, and viewer state before both in-app and browser-Back navigation.
 - Made approved cases read-only for masks, QC, and review content while preserving scan navigation and export; the backend also rejects any attempt to re-finalize and downgrade an approved case.
+- Added the Ethmoid Atlas interface, versioned first-run guide, contextual tooltips, grouped controls, brightness/contrast sliders, exact HU inputs, and bidirectional NiiVue window synchronization.
+- Stopped normal CT and annotation loading from being advertised as file downloads while preserving attachment behavior for explicit ZIP exports.
 - Generated patient-derived visual review material outside Git.
 - Prepared a reviewer package asking for conversion approval and application requirements.
 - Reviewed the published SinusSegment approach. Its released model predicts one combined sinonasal foreground rather than separate anterior/posterior or left/right ethmoid structures, and the publication does not report ethmoid-only performance. It has therefore not been adopted as the project solution.
@@ -99,7 +113,6 @@ The axial cine is not a 3D rendering. It is a slideshow through the 224 two-dime
 - Automated ethmoid segmentation, model training, inference, or complexity scoring.
 - Bulk conversion of the remaining studies.
 - Remote hosting, authentication, multi-user assignment, or collaboration features.
-- Visual-design refinement; functionality and correctness remain the priority.
 
 ## Next milestone
 

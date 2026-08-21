@@ -10,6 +10,10 @@ import {
   annotationLabels,
   type ProtocolDefinition,
 } from "../config/protocol";
+import { BrandMark } from "../components/BrandMark";
+import { DisplaySlider } from "../components/DisplaySlider";
+import { FirstRunGuide } from "../components/FirstRunGuide";
+import { HelpTip } from "../components/HelpTip";
 import {
   NiiVueViewer,
   type NiiVueViewerHandle,
@@ -32,6 +36,14 @@ const defaultQc: QcChecklist = {
 };
 
 const reviewOptions: ReviewStatus[] = ["Draft", "Ready for review", "Needs changes", "Approved"];
+const BRIGHTNESS_MIN = -1000;
+const BRIGHTNESS_MAX = 2000;
+const CONTRAST_MIN = 100;
+const CONTRAST_MAX = 5000;
+
+function clamp(value: number, minimum: number, maximum: number): number {
+  return Math.min(maximum, Math.max(minimum, value));
+}
 
 function allQcChecksPass(checklist: QcChecklist): boolean {
   return Object.values(checklist).every(Boolean);
@@ -42,14 +54,20 @@ function reviewSnapshot(checklist: QcChecklist, reviewerNotes: string, status: R
 }
 
 function savedControls(state?: ViewerState | null) {
+  const savedCenter = Number(state?.window_center);
+  const savedWidth = Number(state?.window_width);
   return {
     tool: state?.active_tool ?? ("draw" as ViewerTool),
     selectedLabel: state?.selected_label ?? 1,
     brushSize: state?.brush_size ?? 2,
     overlayOpacity: state?.overlay_opacity ?? 0.7,
     viewMode: state?.view_mode ?? ("multiplanar" as ViewMode),
-    windowCenter: state?.window_center ?? 300,
-    windowWidth: state?.window_width ?? 3000,
+    windowCenter: Number.isFinite(savedCenter)
+      ? clamp(savedCenter, BRIGHTNESS_MIN, BRIGHTNESS_MAX)
+      : 300,
+    windowWidth: Number.isFinite(savedWidth) && savedWidth > 0
+      ? clamp(savedWidth, CONTRAST_MIN, CONTRAST_MAX)
+      : 3000,
   };
 }
 
@@ -89,6 +107,7 @@ export function Workspace({ caseId, onBack, registerNavigationGuard }: Props) {
   const [reviewStatus, setReviewStatus] = useState<ReviewStatus>("Draft");
   const [reviewSaving, setReviewSaving] = useState(false);
   const [finalizing, setFinalizing] = useState(false);
+  const [guideOpen, setGuideOpen] = useState(false);
   const isReadOnly = detail?.review_status === "Approved" || detail?.state === "APPROVED";
   const currentReviewSnapshot = reviewSnapshot(qc, notes, reviewStatus);
   const reviewDirty = currentReviewSnapshot !== savedReviewSnapshotRef.current;
@@ -143,6 +162,12 @@ export function Workspace({ caseId, onBack, registerNavigationGuard }: Props) {
       return next;
     });
     setSaveMessage("Unsaved changes");
+  }, []);
+
+  const syncWindowFromViewer = useCallback((center: number, width: number) => {
+    if (!Number.isFinite(center) || !Number.isFinite(width) || width <= 0) return;
+    setWindowCenter(clamp(Math.round(center), BRIGHTNESS_MIN, BRIGHTNESS_MAX));
+    setWindowWidth(clamp(Math.round(width), CONTRAST_MIN, CONTRAST_MAX));
   }, []);
 
   const saveAnnotation = useCallback(
@@ -400,6 +425,7 @@ export function Workspace({ caseId, onBack, registerNavigationGuard }: Props) {
     !reviewSaving &&
     !finalizing;
   const labels = annotationLabels(protocol);
+  const activeLabel = labels.find((label) => label.value === selectedLabel);
   const activeTool =
     isReadOnly && (tool === "draw" || tool === "erase" || tool === "fill")
       ? "navigate"
@@ -407,17 +433,24 @@ export function Workspace({ caseId, onBack, registerNavigationGuard }: Props) {
 
   return (
     <main className="workspace">
+      <FirstRunGuide open={guideOpen} onOpenChange={setGuideOpen} version="2" />
       <header className="workspace-header">
         <div className="workspace-identity">
           <button className="text-button" type="button" onClick={() => void leaveWorkspace()}>← Cases</button>
-          <div>
-            <span className="eyebrow">Annotation workspace</span>
-            <h1>{detail.case_label}</h1>
+          <div className="workspace-case">
+            <BrandMark compact />
+            <div>
+              <span className="eyebrow">Ethmoid Atlas · Annotation</span>
+              <h1>{detail.case_label}</h1>
+            </div>
           </div>
           <span className={`status status-${detail.validation_status.toLowerCase()}`}>{detail.validation_status}</span>
           <span className="status status-neutral">{detail.review_status}</span>
         </div>
         <div className="header-actions">
+          <button className="button tertiary help-button" type="button" onClick={() => setGuideOpen(true)}>
+            <span aria-hidden="true">?</span> Help
+          </button>
           <span className={changeVersion > savedVersion ? "save-state dirty" : "save-state"} aria-live="polite">
             {saveMessage}
           </span>
@@ -438,8 +471,9 @@ export function Workspace({ caseId, onBack, registerNavigationGuard }: Props) {
       </header>
 
       <section className="viewer-toolbar" aria-label="Viewer and annotation controls">
-        <div className="toolbar-group">
-          <span className="toolbar-label">View</span>
+        <div className="toolbar-group" role="group" aria-labelledby="view-controls-label">
+          <span className="toolbar-label" id="view-controls-label">View</span>
+          <HelpTip label="Explain scan views" content="Multiplanar links axial, coronal, and sagittal slices. 3D helps with spatial orientation; draw annotations in 2D." />
           <button
             className="tool-button"
             type="button"
@@ -461,8 +495,9 @@ export function Workspace({ caseId, onBack, registerNavigationGuard }: Props) {
           </button>
         </div>
 
-        <div className="toolbar-group">
-          <span className="toolbar-label">Tool</span>
+        <div className="toolbar-group" role="group" aria-labelledby="interaction-controls-label">
+          <span className="toolbar-label" id="interaction-controls-label">Interact</span>
+          <HelpTip label="Explain interaction tools" content="Navigate pans and scrolls. Window/level adjusts the CT display. Draw, erase, and fill change only the annotation mask." />
           {(["navigate", "window", "draw", "erase", "fill"] as ViewerTool[]).map((item) => (
             <button
               key={item}
@@ -480,49 +515,82 @@ export function Workspace({ caseId, onBack, registerNavigationGuard }: Props) {
           ))}
         </div>
 
-        <div className="toolbar-group">
-          <span className="toolbar-label">History</span>
+        <div className="toolbar-group" role="group" aria-labelledby="history-controls-label">
+          <span className="toolbar-label" id="history-controls-label">History</span>
+          <HelpTip label="Explain annotation history" content="Undo or redo recent mask edits. Reset view recenters the scan without changing your annotation or image brightness." />
           <button className="tool-button" type="button" disabled={!canUndo || isReadOnly} onClick={() => viewerRef.current?.undo()} title="Undo (Ctrl+Z)">Undo</button>
           <button className="tool-button" type="button" disabled={!canRedo || isReadOnly} onClick={() => viewerRef.current?.redo()} title="Redo (Ctrl+Shift+Z)">Redo</button>
           <button className="tool-button" type="button" onClick={() => viewerRef.current?.resetView()}>Reset view</button>
         </div>
       </section>
 
-      <section className="annotation-toolbar" aria-label="Drawing settings">
-        <label>
-          <span>Label</span>
-          <select value={selectedLabel} disabled={isReadOnly} onChange={(event) => setSelectedLabel(Number(event.target.value))}>
-            {labels.map((label) => (
-              <option value={label.value} key={label.value}>{label.value}. {label.name}</option>
-            ))}
-          </select>
-        </label>
-        <label>
-          <span>Brush <output>{brushSize} vox</output></span>
-          <input type="range" min="1" max="12" value={brushSize} disabled={isReadOnly} onChange={(event) => setBrushSize(Number(event.target.value))} />
-        </label>
-        <label>
-          <span>Overlay <output>{Math.round(overlayOpacity * 100)}%</output></span>
-          <input type="range" min="0.1" max="1" step="0.05" value={overlayOpacity} onChange={(event) => setOverlayOpacity(Number(event.target.value))} />
-        </label>
-        <label className="inline-check">
-          <input type="checkbox" checked={overlayVisible} onChange={(event) => setOverlayVisible(event.target.checked)} />
-          Show overlay
-        </label>
-        <label className="numeric-field">
-          <span>Center (HU)</span>
-          <input type="number" value={windowCenter} onChange={(event) => setWindowCenter(Number(event.target.value))} />
-        </label>
-        <label className="numeric-field">
-          <span>Width (HU)</span>
-          <input type="number" min="1" value={windowWidth} onChange={(event) => setWindowWidth(Math.max(1, Number(event.target.value)))} />
-        </label>
-        <button className="tool-button preset" type="button" onClick={() => { setWindowCenter(300); setWindowWidth(3000); }}>Bone preset</button>
+      <section className="annotation-toolbar" aria-label="Annotation and image display settings">
+        <div className="annotation-control-group" role="group" aria-labelledby="annotation-settings-label">
+          <div className="control-group-title" id="annotation-settings-label">
+            <span><strong>Annotation</strong><small>Choose a region and paint in 2D</small></span>
+            <HelpTip label="Explain annotation settings" content="Select one provisional ethmoid region, choose a brush size, then draw in any 2D view. Overlay opacity changes visibility only." />
+          </div>
+          <label className="label-select-control" htmlFor="annotation-label">
+            <span>
+              <i className="active-label-dot" style={{ backgroundColor: activeLabel?.color }} aria-hidden="true" />
+              Label
+            </span>
+            <select id="annotation-label" value={selectedLabel} disabled={isReadOnly} onChange={(event) => setSelectedLabel(Number(event.target.value))}>
+              {labels.map((label) => (
+                <option value={label.value} key={label.value}>{label.value}. {label.name}</option>
+              ))}
+            </select>
+          </label>
+          <label className="compact-range-control" htmlFor="brush-size">
+            <span>Brush <output htmlFor="brush-size">{brushSize} vox</output></span>
+            <input id="brush-size" type="range" min="1" max="12" value={brushSize} disabled={isReadOnly} aria-valuetext={`${brushSize} voxels`} onChange={(event) => setBrushSize(Number(event.target.value))} />
+          </label>
+          <label className="compact-range-control" htmlFor="overlay-opacity">
+            <span>Overlay <output htmlFor="overlay-opacity">{Math.round(overlayOpacity * 100)}%</output></span>
+            <input id="overlay-opacity" type="range" min="0.1" max="1" step="0.05" value={overlayOpacity} aria-valuetext={`${Math.round(overlayOpacity * 100)} percent`} onChange={(event) => setOverlayOpacity(Number(event.target.value))} />
+          </label>
+          <label className="inline-check">
+            <input type="checkbox" checked={overlayVisible} onChange={(event) => setOverlayVisible(event.target.checked)} />
+            Show overlay
+          </label>
+        </div>
+
+        <div className="image-control-group" role="group" aria-labelledby="image-settings-label">
+          <div className="control-group-title" id="image-settings-label">
+            <span><strong>Image</strong><small>Adjust display only—the CT data does not change</small></span>
+            <HelpTip label="Explain brightness and contrast" content="Brightness is the CT window level: lower values look brighter. Contrast is the window width: narrower values increase contrast. Neither changes stored HU values." />
+          </div>
+          <DisplaySlider
+            id="brightness-level"
+            label="Brightness"
+            value={windowCenter}
+            min={BRIGHTNESS_MIN}
+            max={BRIGHTNESS_MAX}
+            step={10}
+            valueLabel={`Level ${windowCenter} HU`}
+            lowLabel="Brighter"
+            highLabel="Darker"
+            onChange={setWindowCenter}
+          />
+          <DisplaySlider
+            id="contrast-width"
+            label="Contrast"
+            value={windowWidth}
+            min={CONTRAST_MIN}
+            max={CONTRAST_MAX}
+            step={50}
+            valueLabel={`Width ${windowWidth} HU`}
+            lowLabel="Higher contrast"
+            highLabel="More range"
+            onChange={setWindowWidth}
+          />
+          <button className="tool-button preset" type="button" onClick={() => { setWindowCenter(300); setWindowWidth(3000); }}>Bone · 300/3000</button>
+        </div>
       </section>
 
       <div className="workspace-body">
         <section className="viewer-panel" aria-label="CT viewer">
-          {viewerError ? <div className="viewer-error alert alert-error">{viewerError}</div> : null}
+          {viewerError ? <div className="viewer-error alert alert-error" role="alert">{viewerError}</div> : null}
           <NiiVueViewer
             ref={viewerRef}
             caseId={caseId}
@@ -553,6 +621,7 @@ export function Workspace({ caseId, onBack, registerNavigationGuard }: Props) {
                 setViewerStateVersion((current) => current + 1);
               }
             }}
+            onWindowChange={syncWindowFromViewer}
             onLocationChange={(next) => {
               setLocation(next);
               if (viewerStateSaveEnabledRef.current) {
@@ -589,7 +658,10 @@ export function Workspace({ caseId, onBack, registerNavigationGuard }: Props) {
           </section>
 
           <section>
-            <h2>Basic QC</h2>
+            <div className="section-title-with-help">
+              <h2>Basic QC</h2>
+              <HelpTip label="Explain basic QC" content="These are human review checks. They are separate from the automated DICOM-to-NIfTI engineering validation." />
+            </div>
             {(
               [
                 ["coverage", "Complete ethmoid coverage"],

@@ -71,7 +71,9 @@ def test_http_nifti_annotation_review_and_delete_routes(tmp_path: Path) -> None:
         case_id = case["case_id"]
         assert case["validation_status"] == "VERIFIED"
         assert client.get("/api/cases").json()["cases"][0]["case_id"] == case_id
-        assert client.get(f"/api/cases/{case_id}/volume").status_code == 200
+        volume_response = client.get(f"/api/cases/{case_id}/volume")
+        assert volume_response.status_code == 200
+        assert volume_response.headers["content-disposition"].startswith("inline;")
         viewer_state = {
             "crosshair": [0.25, 0.5, 0.75],
             "view_mode": "render",
@@ -92,8 +94,14 @@ def test_http_nifti_annotation_review_and_delete_routes(tmp_path: Path) -> None:
         assert saved.status_code == 200, saved.text
         assert saved.json()["revision"] == 1
         assert saved.json()["voxel_counts"]["3"] == 4
-        assert client.get(f"/api/cases/{case_id}/annotations/latest").status_code == 200
-        assert client.get(f"/api/cases/{case_id}/annotations/latest.nii.gz").status_code == 200
+        annotation_response = client.get(
+            f"/api/cases/{case_id}/annotations/latest"
+        )
+        assert annotation_response.status_code == 200
+        assert annotation_response.headers["content-disposition"].startswith("inline;")
+        assert client.get(f"/api/cases/{case_id}/annotations/latest.nii.gz").headers[
+            "content-disposition"
+        ].startswith("inline;")
 
         update = {
             "status": "Draft",
@@ -109,7 +117,9 @@ def test_http_nifti_annotation_review_and_delete_routes(tmp_path: Path) -> None:
         finalized = client.post(f"/api/cases/{case_id}/finalize")
         assert finalized.status_code == 200
         assert finalized.json()["state"] == "READY_FOR_REVIEW"
-        assert client.get(f"/api/cases/{case_id}/export").status_code == 200
+        export_response = client.get(f"/api/cases/{case_id}/export")
+        assert export_response.status_code == 200
+        assert export_response.headers["content-disposition"].startswith("attachment;")
         assert client.delete(f"/api/cases/{case_id}").status_code == 409
 
         second = client.post(

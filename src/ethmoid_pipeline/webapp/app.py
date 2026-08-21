@@ -103,7 +103,12 @@ def create_app(*, work_root: Path | None = None, dcm2niix: Path | None = None) -
     def get_volume(case_id: str) -> FileResponse:
         path = service.volume_path(case_id)
         media_type = "application/gzip" if path.name.endswith(".gz") else "application/octet-stream"
-        return FileResponse(path, media_type=media_type, filename=path.name)
+        return FileResponse(
+            path,
+            media_type=media_type,
+            filename=path.name,
+            content_disposition_type="inline",
+        )
 
     @app.patch("/api/cases/{case_id}/viewer-state")
     def update_viewer_state(
@@ -198,7 +203,12 @@ def create_app(*, work_root: Path | None = None, dcm2niix: Path | None = None) -
     @app.get("/api/cases/{case_id}/annotations/latest")
     def latest_annotation(case_id: str) -> FileResponse:
         path = service.latest_annotation_path(case_id)
-        return FileResponse(path, media_type="application/gzip", filename="annotation.nii.gz")
+        return FileResponse(
+            path,
+            media_type="application/gzip",
+            filename="annotation.nii.gz",
+            content_disposition_type="inline",
+        )
 
     @app.patch("/api/cases/{case_id}/review")
     def update_review(case_id: str, update: ReviewUpdate) -> dict[str, object]:

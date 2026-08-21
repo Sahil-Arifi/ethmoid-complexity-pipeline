@@ -46,6 +46,7 @@ type Props = {
   onError: (message: string) => void;
   onDirty: () => void;
   onViewStateChange: () => void;
+  onWindowChange: (center: number, width: number) => void;
   onLocationChange: (location: ViewerLocation) => void;
   onHistoryChange: (canUndo: boolean, canRedo: boolean) => void;
 };
@@ -78,6 +79,15 @@ function formatTriplet(values: ArrayLike<number> | undefined, digits: number): s
     .join(", ");
 }
 
+function readWindow(nv: Niivue): { center: number; width: number } | null {
+  const volume = nv.volumes[0];
+  const minimum = Number(volume?.cal_min);
+  const maximum = Number(volume?.cal_max);
+  const width = maximum - minimum;
+  if (!Number.isFinite(minimum) || !Number.isFinite(maximum) || width <= 0) return null;
+  return { center: (minimum + maximum) / 2, width };
+}
+
 export const NiiVueViewer = forwardRef<NiiVueViewerHandle, Props>(
   function NiiVueViewer(
     {
@@ -98,6 +108,7 @@ export const NiiVueViewer = forwardRef<NiiVueViewerHandle, Props>(
       onError,
       onDirty,
       onViewStateChange,
+      onWindowChange,
       onLocationChange,
       onHistoryChange,
     },
@@ -113,6 +124,7 @@ export const NiiVueViewer = forwardRef<NiiVueViewerHandle, Props>(
       onError,
       onDirty,
       onViewStateChange,
+      onWindowChange,
       onLocationChange,
       onHistoryChange,
     });
@@ -132,6 +144,7 @@ export const NiiVueViewer = forwardRef<NiiVueViewerHandle, Props>(
       onError,
       onDirty,
       onViewStateChange,
+      onWindowChange,
       onLocationChange,
       onHistoryChange,
     };
@@ -217,6 +230,7 @@ export const NiiVueViewer = forwardRef<NiiVueViewerHandle, Props>(
             number,
             number,
           ];
+          const actualWindow = readWindow(nv);
           return {
             crosshair,
             pan_zoom: panZoom,
@@ -225,8 +239,8 @@ export const NiiVueViewer = forwardRef<NiiVueViewerHandle, Props>(
             brush_size: controls.brushSize,
             overlay_opacity: controls.overlayOpacity,
             active_tool: controls.tool,
-            window_center: controls.windowCenter,
-            window_width: controls.windowWidth,
+            window_center: actualWindow?.center ?? controls.windowCenter,
+            window_width: actualWindow?.width ?? controls.windowWidth,
             render_azimuth: nv.scene.renderAzimuth,
             render_elevation: nv.scene.renderElevation,
             volume_scale: nv.volScaleMultiplier,
@@ -269,7 +283,14 @@ export const NiiVueViewer = forwardRef<NiiVueViewerHandle, Props>(
       let cancelled = false;
       let instance: Niivue | null = null;
       const notifyViewStateAfterInteraction = () => {
-        window.setTimeout(() => callbacksRef.current.onViewStateChange(), 0);
+        window.setTimeout(() => {
+          const nv = niivueRef.current;
+          const actualWindow = nv ? readWindow(nv) : null;
+          if (actualWindow) {
+            callbacksRef.current.onWindowChange(actualWindow.center, actualWindow.width);
+          }
+          callbacksRef.current.onViewStateChange();
+        }, 0);
       };
       canvas.addEventListener("pointerup", notifyViewStateAfterInteraction);
       canvas.addEventListener("wheel", notifyViewStateAfterInteraction, { passive: true });
@@ -335,6 +356,12 @@ export const NiiVueViewer = forwardRef<NiiVueViewerHandle, Props>(
           // apply the exact protocol LUT immediately afterward.
           nv.setDrawColormap("$itksnap");
           nv.drawLut = cmapper.makeDrawLut(protocolColorMap);
+          const controls = controlStateRef.current;
+          const volume = nv.volumes[0];
+          if (volume && controls.windowWidth > 0) {
+            volume.cal_min = controls.windowCenter - controls.windowWidth / 2;
+            volume.cal_max = controls.windowCenter + controls.windowWidth / 2;
+          }
           nv.updateGLVolume();
 
           const saved = initialStateRef.current;
@@ -354,7 +381,6 @@ export const NiiVueViewer = forwardRef<NiiVueViewerHandle, Props>(
             nv.volScaleMultiplier = saved.volume_scale;
           }
 
-          const controls = controlStateRef.current;
           nv.opts.penSize = controls.brushSize;
           nv.setDrawOpacity(controls.overlayOpacity);
           nv.setSliceType(
@@ -446,9 +472,12 @@ export const NiiVueViewer = forwardRef<NiiVueViewerHandle, Props>(
       const nv = niivueRef.current;
       const volume = nv?.volumes[0];
       if (!nv || !volume || windowWidth <= 0) return;
-      volume.cal_min = windowCenter - windowWidth / 2;
-      volume.cal_max = windowCenter + windowWidth / 2;
-      nv.updateGLVolume();
+      const frame = window.requestAnimationFrame(() => {
+        volume.cal_min = windowCenter - windowWidth / 2;
+        volume.cal_max = windowCenter + windowWidth / 2;
+        nv.updateGLVolume();
+      });
+      return () => window.cancelAnimationFrame(frame);
     }, [windowCenter, windowWidth]);
 
     return (

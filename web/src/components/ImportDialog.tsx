@@ -9,9 +9,18 @@ type Props = {
 
 type ImportKind = "nifti" | "dicom";
 
+function focusableElements(root: HTMLElement) {
+  return Array.from(
+    root.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    ),
+  ).filter((element) => !element.hasAttribute("hidden"));
+}
+
 export function ImportDialog({ onClose, onImported }: Props) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const dicomInputRef = useRef<HTMLInputElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
   const [kind, setKind] = useState<ImportKind>("nifti");
   const [caseLabel, setCaseLabel] = useState("");
   const [nifti, setNifti] = useState<File | null>(null);
@@ -47,12 +56,41 @@ export function ImportDialog({ onClose, onImported }: Props) {
   }, [kind]);
 
   useEffect(() => {
-    dialogRef.current?.focus();
+    previousFocusRef.current = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+    const frame = window.requestAnimationFrame(() => dialogRef.current?.focus());
+    return () => {
+      window.cancelAnimationFrame(frame);
+      previousFocusRef.current?.focus();
+    };
   }, []);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !busy) closeDialog();
+      if (event.key === "Escape" && !busy) {
+        event.preventDefault();
+        closeDialog();
+        return;
+      }
+      if (event.key !== "Tab" || !dialogRef.current) return;
+
+      const focusable = focusableElements(dialogRef.current);
+      if (focusable.length === 0) {
+        event.preventDefault();
+        dialogRef.current.focus();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement;
+      if (event.shiftKey && (active === first || active === dialogRef.current)) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault();
+        first.focus();
+      }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
@@ -155,7 +193,7 @@ export function ImportDialog({ onClose, onImported }: Props) {
                 </label>
               ))}
             </div>
-            {error ? <div className="alert alert-error">{error}</div> : null}
+            {error ? <div className="alert alert-error" role="alert">{error}</div> : null}
             <div className="modal-actions">
               <button type="button" className="button secondary" onClick={closeDialog} disabled={busy}>
                 Cancel
@@ -242,7 +280,7 @@ export function ImportDialog({ onClose, onImported }: Props) {
               </label>
             )}
 
-            {error ? <div className="alert alert-error">{error}</div> : null}
+            {error ? <div className="alert alert-error" role="alert">{error}</div> : null}
             <div className="modal-actions">
               <button type="button" className="button secondary" onClick={closeDialog} disabled={busy}>
                 Cancel

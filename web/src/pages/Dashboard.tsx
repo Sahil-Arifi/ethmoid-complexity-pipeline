@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { CaseSummary } from "../api/types";
+import { BrandMark } from "../components/BrandMark";
+import { FirstRunGuide } from "../components/FirstRunGuide";
+import { HelpTip } from "../components/HelpTip";
 import { ImportDialog } from "../components/ImportDialog";
 
 type Props = { onOpenCase: (caseId: string) => void };
@@ -19,6 +22,7 @@ export function Dashboard({ onOpenCase }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showImport, setShowImport] = useState(false);
+  const [guideOpen, setGuideOpen] = useState(false);
 
   const loadCases = useCallback(async () => {
     setLoading(true);
@@ -49,23 +53,41 @@ export function Dashboard({ onOpenCase }: Props) {
 
   return (
     <main className="dashboard">
+      <FirstRunGuide open={guideOpen} onOpenChange={setGuideOpen} version="2" />
       <header className="dashboard-header">
-        <div>
-          <span className="eyebrow">Local workspace</span>
-          <h1>Ethmoid annotation</h1>
-          <p>Import, review, and create provisional training annotations.</p>
+        <div className="dashboard-brand">
+          <BrandMark />
+          <div>
+            <span className="eyebrow">Ethmoid Atlas · Local workspace</span>
+            <h1>Map anatomy with confidence.</h1>
+            <p>Review CT volumes and build traceable, provisional ethmoid annotations.</p>
+          </div>
         </div>
-        <button className="button primary" type="button" onClick={() => setShowImport(true)}>
-          Import scan
-        </button>
+        <div className="dashboard-actions">
+          <button className="button tertiary help-button" type="button" onClick={() => setGuideOpen(true)}>
+            <span aria-hidden="true">?</span> Help
+          </button>
+          <button className="button primary" type="button" onClick={() => setShowImport(true)}>
+            <span aria-hidden="true">＋</span> Import scan
+          </button>
+        </div>
       </header>
 
+      <section className="workflow-strip" aria-label="Application workflow">
+        <div><span>01</span><strong>Import</strong><small>DICOM or NIfTI</small></div>
+        <i aria-hidden="true">→</i>
+        <div><span>02</span><strong>Annotate</strong><small>Four provisional regions</small></div>
+        <i aria-hidden="true">→</i>
+        <div><span>03</span><strong>Review</strong><small>QC, notes, and export</small></div>
+      </section>
+
       <div className="provisional-banner" role="note">
-        <strong>Provisional protocol.</strong> Annotations are not approved for model training.
+        <span className="provisional-icon" aria-hidden="true">◇</span>
+        <span><strong>Provisional protocol.</strong> Annotations are not approved for model training.</span>
       </div>
 
       {error ? (
-        <div className="alert alert-error">
+        <div className="alert alert-error" role="alert">
           <span>{error}</span>
           <button className="text-button" type="button" onClick={() => void loadCases()}>
             Try again
@@ -88,7 +110,10 @@ export function Dashboard({ onOpenCase }: Props) {
       {cases.length > 0 ? (
         <section aria-labelledby="case-list-title">
           <div className="section-heading">
-            <h2 id="case-list-title">Cases</h2>
+            <div className="section-title-with-help">
+              <h2 id="case-list-title">Cases</h2>
+              <HelpTip label="Explain validation status" content="VERIFIED means an approved QC report matches the scan. UNVERIFIED scans can be viewed but cannot be approved." />
+            </div>
             <span>{cases.length} total</span>
           </div>
           <div className="case-table-wrap">

@@ -15,6 +15,7 @@ vi.mock("../api/client", () => ({
 describe("Dashboard", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.localStorage.setItem("ethmoid:first-run-guide", "2");
     vi.mocked(api.listCases).mockResolvedValue({
       cases: [
         {

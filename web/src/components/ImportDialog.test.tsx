@@ -35,6 +35,26 @@ describe("ImportDialog", () => {
     expect(imported).toHaveBeenCalledWith("nifti-case");
   });
 
+  it("contains keyboard focus and restores the previous control when closed", async () => {
+    const user = userEvent.setup();
+    const previous = document.createElement("button");
+    previous.textContent = "Open import";
+    document.body.appendChild(previous);
+    previous.focus();
+    const rendered = render(<ImportDialog onClose={vi.fn()} onImported={vi.fn()} />);
+
+    const dialog = await screen.findByRole("dialog", { name: "Import scan" });
+    await waitFor(() => expect(dialog).toHaveFocus());
+    await user.tab({ shift: true });
+    expect(screen.getByRole("button", { name: "Import scan" })).toHaveFocus();
+    await user.tab();
+    expect(screen.getByRole("button", { name: "Close import dialog" })).toHaveFocus();
+
+    rendered.unmount();
+    expect(previous).toHaveFocus();
+    previous.remove();
+  });
+
   it("requires series selection when a DICOM folder contains multiple series", async () => {
     const user = userEvent.setup();
     vi.mocked(api.importDicom).mockResolvedValue({
