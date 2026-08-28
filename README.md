@@ -11,7 +11,7 @@ It does **not** yet contain a clinically approved annotation protocol, automated
 
 This README is the durable project handoff and must be updated after every meaningful project work session. Record completed work, important findings or decisions, current validation status, newly created outputs, unresolved questions, and the next action. Keep completed and pending work clearly separated so a future chat can resume without reconstructing prior context.
 
-## Current project status (2026-08-20)
+## Current project status (2026-08-28)
 
 ### Validated conversion pilot
 
@@ -65,9 +65,23 @@ Application labels are explicitly `PROVISIONAL_NOT_FOR_TRAINING`:
 
 These names are a temporary protocol configuration, not a clinical decision. The application deliberately displays no model prediction or complexity score.
 
+### Stakeholder feedback and Protocol v2 draft
+
+The study-team response now gives a clearer intended end point: local, single-scan DICOM processing; bilateral ethmoid-compartment review; individual air-cell identification and correction; side-specific counts and measurements; and comparison with manual counts at three coronal landmark locations.
+
+The supplied annotation reference contains nine completed examples with right/left point counts at middle-turbinate, anterior-ethmoid, and posterior-ethmoid planes, plus one incomplete/template page. These screenshots are useful workflow references, but they are not full-volume contours or individual-cell training masks.
+
+Three aligned Protocol v2 artifacts have been drafted:
+
+- [Ethmoid Air-Cell Annotation Protocol v2](docs/ANNOTATION_PROTOCOL_V2_DRAFT.md), which separates confirmed requirements, provisional implementation choices, and blocking clinical decisions;
+- [Protocol v2 Clinical Review Form](docs/PROTOCOL_V2_CLINICAL_REVIEW.md), which requests only the remaining definitions, roles, thresholds, and approvals; and
+- [`protocol.v2.draft.json`](src/ethmoid_pipeline/webapp/protocol.v2.draft.json), an inactive machine-readable representation of the proposed two-mask, instance-registry, and landmark-point contract.
+
+The v2 draft is `DRAFT_FOR_CLINICAL_REVIEW` and `NOT_FOR_TRAINING`. It is not packaged, loaded, or returned by the application. Protocol v1 and all current app behavior remain unchanged.
+
 ### Validation evidence
 
-- Python suite: **48 passed**; one third-party Starlette TestClient deprecation warning.
+- Python suite: **50 passed**; one third-party Starlette TestClient deprecation warning. The suite now verifies Protocol v2 artifact alignment, inactive/not-for-training status, the narrow repository-guard exception, package-data isolation, and continued Protocol v1 runtime selection.
 - Frontend suite: **27 passed** across seven test files, including first-use guidance, hoverable contextual help, modal focus containment, brightness/contrast synchronization and safe restore bounds, pending-change navigation, and approved-case read-only behavior.
 - Automated Microsoft Edge/WebGL workflow: **1 passed**. It completes the first-run guide, imports a synthetic directional NIfTI, verifies orientation-aware 2D and 3D rendering, proves that slider changes alter the rendered image, reloads and restores exact non-default brightness and contrast, draws and autosaves a mask, reloads the annotation and viewer mode, proves browser-Back review persistence, completes QC, finalizes for review, and downloads the ZIP export.
 - Production TypeScript/Vite build: **PASS**.
@@ -102,31 +116,27 @@ The axial cine is not a 3D rendering. It is a slideshow through the 224 two-dime
 - Stopped normal CT and annotation loading from being advertised as file downloads while preserving attachment behavior for explicit ZIP exports.
 - Generated patient-derived visual review material outside Git.
 - Prepared a reviewer package asking for conversion approval and application requirements.
+- Reviewed the returned application requirements and landmark-count examples without treating screenshot points as 3D training ground truth.
+- Drafted Protocol v2, its focused clinical review form, and an inactive machine-readable configuration for bilateral compartments, individual-cell instances, and physical landmark observations.
 - Reviewed the published SinusSegment approach. Its released model predicts one combined sinonasal foreground rather than separate anterior/posterior or left/right ethmoid structures, and the publication does not report ethmoid-only performance. It has therefore not been adopted as the project solution.
 
 ## Not completed
 
 - Manual 3D Slicer comparison.
 - Clinical confirmation of ethmoid-region coverage and suitability.
-- Final annotation protocol or definition of complexity.
+- Clinical approval of Protocol v2, its anatomical rules, reviewer roles, and predeclared pilot thresholds.
+- A clinically defined and validated complexity score; Protocol v2 deliberately omits one.
 - Expert ground-truth annotations or an annotation-consistency pilot.
+- Runtime support for Protocol v2 multi-layer `uint16` individual-cell annotation; the current app remains a single `uint8` four-region editor.
 - Automated ethmoid segmentation, model training, inference, or complexity scoring.
 - Bulk conversion of the remaining studies.
 - Remote hosting, authentication, multi-user assignment, or collaboration features.
 
 ## Next milestone
 
-Collect reviewer answers and turn them into a versioned annotation and application specification. It must define:
+Send the focused Protocol v2 review form to the clinical team and obtain explicit answers for every blocking decision, including cell identity, compartment boundaries, difficult-case rules, landmark-plane selection, review roles, pilot thresholds, conversion approval, and acceptance of the local application workflow.
 
-- the exact anatomical structures and boundaries to label;
-- whether labels are separated by left/right and anterior/posterior regions;
-- the clinical or quantitative definition of complexity;
-- required measurements, scores, overlays, reports, and exports;
-- the complete user workflow from opening the application through reviewing and saving results;
-- who creates annotations and who resolves disagreements; and
-- what constitutes an acceptable pilot result.
-
-After that specification and the conversion review are approved, run a small expert annotation-protocol pilot in this app. Adjudicate disagreements before annotating the remaining suitable scans. Model training comes only after approved ground truth exists.
+After the clinical approver signs a frozen `APPROVED_FOR_PILOT` protocol, implement the approved instance-annotation workflow and run a blinded 2–3-scan, two-reviewer consistency pilot. Preserve both independent annotations and adjudicate disagreements before labeling the remaining 10–20-scan feasibility set. Model training comes only after the protocol reaches `APPROVED_FOR_TRAINING` and approved ground truth exists.
 
 ## Start the application
 
