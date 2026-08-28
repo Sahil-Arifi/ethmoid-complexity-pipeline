@@ -79,6 +79,8 @@ Three aligned Protocol v2 artifacts have been drafted:
 
 The v2 draft is `DRAFT_FOR_CLINICAL_REVIEW` and `NOT_FOR_TRAINING`. It is not packaged, loaded, or returned by the application. Protocol v1 and all current app behavior remain unchanged.
 
+An editable Google Docs copy of the focused clinical review form has been created in the project owner's Drive under the `ChatGPT` folder. The private Drive link is not stored in Git; the tracked Markdown review form remains the source used when incorporating approved answers into the next frozen protocol revision.
+
 ### Validation evidence
 
 - Python suite: **50 passed**; one third-party Starlette TestClient deprecation warning. The suite now verifies Protocol v2 artifact alignment, inactive/not-for-training status, the narrow repository-guard exception, package-data isolation, and continued Protocol v1 runtime selection.
@@ -118,6 +120,7 @@ The axial cine is not a 3D rendering. It is a slideshow through the 224 two-dime
 - Prepared a reviewer package asking for conversion approval and application requirements.
 - Reviewed the returned application requirements and landmark-count examples without treating screenshot points as 3D training ground truth.
 - Drafted Protocol v2, its focused clinical review form, and an inactive machine-readable configuration for bilateral compartments, individual-cell instances, and physical landmark observations.
+- Created and verified an editable Google Docs version of the clinical review form for stakeholder completion.
 - Reviewed the published SinusSegment approach. Its released model predicts one combined sinonasal foreground rather than separate anterior/posterior or left/right ethmoid structures, and the publication does not report ethmoid-only performance. It has therefore not been adopted as the project solution.
 
 ## Not completed
@@ -134,7 +137,7 @@ The axial cine is not a 3D rendering. It is a slideshow through the 224 two-dime
 
 ## Next milestone
 
-Send the focused Protocol v2 review form to the clinical team and obtain explicit answers for every blocking decision, including cell identity, compartment boundaries, difficult-case rules, landmark-plane selection, review roles, pilot thresholds, conversion approval, and acceptance of the local application workflow.
+Share the editable Protocol v2 Google Doc with the clinical team and obtain explicit answers for every blocking decision, including cell identity, compartment boundaries, difficult-case rules, landmark-plane selection, review roles, pilot thresholds, conversion approval, and acceptance of the local application workflow.
 
 After the clinical approver signs a frozen `APPROVED_FOR_PILOT` protocol, implement the approved instance-annotation workflow and run a blinded 2–3-scan, two-reviewer consistency pilot. Preserve both independent annotations and adjudicate disagreements before labeling the remaining 10–20-scan feasibility set. Model training comes only after the protocol reaches `APPROVED_FOR_TRAINING` and approved ground truth exists.
 
