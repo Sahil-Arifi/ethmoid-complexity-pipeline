@@ -1,0 +1,423 @@
+{
+  "schema_version": 2,
+  "protocol_version": "ethmoid-air-cell-v2-draft.1",
+  "document_revision": 1,
+  "title": "Ethmoid Air-Cell Annotation Protocol v2",
+  "lifecycle": {
+    "status": "DRAFT_FOR_CLINICAL_REVIEW",
+    "runtime_enabled": false,
+    "training_eligibility": "NOT_FOR_TRAINING",
+    "current_runtime_protocol": "ethmoid-provisional-v1",
+    "runtime_implementation_status": "NOT_IMPLEMENTED",
+    "supersedes_protocol_version": null,
+    "clinical_signoff_status": "PENDING",
+    "consistency_pilot_status": "NOT_RUN",
+    "activation_policy": "CREATE_SEPARATE_SIGNED_APPROVED_CONFIG"
+  },
+  "intended_use": "Research annotation-protocol development and feasibility testing",
+  "processing": {
+    "primary_source_format": "DICOM",
+    "internal_volume_format": "NIFTI",
+    "execution_environment": "LOCAL",
+    "case_mode": "SINGLE_SCAN"
+  },
+  "coordinate_system": "NIFTI_RAS_MM",
+  "terminology_mapping": {
+    "human_provisional": "machine_PROPOSED",
+    "human_blocking": "machine_UNRESOLVED"
+  },
+  "display_defaults": {
+    "window_center_hu": 300,
+    "window_width_hu": 3000,
+    "adjustable": true,
+    "display_changes_voxel_values": false
+  },
+  "measurement_definitions": {
+    "unique_3d_cell_count": {
+      "definition": "Count each qualifying registered 3D cell instance exactly once, grouped by laterality.",
+      "sum_landmark_counts": false,
+      "status": "PROPOSED"
+    },
+    "landmark_2d_cell_count": {
+      "definition": "Count stored points grouped by landmark station and laterality.",
+      "authoritative_source": "POINTS",
+      "status": "PROPOSED"
+    },
+    "compartment_volume_mm3": {
+      "definition": "Count compartment voxels by laterality and multiply by source voxel volume.",
+      "status": "PROPOSED"
+    },
+    "per_cell_volume_mm3": {
+      "definition": "Count voxels for one cell instance and multiply by source voxel volume.",
+      "status": "PROPOSED"
+    }
+  },
+  "annotation_products": {
+    "bilateral_compartment_mask": {
+      "status": "PROPOSED",
+      "format": "NIFTI",
+      "dtype": "uint8",
+      "background_value": 0,
+      "labels": [
+        {
+          "value": 1,
+          "name": "Left ethmoid compartment",
+          "laterality": "left"
+        },
+        {
+          "value": 2,
+          "name": "Right ethmoid compartment",
+          "laterality": "right"
+        }
+      ],
+      "requires_source_shape": true,
+      "requires_source_affine": true
+    },
+    "individual_cell_instance_mask": {
+      "status": "PROPOSED",
+      "format": "NIFTI",
+      "dtype": "uint16",
+      "background_value": 0,
+      "minimum_instance_id": 1,
+      "maximum_instance_id": 65535,
+      "instance_id_scope": "CASE_REVISION_LINEAGE",
+      "numeric_ids_encode_anatomy": false,
+      "requires_source_shape": true,
+      "requires_source_affine": true
+    },
+    "instance_registry": {
+      "status": "PROPOSED",
+      "format": "JSON_AND_CSV",
+      "required_fields": {
+        "instance_id": "uint16_positive",
+        "laterality": [
+          "left",
+          "right"
+        ],
+        "anterior_posterior": [
+          "anterior",
+          "posterior",
+          "unassigned"
+        ],
+        "review_status": [
+          "draft",
+          "reviewed",
+          "adjudicated"
+        ],
+        "uncertain": "boolean",
+        "uncertainty_reason": "nullable_string",
+        "notes": "string",
+        "reviewer_id": "neutral_string",
+        "revision": "positive_integer"
+      },
+      "anterior_posterior_classification_enabled": false
+    },
+    "landmark_observations": {
+      "status": "PROPOSED",
+      "format": "JSON_AND_CSV",
+      "stations": [
+        {
+          "id": "middle_turbinate",
+          "display_name": "Middle turbinate",
+          "selection_rule_status": "UNRESOLVED"
+        },
+        {
+          "id": "anterior_ethmoid",
+          "display_name": "Anterior ethmoid",
+          "selection_rule_status": "UNRESOLVED"
+        },
+        {
+          "id": "posterior_ethmoid",
+          "display_name": "Posterior ethmoid",
+          "selection_rule_status": "UNRESOLVED"
+        }
+      ],
+      "observation_fields": {
+        "observation_id": "neutral_string",
+        "station_id": "station_id",
+        "plane_origin_ras_mm": "finite_number_triplet",
+        "plane_normal_ras_unit": "finite_unit_vector_triplet",
+        "points": "landmark_point_array",
+        "source_volume_sha256": "lowercase_sha256",
+        "protocol_version": "string",
+        "protocol_sha256": "lowercase_sha256",
+        "reviewer_id": "neutral_string",
+        "revision": "positive_integer",
+        "created_at_utc": "iso8601_utc"
+      },
+      "point_fields": {
+        "point_id": "neutral_string",
+        "ras_mm": "finite_number_triplet",
+        "laterality": [
+          "left",
+          "right"
+        ],
+        "linked_instance_id": "nullable_uint16_positive",
+        "uncertain": "boolean",
+        "notes": "string"
+      },
+      "counts_are_derived_from_points": true,
+      "sum_across_stations_for_unique_count": false
+    }
+  },
+  "required_revision_metadata": {
+    "neutral_case_id": "neutral_string",
+    "source_volume_sha256": "lowercase_sha256",
+    "protocol_version": "string",
+    "protocol_sha256": "lowercase_sha256",
+    "annotator_id": "neutral_string",
+    "annotator_role": "string",
+    "reviewer_id": "nullable_neutral_string",
+    "adjudicator_id": "nullable_neutral_string",
+    "revision": "positive_integer",
+    "parent_revision": "nullable_positive_integer",
+    "created_at_utc": "iso8601_utc",
+    "approval_status": [
+      "draft",
+      "submitted",
+      "needs_changes",
+      "adjudicated",
+      "locked"
+    ]
+  },
+  "validation_rules": [
+    {
+      "id": "source_shape_matches",
+      "severity": "ERROR"
+    },
+    {
+      "id": "source_affine_matches",
+      "severity": "ERROR"
+    },
+    {
+      "id": "compartment_dtype_and_values",
+      "severity": "ERROR"
+    },
+    {
+      "id": "instance_dtype_and_range",
+      "severity": "ERROR"
+    },
+    {
+      "id": "instance_registry_bijection",
+      "severity": "ERROR"
+    },
+    {
+      "id": "instance_inside_one_compartment",
+      "severity": "ERROR"
+    },
+    {
+      "id": "instance_laterality_matches_compartment",
+      "severity": "ERROR"
+    },
+    {
+      "id": "disconnected_instance_review_flag",
+      "severity": "REVIEW"
+    },
+    {
+      "id": "finite_ras_coordinates",
+      "severity": "ERROR"
+    },
+    {
+      "id": "plane_intersects_volume",
+      "severity": "ERROR"
+    },
+    {
+      "id": "point_inside_volume",
+      "severity": "ERROR"
+    },
+    {
+      "id": "point_on_recorded_plane",
+      "severity": "ERROR"
+    },
+    {
+      "id": "counts_derived_from_points",
+      "severity": "ERROR"
+    },
+    {
+      "id": "protocol_binding",
+      "severity": "ERROR"
+    },
+    {
+      "id": "immutable_revision",
+      "severity": "ERROR"
+    }
+  ],
+  "unresolved_clinical_decisions": [
+    {
+      "id": "B01",
+      "topic": "Definition of one individual cell",
+      "status": "UNRESOLVED",
+      "approved_rule": null,
+      "approver_id": null,
+      "decided_at_utc": null
+    },
+    {
+      "id": "B02",
+      "topic": "Aerated lumen versus full anatomical cavity including opacified contents",
+      "status": "UNRESOLVED",
+      "approved_rule": null,
+      "approver_id": null,
+      "decided_at_utc": null
+    },
+    {
+      "id": "B03",
+      "topic": "Communicating cells, ostia, incomplete septa, and uncertain boundaries",
+      "status": "UNRESOLVED",
+      "approved_rule": null,
+      "approver_id": null,
+      "decided_at_utc": null
+    },
+    {
+      "id": "B04",
+      "topic": "Superior, inferior, medial, lateral, anterior, and posterior compartment boundaries",
+      "status": "UNRESOLVED",
+      "approved_rule": null,
+      "approver_id": null,
+      "decided_at_utc": null
+    },
+    {
+      "id": "B05",
+      "topic": "Bone as boundary only versus a separate label",
+      "status": "UNRESOLVED",
+      "approved_rule": null,
+      "approver_id": null,
+      "decided_at_utc": null
+    },
+    {
+      "id": "B06",
+      "topic": "Anterior/posterior requirement, divider, and crossing-cell rule",
+      "status": "UNRESOLVED",
+      "approved_rule": null,
+      "approver_id": null,
+      "decided_at_utc": null
+    },
+    {
+      "id": "B07",
+      "topic": "Named anatomical variant inclusion and classification",
+      "status": "UNRESOLVED",
+      "approved_rule": null,
+      "approver_id": null,
+      "decided_at_utc": null
+    },
+    {
+      "id": "B08",
+      "topic": "Laterality for cells at or crossing the midline",
+      "status": "UNRESOLVED",
+      "approved_rule": null,
+      "approver_id": null,
+      "decided_at_utc": null
+    },
+    {
+      "id": "B09",
+      "topic": "Disease, surgery, age, artifact, coverage, reconstruction eligibility, and uncertainty escalation",
+      "status": "UNRESOLVED",
+      "approved_rule": null,
+      "approver_id": null,
+      "decided_at_utc": null
+    },
+    {
+      "id": "B10",
+      "topic": "Reproducible selection of the three landmark planes",
+      "status": "UNRESOLVED",
+      "approved_rule": null,
+      "approver_id": null,
+      "decided_at_utc": null
+    },
+    {
+      "id": "B11",
+      "topic": "Meaning of each red point and partially visible-cell rule",
+      "status": "UNRESOLVED",
+      "approved_rule": null,
+      "approver_id": null,
+      "decided_at_utc": null
+    },
+    {
+      "id": "B12",
+      "topic": "Neutral source and physical-plane mapping plus incomplete tenth page",
+      "status": "UNRESOLVED",
+      "approved_rule": null,
+      "approver_id": null,
+      "decided_at_utc": null
+    },
+    {
+      "id": "B13",
+      "topic": "Named annotation, review, adjudication, and approval roles",
+      "status": "UNRESOLVED",
+      "approved_rule": null,
+      "approver_id": null,
+      "decided_at_utc": null
+    },
+    {
+      "id": "B14",
+      "topic": "Required measurements, complexity-score decision, pilot metrics, and pass thresholds",
+      "status": "UNRESOLVED",
+      "approved_rule": null,
+      "approver_id": null,
+      "decided_at_utc": null
+    },
+    {
+      "id": "B15",
+      "topic": "Conversion approval and local browser acceptance",
+      "status": "UNRESOLVED",
+      "approved_rule": null,
+      "approver_id": null,
+      "decided_at_utc": null
+    }
+  ],
+  "decision_gate": {
+    "blocking_for": [
+      "APPROVED_FOR_PILOT",
+      "APPROVED_FOR_TRAINING"
+    ],
+    "requires_all_decisions_resolved": true,
+    "parent_resolution_requires_all_review_form_fields": true,
+    "engineers_may_supply_clinical_defaults": false
+  },
+  "approval_round_trip": [
+    "COMPLETE_CLINICAL_REVIEW_FORM",
+    "INCORPORATE_EXACT_ANSWERS_INTO_NEW_DRAFT_REVISION",
+    "VALIDATE_AND_FREEZE_HUMAN_AND_MACHINE_PROTOCOL_FILES",
+    "COMPUTE_EXTERNAL_SHA256_FOR_BOTH_FILES",
+    "RETURN_EXACT_FILES_AND_HASHES_TO_NAMED_REVIEWERS",
+    "RECORD_ALL_ROLE_ACKNOWLEDGEMENTS_AND_FINAL_CLINICAL_APPROVAL"
+  ],
+  "approval_states": [
+    {
+      "status": "DRAFT_FOR_CLINICAL_REVIEW",
+      "runtime_enabled": false,
+      "training_eligibility": "NOT_FOR_TRAINING"
+    },
+    {
+      "status": "APPROVED_FOR_PILOT",
+      "runtime_enabled": false,
+      "training_eligibility": "NOT_FOR_TRAINING",
+      "requirements": [
+        "ALL_BLOCKING_DECISIONS_RESOLVED",
+        "ROLES_NAMED",
+        "PILOT_THRESHOLDS_PREDECLARED",
+        "CLINICAL_SIGNOFF",
+        "FROZEN_PROTOCOL_HASH"
+      ]
+    },
+    {
+      "status": "APPROVED_FOR_TRAINING",
+      "runtime_enabled": false,
+      "training_eligibility": "APPROVED_FOR_TRAINING",
+      "requirements": [
+        "CONSISTENCY_PILOT_PASSED",
+        "DISAGREEMENTS_ADJUDICATED",
+        "NO_HIGH_IMPACT_RULE_UNRESOLVED",
+        "TECHNICAL_INTEGRITY_CHECKS_PASSED",
+        "CLINICAL_SIGNOFF",
+        "FROZEN_PROTOCOL_HASH"
+      ]
+    }
+  ],
+  "excluded_outputs": [
+    "surface_area_to_volume_ratio",
+    "composite_complexity_score",
+    "diagnosis",
+    "treatment_recommendation",
+    "surgical_guidance"
+  ]
+}

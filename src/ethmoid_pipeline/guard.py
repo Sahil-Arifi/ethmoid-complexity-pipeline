@@ -22,6 +22,7 @@ EXACT_ALLOWED = {
     "pyproject.toml",
     "requirements.lock",
     "src/ethmoid_pipeline/webapp/protocol.v1.json",
+    "src/ethmoid_pipeline/webapp/protocol.v2.draft.json",
     "tools.lock.json",
     "web/.gitignore",
 }
