@@ -16,10 +16,10 @@ The implementation contract and phased plan are in [Full-volume counting prototy
 | Phase | Status | Delivered / next action |
 | --- | --- | --- |
 | 1. Contract and verification | Completed | Separate experimental protocol, requirement mapping, deterministic autosave regression, synthetic CI, complete-index medical-data guard |
-| 2. Runtime and cohort | In progress | Isolated GPU inference environment, downloaded model provenance, verified ten-study cohort |
+| 2. Runtime and cohort | Completed | Hash-locked offline GPU environment, four model manifests, ten verified volumes and immutable study split |
 | 3. Automatic counting | In progress in an isolated worktree | Paired anatomical localization and native-resolution cavity instances |
 | 4. Persistent run API | In progress in an isolated worktree | Jobs, original results, correction revisions and exports |
-| 5. Review interface | Pending | Numbered overlay, counts, corrections and presentation exports |
+| 5. Review interface | In progress in an isolated worktree | Numbered overlay, counts, corrections and presentation exports |
 | 6. Held-out evaluation | Pending | Frozen five-development/five-held-out study evaluation and handoff |
 
 Executed Phase 1 checks: Python **54 passed**; frontend **27 passed**; production TypeScript/Vite build **passed**; real Edge/WebGL synthetic workflow **1 passed**; npm audit **0 vulnerabilities**; full Git-index medical-data guard **passed**. The browser run emitted a Windows connection-reset message during shutdown but completed successfully. One existing third-party Starlette deprecation warning and the existing large imaging-library chunk warnings remain. The previous intermittent brightness/autosave test now waits for the viewer-ready microtask and explicitly advances the debounce timer without relaxing its persistence assertion. GitHub CI is new and is checked after publishing.
@@ -29,6 +29,10 @@ Current data readiness was refreshed read-only before implementation: 24 sharp r
 The first remote CI run exposed an ordering dependency: the HTTP test serves the built frontend, so it needs the production build before Python tests. The workflow now builds first, matching the successfully executed local sequence. No test assertion was removed.
 
 Phase 2 conversion finding: two decimal-spacing series exposed a small dcm2niix sform precision drift. The converter now reconciles only bounded form disagreement against validated DICOM geometry when one original form already passes the existing voxel-grid tolerance. It preserves encoded voxel bytes and HU scaling and then runs the unchanged full-volume verification. Nine focused conversion tests passed, including axis flips and oblique geometry. Separate local copies of both affected real outputs verified with zero HU error and unchanged voxel payloads; official cohort conversions retain committed provenance.
+
+Phase 2 runtime and cohort are complete; see [Runtime setup and findings](docs/INFERENCE_RUNTIME.md). The isolated Python 3.12.14 environment has 122 consistent packages and four prefetched model sets (28 hashed files). CUDA matrix and 3D-convolution smoke checks matched CPU results; external Python DNS is blocked and TotalSegmentator telemetry is disabled. Both localizers ran on the pilot and produced 26 binary masks matching its native geometry. These models supply landmarks, not ethmoid-cell labels.
+
+The protected frozen cohort contains five development and five held-out studies. All ten full-volume HU comparisons passed with maximum error **0.0**, and a repeat preparation run reused every verified image without changing the manifest. Acquisition eligibility does not establish clinical suitability. The phase worktree passed **60 Python tests** and its production build. Counts are still under development: initial real-scan runs exposed localization and candidate-rejection defects, so they are not accuracy evidence or presentable anatomical totals.
 
 ## Documentation rule
 

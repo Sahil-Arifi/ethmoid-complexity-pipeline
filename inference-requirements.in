@@ -1,0 +1,8 @@
+# Windows x64, CPython 3.12.14. Resolved with --torch-backend cu130.
+# This environment is independent of the Python 3.13 acquisition application.
+torch==2.14.0+cu130
+TotalSegmentator==2.18.0
+scipy
+scikit-image
+nibabel
+pytest
