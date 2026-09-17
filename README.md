@@ -33,7 +33,11 @@ The first preparation pass exposed rounded-position interval drift in all ten vo
 
 The frozen [all-series evaluation](docs/CATALOG_EVALUATION.md) completed all **43 regression attempts across the ten previously examined studies**: five candidate counts and 38 explicit abstentions, in 4,100.99 seconds of summed attempt time. There were no unexpected evaluation/runtime errors. All ten original cohort reconstructions retained their v1 status/count outcomes; independent mask/cache checks found no unexpected fixed-input regression. Some boundaries changed when unverified legacy localizer caches were replaced by verified outputs, while counts stayed unchanged. This is engineering repeatability, not anatomical accuracy.
 
-Pending: the same clean frozen commit `23b5478` is now evaluating **55 series from the remaining sixteen studies** (14 contain prepared volumes). Every completion and abstention stays outside application histories with source, code, protocol, model provenance and native-output checks. The 132 unavailable series remain in total coverage accounting. Independent expert 3D counts are still required to measure clinical accuracy; agreement between reconstructions is not ground truth.
+The same frozen method completed all **55 acceptance attempts from the remaining sixteen studies** (14 contain prepared volumes): **seven candidate counts and 48 anatomical abstentions**, without unexpected runtime or integrity errors. Combined evaluation covered **98/98 ready series**: **12 completed counts across 11 studies and 86 withheld counts**. All 132 unavailable series remain accounted for, so total catalog coverage is **230/230**. One completed attempt used 1.25 mm thickness; 2 and 2.5 mm attempts reached inference or an explicit resource limit but produced no completed count. Supporting an input does not establish that missing thin walls were recovered.
+
+The final audit verified unique complete split coverage, unchanged prepared-volume/result/artifact/log hashes, frozen code/protocol/acquisition bindings and null counts on every failure. Independent audits covered all seven successful acceptance outputs, including exact native-HU air classification and physical measurements. All **236 candidate instances across reconstructions carried uncertainty flags**; these are not a cohort ground-truth total. The [evaluation report](docs/CATALOG_EVALUATION.md) records completion rates, all abstention reasons and runtime by thickness. Summed attempt time was **11,006.571 seconds** on this host, including fast abstentions and cache reuse. Independent expert 3D counts are still required to measure clinical accuracy.
+
+All evaluation outputs remain protected locally and separate from application histories. Failed coverage checks retain rejected diagnostic proposals locally, with no public result links; all 16 artifact/export requests against the app's four failed runs returned 409. Final preservation checks retained the original source/content, imports, 28 annotation revisions and four original count runs. Live app activity added a separate requested run and advanced one original case's update timestamp; neither was overwritten or removed.
 
 ## Original v1 implementation and evidence
 
@@ -226,7 +230,7 @@ The axial cine is not a 3D rendering. It is a slideshow through the 224 two-dime
 
 ## Next milestone
 
-Complete the frozen all-series v2 evaluation and publish its aggregate completion, abstention and runtime findings. Clinical reference review remains separate: reference counts will evaluate untouched automatic predictions when available, while model-assisted corrections remain separate from independent ground truth. The older inactive Protocol v2 documents retain their historical approval states. Training a bespoke supervised clinical model is outside this prototype's scope.
+The catalog, preparation, broader counting, interface and frozen all-series evaluation phases are complete. The next milestone is independent clinical reference review: reference counts will evaluate untouched automatic predictions when available, while model-assisted corrections remain separate from independent ground truth. The older inactive Protocol v2 documents retain their historical approval states. Training a bespoke supervised clinical model is outside this prototype's scope.
 
 ## Start the application
 
