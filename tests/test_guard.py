@@ -122,3 +122,13 @@ def test_guard_allows_web_source_but_rejects_web_image_content(tmp_path: Path) -
     (web / "hidden.ts").write_bytes(b"\x89PNG\r\n\x1a\nsynthetic-only")
     _git(repo, "add", "web/src/hidden.ts")
     assert any("image content" in failure for failure in scan_staged(repo))
+
+
+def test_all_tracked_mode_checks_previously_committed_blobs(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    path = repo / "src" / "hidden.py"
+    path.write_bytes(_dicom_blob())
+    _git(repo, "add", "src/hidden.py")
+    _git(repo, "-c", "user.name=Synthetic", "-c", "user.email=test@example.invalid", "commit", "-m", "Synthetic unsafe fixture")
+    assert scan_staged(repo) == []
+    assert any("DICOM" in failure for failure in scan_staged(repo, all_tracked=True))

@@ -1,0 +1,39 @@
+name: Verify synthetic workflow
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.14.1'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install locked application dependencies
+        shell: pwsh
+        run: |
+          python -m venv .venv
+          ./.venv/Scripts/python.exe -m pip install --require-hashes -r requirements.lock
+          ./.venv/Scripts/python.exe -m pip install --no-build-isolation --no-deps -e .
+          npm --prefix web ci
+      - name: Python synthetic tests
+        run: ./.venv/Scripts/python.exe -m pytest -p no:cacheprovider -q -m 'not integration'
+      - name: Frontend tests
+        run: npm --prefix web test
+      - name: Production build
+        run: npm --prefix web run build
+      - name: Synthetic browser workflow
+        run: npm --prefix web run test:e2e
+      - name: Dependency audit
+        run: npm --prefix web audit --audit-level=moderate
+      - name: Inspect tracked blobs with the medical-data guard
+        run: ./.venv/Scripts/python.exe scripts/check_staged.py --all-tracked

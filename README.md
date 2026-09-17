@@ -5,13 +5,32 @@ This repository contains the engineering foundation for the UCSD ethmoid-complex
 - a fail-closed DICOM-to-NIfTI conversion pipeline with geometry and HU verification; and
 - a function-first local web application for scan review and provisional manual annotation.
 
-It does **not** yet contain a clinically approved annotation protocol, automated ethmoid segmentation, a complexity score, or a trained clinical model.
+The current development milestone is a fully automatic, experimental 3D cell-counting prototype. Clinical accuracy is not established, and no composite complexity score is defined.
+
+## 3D counting implementation status
+
+The latest clinician email and answered questionnaire request a count of unique cells throughout the full CT volume. They supersede the older selected-landmark and anterior/posterior counting proposal. Preliminary inference is authorized before manual 3D reference counts are available. Review and correction follow the first automatic result; no patient-specific ROI, seeds, or parameter tuning precede it.
+
+The implementation contract and phased plan are in [Full-volume counting prototype](docs/COUNTING_PROTOTYPE.md). Patient images and derived outputs remain local; the private repository receives only engineering artifacts and synthetic tests.
+
+| Phase | Status | Delivered / next action |
+| --- | --- | --- |
+| 1. Contract and verification | Completed | Separate experimental protocol, requirement mapping, deterministic autosave regression, synthetic CI, complete-index medical-data guard |
+| 2. Runtime and cohort | In progress | Isolated GPU inference environment, downloaded model provenance, verified ten-study cohort |
+| 3. Automatic counting | In progress in an isolated worktree | Paired anatomical localization and native-resolution cavity instances |
+| 4. Persistent run API | In progress in an isolated worktree | Jobs, original results, correction revisions and exports |
+| 5. Review interface | Pending | Numbered overlay, counts, corrections and presentation exports |
+| 6. Held-out evaluation | Pending | Frozen five-development/five-held-out study evaluation and handoff |
+
+Executed Phase 1 checks: Python **54 passed**; frontend **27 passed**; production TypeScript/Vite build **passed**; real Edge/WebGL synthetic workflow **1 passed**; npm audit **0 vulnerabilities**; full Git-index medical-data guard **passed**. The browser run emitted a Windows connection-reset message during shutdown but completed successfully. One existing third-party Starlette deprecation warning and the existing large imaging-library chunk warnings remain. The previous intermittent brightness/autosave test now waits for the viewer-ready microtask and explicitly advances the debounce timer without relaxing its persistence assertion. GitHub CI is new and is checked after publishing.
+
+Current data readiness was refreshed read-only before implementation: 24 sharp reconstruction candidates passed engineering preflight; the pilot's full-volume source-to-NIfTI comparison again produced zero HU error. These are engineering findings, not clinical suitability or counting-accuracy results. The questionnaire gives positive feedback on the submitted conversion comparison; historic QC files remain immutable and are not silently upgraded to approve other scans.
 
 ## Documentation rule
 
 This README is the durable project handoff and must be updated after every meaningful project work session. Record completed work, important findings or decisions, current validation status, newly created outputs, unresolved questions, and the next action. Keep completed and pending work clearly separated so a future chat can resume without reconstructing prior context.
 
-## Current project status (2026-08-28)
+## Existing application and conversion baseline (2026-08-28)
 
 ### Validated conversion pilot
 
@@ -137,9 +156,7 @@ The axial cine is not a 3D rendering. It is a slideshow through the 224 two-dime
 
 ## Next milestone
 
-Share the editable Protocol v2 Google Doc with the clinical team and obtain explicit answers for every blocking decision, including cell identity, compartment boundaries, difficult-case rules, landmark-plane selection, review roles, pilot thresholds, conversion approval, and acceptance of the local application workflow.
-
-After the clinical approver signs a frozen `APPROVED_FOR_PILOT` protocol, implement the approved instance-annotation workflow and run a blinded 2–3-scan, two-reviewer consistency pilot. Preserve both independent annotations and adjudicate disagreements before labeling the remaining 10–20-scan feasibility set. Model training comes only after the protocol reaches `APPROVED_FOR_TRAINING` and approved ground truth exists.
+Complete the six-phase automatic counting prototype described above. The older inactive Protocol v2 documents describe a stricter annotation/training workflow and do not block the newly authorized exploratory inference path. Their historical approvals are not fabricated or changed. Reference counts will be used to evaluate untouched automatic predictions when available; model-assisted corrections remain separate from independent ground truth. Training a bespoke supervised clinical model is not part of this first prototype.
 
 ## Start the application
 

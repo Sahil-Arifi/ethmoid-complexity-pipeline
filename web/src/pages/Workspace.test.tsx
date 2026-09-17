@@ -171,17 +171,24 @@ describe("Workspace", () => {
     expect(screen.getByLabelText("Brightness exact value")).toHaveValue(300);
     expect(screen.getByLabelText("Contrast exact value")).toHaveValue(3000);
 
-    fireEvent.change(brightness, { target: { value: "-500" } });
-    fireEvent.change(contrast, { target: { value: "1200" } });
-    expect(screen.getByTestId("mock-window")).toHaveTextContent("-500/1200");
-    await waitFor(
-      () => expect(api.saveViewerState).toHaveBeenCalledWith(
+    // The viewer enables persistence after its ready microtask. Exercise the
+    // debounce explicitly instead of racing a wall-clock timeout under load.
+    await act(async () => { await Promise.resolve(); });
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      fireEvent.change(brightness, { target: { value: "-500" } });
+      fireEvent.change(contrast, { target: { value: "1200" } });
+      expect(screen.getByTestId("mock-window")).toHaveTextContent("-500/1200");
+      expect(api.saveViewerState).not.toHaveBeenCalled();
+      await act(async () => { await vi.advanceTimersByTimeAsync(751); });
+      expect(api.saveViewerState).toHaveBeenCalledWith(
         "case-1",
         expect.objectContaining({ window_center: -500, window_width: 1200 }),
         false,
-      ),
-      { timeout: 2000 },
-    );
+      );
+    } finally {
+      vi.useRealTimers();
+    }
 
     await user.click(screen.getByRole("button", { name: "Simulate windowing" }));
     expect(brightness).toHaveValue("120");

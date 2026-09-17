@@ -13,6 +13,7 @@ import pydicom
 
 MAX_TRACKED_BYTES = 5 * 1024 * 1024
 EXACT_ALLOWED = {
+    ".github/workflows/verify.yml",
     ".gitattributes",
     ".gitignore",
     ".hooks/pre-commit",
@@ -21,6 +22,9 @@ EXACT_ALLOWED = {
     "SECURITY.md",
     "pyproject.toml",
     "requirements.lock",
+    "inference-requirements.in",
+    "inference-requirements.lock",
+    "src/ethmoid_pipeline/counting/protocol.json",
     "src/ethmoid_pipeline/webapp/protocol.v1.json",
     "src/ethmoid_pipeline/webapp/protocol.v2.draft.json",
     "tools.lock.json",
@@ -170,11 +174,15 @@ def _blocked_text_content(blob: bytes) -> str | None:
     return None
 
 
-def scan_staged(repo: Path) -> list[str]:
+def scan_staged(repo: Path, *, all_tracked: bool = False) -> list[str]:
     repo = repo.resolve(strict=True)
     if _git(repo, "ls-files", "-u", "-z"):
         return ["the index contains unresolved conflict stages"]
-    raw_names = _git(repo, "diff", "--cached", "--name-only", "-z", "--diff-filter=ACMR")
+    raw_names = (
+        _git(repo, "ls-files", "-z")
+        if all_tracked
+        else _git(repo, "diff", "--cached", "--name-only", "-z", "--diff-filter=ACMR")
+    )
     paths = [item.decode("utf-8", errors="strict") for item in raw_names.split(b"\x00") if item]
     failures: list[str] = []
     for path in paths:
@@ -199,8 +207,13 @@ def scan_staged(repo: Path) -> list[str]:
 
 
 def main() -> int:
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Inspect Git index blobs for medical data.")
+    parser.add_argument("--all-tracked", action="store_true", help="Inspect the entire index, including committed files.")
+    args = parser.parse_args()
     try:
-        failures = scan_staged(Path.cwd())
+        failures = scan_staged(Path.cwd(), all_tracked=args.all_tracked)
     except Exception:
         print("PHI guard failed closed because the Git index could not be inspected.", file=sys.stderr)
         return 2
