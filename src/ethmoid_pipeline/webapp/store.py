@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Iterator
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 class Store:
@@ -95,12 +95,12 @@ class Store:
                 "SELECT value FROM metadata WHERE key = 'schema_version'"
             ).fetchone()
             previous_version = int(row["value"]) if row is not None else None
-            if previous_version not in {None, 1, SCHEMA_VERSION}:
+            if previous_version not in {None, 1, 2, SCHEMA_VERSION}:
                 raise RuntimeError("The web application database schema is unsupported.")
-            if previous_version == 1:
+            if previous_version in {1, 2}:
                 # SQLite's backup API includes committed WAL pages. Keep the backup
                 # beside the protected database, never in the source checkout.
-                backup_path = self.root / f"schema-v1-{uuid.uuid4().hex}.sqlite3"
+                backup_path = self.root / f"schema-v{previous_version}-{uuid.uuid4().hex}.sqlite3"
                 with sqlite3.connect(backup_path) as backup:
                     connection.backup(backup)
             connection.execute("BEGIN IMMEDIATE")
@@ -140,6 +140,39 @@ class Store:
                     PRIMARY KEY(run_id, revision)
                 )"""
             )
+            # Add a study/series catalog around legacy volume IDs. Existing case,
+            # annotation and count-run rows are never renamed or reconstructed.
+            connection.execute("""CREATE TABLE IF NOT EXISTS catalog_sources (
+                id TEXT PRIMARY KEY, root_path TEXT NOT NULL UNIQUE,
+                inventory_sha256 TEXT, status TEXT NOT NULL DEFAULT 'indexing',
+                error_code TEXT, updated_at TEXT NOT NULL)""")
+            connection.execute("""CREATE TABLE IF NOT EXISTS catalog_studies (
+                id TEXT PRIMARY KEY, source_id TEXT NOT NULL REFERENCES catalog_sources(id),
+                study_uid TEXT NOT NULL, study_label TEXT NOT NULL,
+                selected_series_id TEXT, recommended_series_id TEXT,
+                UNIQUE(source_id,study_uid), UNIQUE(source_id,study_label))""")
+            connection.execute("""CREATE TABLE IF NOT EXISTS catalog_series (
+                id TEXT PRIMARY KEY, study_id TEXT NOT NULL REFERENCES catalog_studies(id),
+                series_uid TEXT NOT NULL, series_label TEXT NOT NULL,
+                descriptor_json TEXT NOT NULL, files_json TEXT NOT NULL,
+                inventory_signature TEXT NOT NULL, source_fingerprint TEXT,
+                case_id TEXT REFERENCES cases(id) ON DELETE SET NULL,
+                preparation_status TEXT NOT NULL DEFAULT 'not_prepared',
+                reason_code TEXT, present INTEGER NOT NULL DEFAULT 1,
+                UNIQUE(study_id,series_uid), UNIQUE(study_id,series_label))""")
+            connection.execute("""CREATE TABLE IF NOT EXISTS catalog_case_links (
+                case_id TEXT PRIMARY KEY REFERENCES cases(id) ON DELETE CASCADE,
+                series_id TEXT NOT NULL REFERENCES catalog_series(id),
+                source_fingerprint TEXT NOT NULL, proof TEXT NOT NULL,
+                acquisition_json TEXT NOT NULL DEFAULT '{}')""")
+            connection.execute("""CREATE TABLE IF NOT EXISTS preparation_jobs (
+                id TEXT PRIMARY KEY, series_id TEXT NOT NULL REFERENCES catalog_series(id),
+                inventory_signature TEXT NOT NULL, status TEXT NOT NULL,
+                priority INTEGER NOT NULL DEFAULT 100, attempt INTEGER NOT NULL DEFAULT 0,
+                error_code TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+                UNIQUE(series_id,inventory_signature))""")
+            connection.execute("""CREATE UNIQUE INDEX IF NOT EXISTS idx_preparation_active
+                ON preparation_jobs(series_id) WHERE status IN ('queued','preparing')""")
             if row is None:
                 connection.execute(
                     "INSERT INTO metadata(key, value) VALUES('schema_version', ?)",

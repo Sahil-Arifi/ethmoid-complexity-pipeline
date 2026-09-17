@@ -320,6 +320,7 @@ class AppService:
         return {
             "case_id": row["id"],
             "case_label": row["case_label"],
+            "catalog": self.catalog_context(row["id"]),
             "source_type": row["source_type"],
             "state": row["state"],
             "validation_status": row["validation_status"],
@@ -350,12 +351,65 @@ class AppService:
             ).fetchall()
         return [self._row_to_case(row) for row in rows]
 
+    def catalog_context(self, case_id: str) -> dict[str, Any] | None:
+        """Trusted local acquisition context, with legacy volume IDs preserved."""
+        with self.store.connect() as connection:
+            row = connection.execute("""SELECT l.acquisition_json,l.source_fingerprint,
+                s.id AS series_id,s.series_label,s.case_id AS active_case_id,s.source_fingerprint AS current_fingerprint,
+                t.id AS study_id,t.study_label FROM catalog_case_links l
+                JOIN catalog_series s ON s.id=l.series_id JOIN catalog_studies t ON t.id=s.study_id
+                WHERE l.case_id=?""", (case_id,)).fetchone()
+        if row is None:
+            return None
+        context = decode_json(row["acquisition_json"], {})
+        if row["current_fingerprint"] != row["source_fingerprint"] or row["active_case_id"] != case_id:
+            context["warnings"] = [*context.get("warnings", []), "This retained volume belongs to an earlier source version."]
+        return {**context, **{key:row[key] for key in ("study_id", "study_label", "series_id", "series_label")}}
+
     def get_case(self, case_id: str) -> dict[str, Any]:
         with self.store.connect() as connection:
             row = connection.execute("SELECT * FROM cases WHERE id = ?", (case_id,)).fetchone()
         if row is None:
             raise WebAppError("Case not found.", status_code=404)
         return self._row_to_case(row)
+
+    def assert_catalog_countable(self, case_id: str) -> None:
+        """Gate new work without restricting retained result/history access."""
+        from .catalog import fingerprint_hashes
+
+        with self.store.connect() as connection:
+            self._get_case_row(connection, case_id)
+            row = connection.execute("""SELECT l.source_fingerprint AS linked_fingerprint,
+                s.*,src.root_path FROM catalog_case_links l
+                JOIN catalog_series s ON s.id=l.series_id
+                JOIN catalog_studies t ON t.id=s.study_id
+                JOIN catalog_sources src ON src.id=t.source_id WHERE l.case_id=?""", (case_id,)).fetchone()
+        if row is None:
+            return
+        if row["case_id"] != case_id or row["preparation_status"] != "ready" or not row["present"] or row["linked_fingerprint"] != row["source_fingerprint"]:
+            raise WebAppError("This retained volume is not the current prepared series. Prepare the current series before starting another count.", status_code=409)
+        reason = None
+        try:
+            root = Path(row["root_path"]).resolve(strict=True)
+            names = decode_json(row["files_json"], [])
+            paths = [(root / value).resolve(strict=True) for value in names]
+            if not paths or len(set(paths)) != len(paths) or any(not path.is_relative_to(root) or not path.is_file() for path in paths):
+                raise ValueError("Invalid source collection")
+            if fingerprint_hashes(sha256_file(path) for path in paths) != row["linked_fingerprint"]:
+                reason = "SOURCE_CHANGED"
+        except (OSError, ValueError, TypeError):
+            reason = "SOURCE_UNAVAILABLE"
+        if reason:
+            self._invalidate_catalog_case(case_id, reason)
+            raise WebAppError("The source files changed or are unavailable. Prepare this series again before starting another count; previous results remain available.", status_code=409)
+        self.volume_path(case_id)
+
+    def _invalidate_catalog_case(self, case_id: str, reason: str) -> None:
+        with self.store.connect() as connection:
+            changed = connection.execute("UPDATE catalog_series SET case_id=NULL,preparation_status='unavailable',reason_code=? WHERE case_id=?", (reason, case_id)).rowcount
+        if changed:
+            from .catalog import CatalogService
+            CatalogService(self).refresh_recommendations()
 
     def _get_case_row(self, connection: Any, case_id: str) -> Any:
         row = connection.execute("SELECT * FROM cases WHERE id = ?", (case_id,)).fetchone()
@@ -367,8 +421,13 @@ class AppService:
         with self.store.connect() as connection:
             row = self._get_case_row(connection, case_id)
         path = self._path(row["volume_relpath"])
-        if not path.is_file():
-            raise WebAppError("The case volume is unavailable.", status_code=409)
+        try:
+            intact = path.is_file() and sha256_file(path) == row["source_sha256"]
+        except OSError:
+            intact = False
+        if not intact:
+            self._invalidate_catalog_case(case_id, "CONVERSION_FAILED")
+            raise WebAppError("The case volume changed or is unavailable and must be prepared again.", status_code=409)
         return path
 
     def update_viewer_state(

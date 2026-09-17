@@ -70,6 +70,7 @@ export function App() {
           key={route.caseId}
           caseId={route.caseId}
           onBack={() => navigate({ page: "dashboard" })}
+          onOpenCase={(caseId) => navigate({ page: "workspace", caseId })}
           registerNavigationGuard={registerNavigationGuard}
         />
       </Suspense>

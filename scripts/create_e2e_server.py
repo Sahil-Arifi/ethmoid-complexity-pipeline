@@ -14,9 +14,9 @@ import nibabel as nib
 import numpy as np
 import uvicorn
 
-from ethmoid_pipeline.util import sha256_file
+from ethmoid_pipeline.util import sha256_file, utc_now
+from ethmoid_pipeline.webapp.catalog import acquisition, fingerprint_hashes
 from ethmoid_pipeline.webapp.app import create_app
-from ethmoid_pipeline.counting.protocol import PROTOCOL_VERSION
 
 
 def main() -> None:
@@ -27,11 +27,28 @@ def main() -> None:
     if work.parent != Path(tempfile.gettempdir()).resolve() or not work.name.startswith("ethmoid-e2e-"):
         raise RuntimeError("The synthetic server requires an isolated browser-test directory.")
     fixture = work / "fixture" / "directional-phantom.nii"
+    if not fixture.is_file():
+        from create_e2e_fixture import build_directional_phantom
+        build_directional_phantom(fixture)
+    # A second and third exact generated phantom provide distinct source grids
+    # for study navigation. These never come from the real collection.
+    reference = nib.load(fixture)
+    generated = [fixture]
+    for thickness in (0.625, 2.5):
+        affine = reference.affine.copy()
+        affine[2, 2] = thickness
+        affine[2, 3] = -(reference.shape[2] - 1) * thickness / 2
+        image = nib.Nifti1Image(np.asarray(reference.dataobj).copy(), affine)
+        image.set_qform(affine, 1); image.set_sform(affine, 1)
+        image.header.set_xyzt_units("mm")
+        target = work / "fixture" / f"directional-phantom-{thickness}.nii"
+        nib.save(image, target)
+        generated.append(target)
 
     def execute(source_path: Path, output: Path, _config: Path) -> None:
         source = nib.load(source_path)
-        reference = nib.load(fixture)
-        if source.shape != reference.shape or not np.array_equal(source.affine, reference.affine) or not np.array_equal(np.asarray(source.dataobj), np.asarray(reference.dataobj)):
+        references = [nib.load(path) for path in generated]
+        if not any(source.shape == item.shape and np.array_equal(source.affine, item.affine) and np.array_equal(np.asarray(source.dataobj), np.asarray(item.dataobj)) for item in references):
             raise RuntimeError("Synthetic inference accepts only the generated directional phantom.")
         x, y, z = np.indices(source.shape)
         left = ((x - 15) / 5) ** 2 + ((y - 30) / 7) ** 2 + ((z - 24) / 8) ** 2 <= 1
@@ -51,14 +68,31 @@ def main() -> None:
                   "included": True, "uncertain": True, "origin": "automatic", "reasons": ["Synthetic browser fixture"],
                   "voxel_count": int(np.count_nonzero(cavities == identity)), "air_voxel_count": int(np.count_nonzero(air == identity))}
                  for identity, side in ((1, "left"), (300, "right"))]
+        frozen = json.loads(_config.read_text(encoding="utf-8"))
         result = {"schema_version": 1, "status": "completed", "method_version": "synthetic-browser-fixture",
-                  "source_sha256": sha256_file(source_path), "protocol_version": PROTOCOL_VERSION,
+                  "source_sha256": sha256_file(source_path), "protocol_version": frozen["protocol_version"],
                   "counts": {"left": 1, "right": 1, "total": 2}, "cells": cells,
-                  "warnings": ["Synthetic test; no clinical inference."], "config": json.loads(_config.read_text(encoding="utf-8"))["algorithm"], "artifacts": artifacts}
+                  "warnings": ["Synthetic test; no clinical inference."], "config": frozen["algorithm"],
+                  "acquisition": frozen["acquisition"], "quality": frozen["source_quality"], "artifacts": artifacts}
         (output / "result.json").write_text(json.dumps(result), encoding="utf-8")
 
     app = create_app(work_root=work)
     app.state.counting_service._executor = execute
+    service = app.state.ethmoid_service
+    ready_cases = [service.import_nifti(path, case_label=label) for path, label in zip(generated[1:], ("Case910", "Case911"))]
+    # Seed only neutral synthetic catalog links; production routes, guards,
+    # persistence, and result validation remain active in the browser tests.
+    with service.store.connect() as connection:
+        connection.execute("INSERT INTO catalog_sources(id,root_path,status,updated_at) VALUES(?,?,?,?)", ("synthetic-source", str(work / "fixture"), "ready", utc_now()))
+        connection.execute("INSERT INTO catalog_studies(id,source_id,study_uid,study_label,selected_series_id,recommended_series_id) VALUES(?,?,?,?,?,?)", ("synthetic-study", "synthetic-source", "synthetic-study-uid", "Case900", "synthetic-thin", "synthetic-thin"))
+        for case, path, identity, label, thickness in zip(ready_cases, generated[1:], ("synthetic-thin", "synthetic-thick"), ("Series007", "Series001"), (0.625, 2.5)):
+            metadata = {"spacing_mm": [0.8, 0.9, thickness], "slice_thickness_mm": thickness, "image_count": 44, "kernel": "BONEPLUS", "source_kind": "native", "warnings": [], "metadata_validated": True}
+            metadata.update(acquisition(metadata))
+            fingerprint = fingerprint_hashes([sha256_file(path)])
+            connection.execute("INSERT INTO catalog_series(id,study_id,series_uid,series_label,descriptor_json,files_json,inventory_signature,source_fingerprint,case_id,preparation_status) VALUES(?,?,?,?,?,?,?,?,?,?)", (identity, "synthetic-study", identity, label, json.dumps(metadata), json.dumps([path.name]), fingerprint, fingerprint, case["case_id"], "ready"))
+            connection.execute("INSERT INTO catalog_case_links(case_id,series_id,source_fingerprint,proof,acquisition_json) VALUES(?,?,?,?,?)", (case["case_id"], identity, fingerprint, "synthetic-browser-fixture", json.dumps(acquisition(metadata))))
+        metadata = {"spacing_mm": None, "slice_thickness_mm": None, "image_count": 1, "kernel": None, "source_kind": "scout", "resolution_class": "unknown", "warnings": []}
+        connection.execute("INSERT INTO catalog_series(id,study_id,series_uid,series_label,descriptor_json,files_json,inventory_signature,preparation_status,reason_code) VALUES(?,?,?,?,?,?,?,?,?)", ("synthetic-scout", "synthetic-study", "synthetic-scout", "Series009", json.dumps(metadata), "[]", "synthetic-scout", "unavailable", "SCOUT"))
     uvicorn.run(app, host="127.0.0.1", port=8766)
 
 

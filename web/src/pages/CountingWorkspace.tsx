@@ -4,10 +4,13 @@ import { countingApi, type Cell, type Correction, type CountRun } from "../api/c
 import type { CaseDetail } from "../api/types";
 import type { ProtocolDefinition } from "../config/protocol";
 import { BrandMark } from "../components/BrandMark";
+import { StudySeriesSwitcher } from "../components/StudySeriesSwitcher";
+import { qualityNotes } from "../components/catalog";
+import { countFailureMessage } from "../components/countFailure";
 import { NiiVueViewer, type NiiVueViewerHandle, type ViewerLocation, type ViewerTool, type ViewMode } from "../viewer/NiiVueViewer";
 import "./counting.css";
 
-type Props = { caseId: string; onBack: () => void; registerNavigationGuard: (guard: (() => Promise<boolean>) | null) => void };
+type Props = { caseId: string; onBack: () => void; onOpenCase?: (caseId: string) => void; registerNavigationGuard: (guard: (() => Promise<boolean>) | null) => void };
 const PreviousWorkspace = lazy(() => import("./Workspace").then(m => ({ default: m.Workspace })));
 const message = (error: unknown) => error instanceof Error ? error.message : "The request failed.";
 
@@ -20,11 +23,11 @@ export function CountingWorkspace(props: Props) {
     setPrevious(value);
   };
   return previous ? <Suspense fallback={<main className="center-state">Opening previous annotations…</main>}>
-    <PreviousWorkspace {...props} onBack={() => switchView(false)} />
-  </Suspense> : <CountReview {...props} onPrevious={() => switchView(true)} />;
+    <PreviousWorkspace key={props.caseId} {...props} onBack={() => switchView(false)} />
+  </Suspense> : <CountReview key={props.caseId} {...props} onPrevious={() => switchView(true)} />;
 }
 
-function CountReview({ caseId, onBack, registerNavigationGuard, onPrevious }: Props & { onPrevious: () => void }) {
+function CountReview({ caseId, onBack, onOpenCase, registerNavigationGuard, onPrevious }: Props & { onPrevious: () => void }) {
   const viewer = useRef<NiiVueViewerHandle>(null);
   const [detail, setDetail] = useState<CaseDetail | null>(null);
   const [protocol, setProtocol] = useState<ProtocolDefinition | null>(null);
@@ -33,6 +36,7 @@ function CountReview({ caseId, onBack, registerNavigationGuard, onPrevious }: Pr
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [switchingSeries, setSwitchingSeries] = useState(false);
   const [ready, setReady] = useState(false);
   const [selected, setSelected] = useState<number[]>([]);
   const [tool, setTool] = useState<ViewerTool>("navigate");
@@ -63,13 +67,14 @@ function CountReview({ caseId, onBack, registerNavigationGuard, onPrevious }: Pr
   const staleEdit = !!edit && edit.parentRevision !== run?.latest_revision;
 
   const guard = useCallback(async () => {
+    if (switchingSeries) return false;
     if (edit && !window.confirm("Discard the pending cell correction?")) return false;
     if (ready && viewer.current && !readOnly) {
       try { await api.saveViewerState(caseId, viewer.current.getViewerState()); }
       catch (e) { setError(message(e)); return false; }
     }
     return true;
-  }, [caseId, edit, readOnly, ready]);
+  }, [caseId, edit, readOnly, ready, switchingSeries]);
   useEffect(() => {
     registerNavigationGuard(guard);
     const unload = (event: BeforeUnloadEvent) => { if (edit) { event.preventDefault(); event.returnValue = ""; } };
@@ -195,14 +200,17 @@ function CountReview({ caseId, onBack, registerNavigationGuard, onPrevious }: Pr
   if (!detail || !protocol) return <main className="center-state"><p role="alert">{error || "The case could not be loaded."}</p><button className="button" onClick={onBack}>Back to cases</button></main>;
   const overlay = completed && run ? countingApi.artifact(caseId, run.run_id, overlayKind, revision) : undefined;
   const counts = showOriginal ? run?.original_counts : run?.counts;
-  return <main className="count-workspace">
+  const scanNotes = detail.catalog ? qualityNotes(detail.catalog) : [...detail.warnings, "Original acquisition thickness is unconfirmed for this imported volume; voxel spacing alone does not establish the source resolution."];
+  return <main className="count-workspace" inert={switchingSeries || undefined}>
     <header className="workspace-header">
-      <div className="count-heading"><button className="button tertiary" onClick={() => void guard().then(ok => { if (ok) onBack(); })}>Cases</button><BrandMark /><div><span className="eyebrow">3D ethmoid cell count</span><h1>{detail.case_label}</h1><small>Experimental · clinical accuracy not established</small></div></div>
+      <div className="count-heading"><button className="button tertiary" onClick={() => void guard().then(ok => { if (ok) onBack(); })}>Cases</button><BrandMark /><div><span className="eyebrow">3D ethmoid cell count</span><h1>{detail.catalog ? `${detail.catalog.study_label} · ${detail.catalog.series_label}` : detail.case_label}</h1><small>Experimental · clinical accuracy not established</small></div></div>
       <div className="toolbar-group">
-        <button className="button" disabled={busy || active || !!readOnly} onClick={() => void start()}>{active ? "Counting…" : run ? "Run again" : "Run automatic count"}</button>
+        <button className="button" disabled={busy || active || !!readOnly || detail.validation_status === "FAILED"} onClick={() => void start()}>{active ? "Counting…" : run ? "Run again" : "Run automatic count"}</button>
         {completed && run ? <a className="button secondary" aria-disabled={busy} href={countingApi.exportUrl(caseId, run.run_id, revision)} onClick={event => { event.preventDefault(); if (!busy) void download(); }}>Export revision {revision}</a> : <button className="button secondary" disabled>Export</button>}
       </div>
     </header>
+    {detail.catalog && onOpenCase && <StudySeriesSwitcher key={caseId} context={detail.catalog} disabled={busy} beforeSwitch={guard} onOpenCase={onOpenCase} onSwitchBusy={setSwitchingSeries} />}
+    <div className="scan-quality"><strong>{detail.validation_status === "VERIFIED" ? "Conversion verified" : detail.validation_status === "FAILED" ? "Volume verification failed" : "Conversion unverified"}.</strong> {detail.validation_status === "FAILED" ? "A count cannot be attempted on this volume." : "Ready to attempt a count does not mean a count has completed."}{scanNotes.length > 0 && <details open><summary>Scan quality notes before counting</summary><ul>{scanNotes.map((note, i) => <li key={i}>{note}</li>)}</ul></details>}</div>
     {error && <div className="alert danger" role="alert">{error}</div>}
     {notice && <div className="alert" role="status">{notice}</div>}
     <section className="viewer-toolbar" aria-label="Scan display">
@@ -222,7 +230,7 @@ function CountReview({ caseId, onBack, registerNavigationGuard, onPrevious }: Pr
       <aside className="count-panel" aria-label="Count and review">
         <section><span className="eyebrow">{showOriginal ? "Original automatic result" : (revision > 0 ? `Corrected result · revision ${revision}` : "Automatic result")}</span>
           {counts ? <dl className="count-totals"><div><dt>Left</dt><dd>{counts.left}</dd></div><div><dt>Right</dt><dd>{counts.right}</dd></div><div><dt>Total</dt><dd data-testid="total-count">{counts.total}</dd></div></dl> : <p role="status">{active ? `${run?.status === "queued" ? "Queued" : "Analyzing the full CT volume"}…` : run?.status === "failed" ? "Count unavailable" : "Ready for an automatic 3D count."}</p>}
-          {run?.status === "failed" && <p role="alert">{run.message || "An essential analysis check failed."} {run.failure_code && <small>({run.failure_code})</small>}</p>}
+          {run?.status === "failed" && <p role="alert">{countFailureMessage(run.failure_code, run.message)}</p>}
           {!run && <p className="muted">Run once to identify cells throughout the volume. No outline or seed points are required.</p>}
           {active && <p className="muted">The job continues locally if you leave this page. Return to see its result.</p>}
           {completed && <p className="muted">Each candidate ID is counted once across the 3D volume. Review possible missed or merged cells before presenting the result.</p>}

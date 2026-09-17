@@ -9,5 +9,7 @@ export default function globalSetup(): void {
   fs.mkdirSync(path.dirname(fixture), { recursive: true });
   const python = path.resolve(process.cwd(), "..", ".venv", "Scripts", "python.exe");
   const generator = path.resolve(process.cwd(), "..", "scripts", "create_e2e_fixture.py");
-  execFileSync(python, [generator, fixture], { stdio: "inherit" });
+  // The synthetic server creates this same fixture before seeding its catalog.
+  // Do not rewrite a NIfTI that the running server may currently have mapped.
+  if (!fs.existsSync(fixture)) execFileSync(python, [generator, fixture], { stdio: "inherit" });
 }

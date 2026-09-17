@@ -8,6 +8,10 @@ import type {
   ReviewUpdate,
   SeriesResponse,
   ViewerState,
+  StudiesResponse,
+  StudySummary,
+  CatalogSeries,
+  CatalogStatus,
 } from "./types";
 import { validateProtocol, type ProtocolDefinition } from "../config/protocol";
 
@@ -43,6 +47,24 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  listStudies(): Promise<StudiesResponse> {
+    return request("/studies");
+  },
+  listStudySeries(studyId: string): Promise<{ series: CatalogSeries[] }> {
+    return request(`/studies/${encodeURIComponent(studyId)}/series`);
+  },
+  catalogStatus(): Promise<CatalogStatus> {
+    return request("/catalog/status");
+  },
+  selectStudySeries(studyId: string, seriesId: string): Promise<{ study: StudySummary }> {
+    return request(`/studies/${encodeURIComponent(studyId)}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ selected_series_id: seriesId }),
+    });
+  },
+  prepareStudySeries(studyId: string, seriesId: string): Promise<{ series: CatalogSeries }> {
+    return request(`/studies/${encodeURIComponent(studyId)}/series/${encodeURIComponent(seriesId)}/prepare`, { method: "POST" });
+  },
   async getProtocol(): Promise<ProtocolDefinition> {
     return validateProtocol(await request<ProtocolDefinition>("/protocol"));
   },

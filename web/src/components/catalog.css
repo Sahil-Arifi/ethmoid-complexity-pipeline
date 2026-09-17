@@ -1,0 +1,29 @@
+.catalog-progress { border: 1px solid var(--line); border-radius: 12px; padding: 1rem 1.25rem; margin: 1.5rem 0; background: var(--surface); }
+.catalog-progress p { margin: .4rem 0; color: var(--muted); font-size: .85rem; }
+.catalog-progress strong { color: var(--text); }
+.study-table select, .series-switcher select { max-width: 100%; min-width: 0; padding: .55rem; color: var(--text); background: var(--surface-soft); border: 1px solid var(--line-strong); border-radius: 6px; font: inherit; }
+.study-table select { width: 100%; min-width: 220px; }
+.study-table td { vertical-align: top; }
+.study-table .series-details { display: grid; gap: .35rem; max-width: 380px; }
+.series-details small, .study-state small { display: block; margin-top: .35rem; line-height: 1.5; }
+.series-warning { color: var(--muted); font-size: .8rem; line-height: 1.5; }
+.series-warning ul { padding-left: 1.1rem; margin: .4rem 0; }
+.series-switcher { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem 1rem; padding: .65rem 1rem; border-bottom: 1px solid var(--line); background: var(--surface); flex-shrink: 0; font-size: .8rem; }
+.series-switcher label { display: flex; gap: .6rem; align-items: center; min-width: 0; max-width: 100%; }
+.series-switcher .series-feedback { flex-basis: 100%; margin: 0; }
+.scan-quality { padding: .65rem 1rem; margin: 0; border-bottom: 1px solid var(--line); background: var(--surface-soft); font-size: .78rem; flex-shrink: 0; }
+.scan-quality summary { cursor: pointer; }
+.scan-quality ul { margin: .4rem 0; padding-left: 1.2rem; }
+@media (max-width: 760px) {
+  .case-table.study-table, .case-table.study-table tbody, .case-table.study-table tr, .case-table.study-table td { display: block; width: 100%; min-width: 0; }
+  .case-table.study-table thead { display: none; }
+  .case-table.study-table td:nth-child(2) { display: block; }
+  .case-table.study-table td { border: 0; padding: .6rem .9rem; }
+  .case-table.study-table tr { padding: .4rem 0; border-bottom: 1px solid var(--line); }
+  .case-table.study-table tr:last-child { border-bottom: 0; }
+  .study-table .series-details { max-width: none; }
+  .study-table .status { white-space: normal; line-height: 1.5; }
+  .series-switcher label { flex-basis: 100%; }
+  .series-switcher select { width: 100%; }
+  .series-switcher label > span { flex-shrink: 0; }
+}

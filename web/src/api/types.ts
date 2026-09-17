@@ -58,6 +58,7 @@ export type CaseSummary = {
 };
 
 export type CaseDetail = CaseSummary & {
+  catalog?: CatalogContext | null;
   warnings: string[];
   shape: [number, number, number];
   voxel_spacing_mm: [number, number, number];
@@ -120,3 +121,56 @@ export type ApiErrorBody = {
   detail?: string | { msg?: string }[];
   message?: string;
 };
+
+export type CatalogContext = {
+  study_id: string;
+  study_label: string;
+  series_id: string;
+  series_label: string;
+  spacing_mm: number[] | null;
+  slice_thickness_mm: number | null;
+  resolution_class: "within_protocol" | "outside_protocol" | "unknown";
+  warnings: string[];
+};
+
+export type CatalogSeries = {
+  series_id: string;
+  series_label: string;
+  case_id: string | null;
+  preparation_status: "not_prepared" | "queued" | "preparing" | "ready" | "unavailable";
+  reason: string | null;
+  spacing_mm: number[] | null;
+  slice_thickness_mm: number | null;
+  image_count: number;
+  kernel: string | null;
+  source_kind: "native" | "mpr" | "scout" | "projection" | "unknown";
+  resolution_class: CatalogContext["resolution_class"];
+  warnings: string[];
+  recommended: boolean;
+  retryable: boolean;
+  count_status: "not_run" | "queued" | "running" | "completed" | "failed";
+  counts: { left: number; right: number; total: number } | null;
+};
+
+export type StudySummary = {
+  study_id: string;
+  study_label: string;
+  series_count: number;
+  selected_series_id: string | null;
+  recommended_series_id: string | null;
+  series: CatalogSeries[];
+};
+
+export type CatalogStatus = {
+  status: "unconfigured" | "indexing" | "preparing" | "ready" | "error";
+  reason?: string | null;
+  total_studies: number;
+  total_series: number;
+  queued: number;
+  preparing: number;
+  ready: number;
+  unavailable: number;
+  not_prepared: number;
+};
+
+export type StudiesResponse = { studies: StudySummary[]; catalog: CatalogStatus; unlinked_cases: CaseSummary[] };

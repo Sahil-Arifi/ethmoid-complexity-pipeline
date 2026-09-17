@@ -6,9 +6,10 @@ import { api, ApiError } from "../api/client";
 import { countingApi, type CountRun } from "../api/counting";
 import type { CaseDetail } from "../api/types";
 import { CountingWorkspace } from "./CountingWorkspace";
+import { readySeries, studyFixture, thickSeries } from "../testCatalog";
 
 const handles = vi.hoisted(() => ({ focus: vi.fn(), clear: vi.fn(), prepare: vi.fn() }));
-vi.mock("../api/client", async importOriginal => ({ ...(await importOriginal<object>()), api: { getCase: vi.fn(), getProtocol: vi.fn(), saveViewerState: vi.fn() } }));
+vi.mock("../api/client", async importOriginal => ({ ...(await importOriginal<object>()), api: { getCase: vi.fn(), getProtocol: vi.fn(), saveViewerState: vi.fn(), listStudySeries: vi.fn(), selectStudySeries: vi.fn(), prepareStudySeries: vi.fn() } }));
 vi.mock("../api/counting", async importOriginal => ({ ...(await importOriginal<object>()), countingApi: {
   ...(await importOriginal<{ countingApi: object }>()).countingApi,
   list: vi.fn(), get: vi.fn(), start: vi.fn(), correct: vi.fn(),
@@ -124,5 +125,42 @@ describe("3D counting workspace", () => {
     await userEvent.click(await screen.findByRole("button", { name: "Add cell" }));
     await userEvent.click(screen.getByRole("button", { name: "Add at crosshair" }));
     expect(countingApi.correct).toHaveBeenCalledWith("case-1", "run-1", 0, expect.objectContaining({ type: "add", side: "left", centroid_ras_mm: [-12, 5, 7], uncertain: true }), undefined);
+  });
+
+  it("explains a withheld posterior boundary count without presenting a raw code", async () => {
+    vi.mocked(countingApi.get).mockResolvedValue({ ...result, status: "failed", counts: null, original_counts: null, cells: [], latest_revision: null, failure_code: "SPHENOID_AMBIGUOUS", message: "The count did not complete." });
+    mount();
+    expect(await screen.findByText(/boundary between the ethmoid cells and the sphenoid sinus/)).toBeVisible();
+    expect(screen.queryByText("SPHENOID_AMBIGUOUS")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("total-count")).not.toBeInTheDocument();
+  });
+
+  it("guards series selection before persisting it and clears masks/counts on the next case", async () => {
+    const context = { study_id: "study-1", study_label: "Case003", series_id: "series-thin", series_label: "Series007", spacing_mm: readySeries.spacing_mm, slice_thickness_mm: 0.625, resolution_class: readySeries.resolution_class, warnings: [] };
+    vi.mocked(api.getCase).mockResolvedValue({ ...detail, catalog: context });
+    vi.mocked(api.listStudySeries).mockResolvedValue({ series: [readySeries, thickSeries] });
+    vi.mocked(api.selectStudySeries).mockResolvedValue({ study: studyFixture });
+    const open = vi.fn(); const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const props = { caseId: "case-1", onBack: vi.fn(), onOpenCase: open, registerNavigationGuard: vi.fn() };
+    const mounted = render(<CountingWorkspace {...props} />);
+    expect(await screen.findByRole("heading", { name: "Case003 · Series007" })).toBeVisible();
+    await userEvent.click(await screen.findByRole("button", { name: "Add cell" }));
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Series to open" }), "series-thick");
+    await userEvent.click(screen.getByRole("button", { name: "Open selected series" }));
+    expect(confirm).toHaveBeenCalled(); expect(api.selectStudySeries).not.toHaveBeenCalled(); expect(open).not.toHaveBeenCalled();
+    expect(screen.getByRole("combobox", { name: "Series to open" })).toHaveValue("series-thin");
+    confirm.mockReturnValue(true);
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Series to open" }), "series-thick");
+    await userEvent.click(screen.getByRole("button", { name: "Open selected series" }));
+    expect(api.selectStudySeries).toHaveBeenCalledWith("study-1", "series-thick"); expect(open).toHaveBeenCalledWith("case-2");
+    vi.mocked(api.getCase).mockResolvedValue({ ...detail, case_id: "case-2", catalog: { ...context, series_id: "series-thick", series_label: "Series001", slice_thickness_mm: 2.5, resolution_class: "outside_protocol" } });
+    vi.mocked(countingApi.list).mockResolvedValue({ runs: [] });
+    mounted.rerender(<CountingWorkspace {...props} caseId="case-2" />);
+    expect(await screen.findByRole("heading", { name: "Case003 · Series001" })).toBeVisible();
+    expect(screen.queryByTestId("total-count")).not.toBeInTheDocument();
+    expect(screen.getByTestId("overlay-url")).toBeEmptyDOMElement();
+    expect(screen.queryByRole("heading", { name: "Add a cell" })).not.toBeInTheDocument();
+    expect(screen.getByText(/outside the thin native CT protocol \(slice thickness 2.5 mm\)/)).toBeVisible();
+    expect(countingApi.start).not.toHaveBeenCalled(); confirm.mockRestore();
   });
 });

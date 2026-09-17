@@ -6,6 +6,7 @@ import type {
   ReviewStatus,
   ViewerState,
 } from "../api/types";
+import { StudySeriesSwitcher } from "../components/StudySeriesSwitcher";
 import {
   annotationLabels,
   type ProtocolDefinition,
@@ -25,6 +26,7 @@ import {
 type Props = {
   caseId: string;
   onBack: () => void;
+  onOpenCase?: (caseId: string) => void;
   registerNavigationGuard: (guard: (() => Promise<boolean>) | null) => void;
 };
 
@@ -71,7 +73,8 @@ function savedControls(state?: ViewerState | null) {
   };
 }
 
-export function Workspace({ caseId, onBack, registerNavigationGuard }: Props) {
+export function Workspace({ caseId, onBack, onOpenCase, registerNavigationGuard }: Props) {
+  const [switchingSeries, setSwitchingSeries] = useState(false);
   const viewerRef = useRef<NiiVueViewerHandle>(null);
   const viewerReadyRef = useRef(false);
   const changeVersionRef = useRef(0);
@@ -352,6 +355,7 @@ export function Workspace({ caseId, onBack, registerNavigationGuard }: Props) {
   ]);
 
   const flushBeforeLeave = useCallback(async (): Promise<boolean> => {
+    if (switchingSeries) return false;
     if (changeVersionRef.current > savedVersionRef.current) {
       const saved = await saveAnnotation(false);
       if (!saved) return false;
@@ -364,7 +368,7 @@ export function Workspace({ caseId, onBack, registerNavigationGuard }: Props) {
       if (!reviewSaved) return false;
     }
     return saveViewerStateNow();
-  }, [currentReviewSnapshot, isReadOnly, saveAnnotation, saveReview, saveViewerStateNow]);
+  }, [currentReviewSnapshot, isReadOnly, saveAnnotation, saveReview, saveViewerStateNow, switchingSeries]);
 
   useEffect(() => {
     registerNavigationGuard(flushBeforeLeave);
@@ -432,7 +436,7 @@ export function Workspace({ caseId, onBack, registerNavigationGuard }: Props) {
       : tool;
 
   return (
-    <main className="workspace">
+    <main className="workspace" inert={switchingSeries || undefined}>
       <FirstRunGuide open={guideOpen} onOpenChange={setGuideOpen} version="2" />
       <header className="workspace-header">
         <div className="workspace-identity">
@@ -441,7 +445,7 @@ export function Workspace({ caseId, onBack, registerNavigationGuard }: Props) {
             <BrandMark compact />
             <div>
               <span className="eyebrow">Ethmoid Atlas · Annotation</span>
-              <h1>{detail.case_label}</h1>
+              <h1>{detail.catalog ? `${detail.catalog.study_label} · ${detail.catalog.series_label}` : detail.case_label}</h1>
             </div>
           </div>
           <span className={`status status-${detail.validation_status.toLowerCase()}`}>{detail.validation_status}</span>
@@ -469,6 +473,8 @@ export function Workspace({ caseId, onBack, registerNavigationGuard }: Props) {
           )}
         </div>
       </header>
+
+      {detail.catalog && onOpenCase && <StudySeriesSwitcher key={caseId} context={detail.catalog} disabled={saving || reviewSaving || finalizing} beforeSwitch={flushBeforeLeave} onOpenCase={onOpenCase} onSwitchBusy={setSwitchingSeries} />}
 
       <section className="viewer-toolbar" aria-label="Viewer and annotation controls">
         <div className="toolbar-group" role="group" aria-labelledby="view-controls-label">

@@ -18,6 +18,8 @@ from .protocol import load_protocol
 from .service import AppService, WebAppError
 from .counting_service import CountingService
 from .counting_routes import counting_router
+from .catalog import CatalogService
+from .catalog_routes import catalog_router
 
 
 MAX_UPLOAD_BYTES = 4 * 1024 * 1024 * 1024
@@ -76,10 +78,13 @@ def _nifti_suffix(filename: str | None) -> str:
 def create_app(*, work_root: Path | None = None, dcm2niix: Path | None = None) -> FastAPI:
     service = AppService(work_root=work_root, dcm2niix=dcm2niix)
     counting = CountingService(service)
+    catalog = CatalogService(service)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
+        catalog.start()
         yield
+        catalog.close()
         counting.close()
 
     app = FastAPI(
@@ -90,7 +95,9 @@ def create_app(*, work_root: Path | None = None, dcm2niix: Path | None = None) -
     )
     app.state.ethmoid_service = service
     app.state.counting_service = counting
+    app.state.catalog_service = catalog
     app.include_router(counting_router(counting))
+    app.include_router(catalog_router(catalog))
 
     @app.exception_handler(WebAppError)
     async def webapp_error_handler(_request: Request, exc: WebAppError) -> JSONResponse:
