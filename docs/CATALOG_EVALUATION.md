@@ -30,7 +30,7 @@ The current v2 evaluation is in progress using these immutable inputs:
 - Acceptance: 55 prepared series from 14 of the remaining sixteen studies;
   two studies have no supported 3D volume.
 
-These counts describe planned coverage, not completed inference. A final result
+Regression has finished; acceptance is in progress. A final collection result
 requires an immutable attempt for each of the 98 prepared series, including every
 abstention or resource-limit outcome. Execution is serial on the local RTX 5070 Ti
 with 16 GB VRAM and approximately 32 GB system RAM. No runtime or accuracy claim
@@ -76,6 +76,41 @@ and no successful segmentation artifacts. Missing sources and invalid results
 are retained as failures rather than silently omitted or reported as zero.
 
 ## Reporting
+
+### Completed regression gate
+
+All 43 regression series have a unique immutable attempt: **five completed and
+38 withheld** (11.6% completion by series). Summed attempt time was **4,100.990
+seconds**. The withheld reasons were 22 unresolved sphenoid boundaries, seven
+ambiguous sphenoid boundaries, six anatomy-proxy resource limits, two insufficient
+coverage outcomes and one absence of supported cells. No unexpected runtime or
+evaluation-integrity failure occurred. Failed attempts contain no numeric count.
+
+| Nominal thickness (mm) | Attempted | Completed | Withheld | Summed attempt seconds |
+| --- | ---: | ---: | ---: | ---: |
+| 0.6 | 7 | 2 | 5 | 614.635 |
+| 0.625 | 16 | 3 | 13 | 1,817.110 |
+| 1.25 | 6 | 0 | 6 | 662.165 |
+| 2 | 5 | 0 | 5 | 206.301 |
+| 2.5 | 9 | 0 | 9 | 800.779 |
+
+All ten matching original-cohort series retained their v1 outcomes: five completed
+and five identical anatomical abstentions. Sources and algorithm values matched.
+All five successful current artifact sets independently passed native geometry,
+instance/registry consistency, centroids, laterality and exact native-HU air-mask
+classification. All ten required localizer-mask sets passed hash, binary-value
+and native-grid checks. Five identical verified caches reproduced identical
+behavior; five unverified legacy caches were replaced with verified outputs.
+Three successful boundary/registry comparisons changed alongside localizer changes,
+but no count outcome changed. Incomplete legacy producer evidence prevents precise
+attribution of those differences. No unexpected fixed-input regression was found.
+
+The protected comparison report SHA256 is
+`0dc1cba8b08c2ff23004b40d6dda29ee769883a96eb140f740d466d45540acef`.
+Neither these comparisons nor the 107 flagged uncertain regression candidates are
+expert reference labels. Broader acquisition support did not produce a completed
+thick-slice count in this regression batch; accepting an input is not evidence that
+lost septa or cells were recovered. Acceptance outcomes are still pending.
 
 Report the exact number of cataloged, prepared, attempted, completed and withheld
 series, unique studies, reasons for unavailability/abstention, uncertainty and
