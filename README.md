@@ -28,6 +28,8 @@ Current data readiness was refreshed read-only before implementation: 24 sharp r
 
 The first remote CI run exposed an ordering dependency: the HTTP test serves the built frontend, so it needs the production build before Python tests. The workflow now builds first, matching the successfully executed local sequence. No test assertion was removed.
 
+Phase 2 conversion finding: two decimal-spacing series exposed a small dcm2niix sform precision drift. The converter now reconciles only bounded form disagreement against validated DICOM geometry when one original form already passes the existing voxel-grid tolerance. It preserves encoded voxel bytes and HU scaling and then runs the unchanged full-volume verification. Nine focused conversion tests passed, including axis flips and oblique geometry. Separate local copies of both affected real outputs verified with zero HU error and unchanged voxel payloads; official cohort conversions retain committed provenance.
+
 ## Documentation rule
 
 This README is the durable project handoff and must be updated after every meaningful project work session. Record completed work, important findings or decisions, current validation status, newly created outputs, unresolved questions, and the next action. Keep completed and pending work clearly separated so a future chat can resume without reconstructing prior context.

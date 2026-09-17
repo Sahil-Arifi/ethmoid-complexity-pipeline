@@ -5,8 +5,12 @@ import hashlib
 import shutil
 import subprocess
 import tempfile
+from itertools import product
 from pathlib import Path
 from typing import Any, Iterable
+
+import nibabel as nib
+import numpy as np
 
 from .dicom import (
     PreflightResult,
@@ -224,6 +228,89 @@ def _validate_selected_paths(dicom_root: Path, paths: Iterable[Path]) -> list[Pa
     return selected
 
 
+def reconcile_nifti_affine(path: Path, preflight: PreflightResult) -> dict[str, Any]:
+    """Repair small qform/sform precision disagreement using validated DICOM.
+
+    Some decimal-spacing acquisitions get an sform step computed from rounded
+    float32 positions, while their qform retains the correct spacing. At least
+    one original form must already match the source grid to the unchanged
+    0.001-voxel QC tolerance. The other may differ by at most 0.05 voxel across
+    the complete volume. Larger disagreement is a failure, never a repair.
+    Only header bytes are written; encoded voxel bytes and HU scaling remain
+    identical. Full source-to-image HU verification still runs afterward.
+    """
+    image = nib.load(path, mmap=True)
+    if not isinstance(image, nib.Nifti1Image) or len(image.shape) != 3:
+        raise PipelineError("Affine reconciliation requires one uncompressed 3D NIfTI-1 image.")
+    qform, qcode = image.get_qform(coded=True)
+    sform, scode = image.get_sform(coded=True)
+    if not qcode or not scode:
+        raise PipelineError("Affine reconciliation cannot replace missing physical geometry.")
+    record = preflight.records[0]
+    lps_to_ras = np.asarray([-1.0, -1.0, 1.0])
+    row_direction = np.asarray(record.iop[:3])
+    column_direction = np.asarray(record.iop[3:])
+    source_affine = np.eye(4)
+    source_affine[:3, 0] = lps_to_ras * column_direction * preflight.pixel_spacing[0]
+    source_affine[:3, 1] = lps_to_ras * row_direction * preflight.pixel_spacing[1]
+    source_affine[:3, 2] = lps_to_ras * np.cross(row_direction, column_direction) * preflight.slice_spacing
+    source_affine[:3, 3] = lps_to_ras * np.asarray(record.ipp)
+    mapping = np.linalg.inv(qform) @ source_affine
+    axes = np.argmax(np.abs(mapping[:3, :3]), axis=0)
+    if len(set(int(axis) for axis in axes)) != 3:
+        raise PipelineError("Converted image does not have a lossless source-axis mapping.")
+    index_mapping = np.zeros((4, 4))
+    index_mapping[3, 3] = 1
+    source_shape = (preflight.rows, preflight.columns, len(preflight.records))
+    for source_axis, image_axis in enumerate(axes):
+        if image.shape[image_axis] != source_shape[source_axis]:
+            raise PipelineError("Converted image dimensions do not match the source-axis mapping.")
+        direction = 1 if mapping[image_axis, source_axis] >= 0 else -1
+        index_mapping[image_axis, source_axis] = direction
+        index_mapping[image_axis, 3] = 0 if direction > 0 else image.shape[image_axis] - 1
+    if np.max(np.abs(mapping[:3, :3] - index_mapping[:3, :3])) > 1e-3:
+        raise PipelineError("Converted image axes disagree with validated source geometry.")
+    canonical = source_affine @ np.linalg.inv(index_mapping)
+    corners = np.asarray([(*corner, 1.0) for corner in product(*[(0, size - 1) for size in image.shape])]).T
+    inverse_canonical = np.linalg.inv(canonical)
+    residuals = [float(np.max(np.abs((inverse_canonical @ form @ corners - corners)[:3]))) for form in (qform, sform)]
+    if min(residuals) > 1e-3 or max(residuals) > 0.05:
+        raise PipelineError("Converted physical geometry differs beyond bounded affine precision reconciliation.")
+    result: dict[str, Any] = {
+        "method": "validated-dicom-grid-v1",
+        "applied": max(residuals) > 1e-3,
+        "original_qform_residual_voxel": residuals[0],
+        "original_sform_residual_voxel": residuals[1],
+        "voxel_payload_unchanged": True,
+    }
+    if not result["applied"]:
+        return result
+    # nib.load consumes scl_slope/scl_inter in its in-memory header. Read the
+    # original on-disk header to preserve those bytes when writing geometry.
+    with path.open("rb") as stream:
+        header = nib.Nifti1Header.from_fileobj(stream)
+    offset = int(header["vox_offset"])
+    if offset < 352 or len(image.header.extensions):
+        raise PipelineError("Unexpected NIfTI layout prevents header-only affine reconciliation.")
+
+    def payload_hash() -> str:
+        with path.open("rb") as stream:
+            stream.seek(offset)
+            return hashlib.file_digest(stream, "sha256").hexdigest()
+
+    before = payload_hash()
+    header.set_qform(canonical, int(qcode), strip_shears=False)
+    header.set_sform(canonical, int(scode))
+    with path.open("r+b") as stream:
+        stream.write(header.binaryblock)
+        stream.flush()
+        os.fsync(stream.fileno())
+    if payload_hash() != before:
+        raise PipelineError("Voxel bytes changed during header-only affine reconciliation.")
+    result["voxel_payload_sha256"] = before
+    return result
+
+
 def _convert_preflighted_series(
     *,
     work_root: Path,
@@ -303,6 +390,7 @@ def _convert_preflighted_series(
         if nifti.stem != neutral_name or sidecar.stem != neutral_name:
             raise PipelineError("dcm2niix added an unexpected output postfix or filename.")
 
+        affine_reconciliation = reconcile_nifti_affine(nifti, preflight)
         sanitize_sidecar(sidecar)
         scrub_nifti_header(nifti)
         hashes_after = _source_hash_manifest(preflight.records)
@@ -345,6 +433,7 @@ def _convert_preflighted_series(
             "source_hashes_unchanged": True,
             "ordered_source_manifest_sha256": source_manifest_sha256,
             "selection_identity_sha256": selection_identity_sha256,
+            "affine_reconciliation": affine_reconciliation,
             "dcm2niix_options": [
                 "-g i",
                 "-a y",
