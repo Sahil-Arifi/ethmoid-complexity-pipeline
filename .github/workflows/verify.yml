@@ -25,12 +25,12 @@ jobs:
           ./.venv/Scripts/python.exe -m pip install --require-hashes -r requirements.lock
           ./.venv/Scripts/python.exe -m pip install --no-build-isolation --no-deps -e .
           npm --prefix web ci
+      - name: Production build
+        run: npm --prefix web run build
       - name: Python synthetic tests
         run: ./.venv/Scripts/python.exe -m pytest -p no:cacheprovider -q -m 'not integration'
       - name: Frontend tests
         run: npm --prefix web test
-      - name: Production build
-        run: npm --prefix web run build
       - name: Synthetic browser workflow
         run: npm --prefix web run test:e2e
       - name: Dependency audit

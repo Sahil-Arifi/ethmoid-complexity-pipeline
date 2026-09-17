@@ -26,6 +26,8 @@ Executed Phase 1 checks: Python **54 passed**; frontend **27 passed**; productio
 
 Current data readiness was refreshed read-only before implementation: 24 sharp reconstruction candidates passed engineering preflight; the pilot's full-volume source-to-NIfTI comparison again produced zero HU error. These are engineering findings, not clinical suitability or counting-accuracy results. The questionnaire gives positive feedback on the submitted conversion comparison; historic QC files remain immutable and are not silently upgraded to approve other scans.
 
+The first remote CI run exposed an ordering dependency: the HTTP test serves the built frontend, so it needs the production build before Python tests. The workflow now builds first, matching the successfully executed local sequence. No test assertion was removed.
+
 ## Documentation rule
 
 This README is the durable project handoff and must be updated after every meaningful project work session. Record completed work, important findings or decisions, current validation status, newly created outputs, unresolved questions, and the next action. Keep completed and pending work clearly separated so a future chat can resume without reconstructing prior context.
