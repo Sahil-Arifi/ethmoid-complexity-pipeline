@@ -474,7 +474,7 @@ export function Workspace({ caseId, onBack, onOpenCase, registerNavigationGuard 
         </div>
       </header>
 
-      {detail.catalog && onOpenCase && <StudySeriesSwitcher key={caseId} context={detail.catalog} disabled={saving || reviewSaving || finalizing} beforeSwitch={flushBeforeLeave} onOpenCase={onOpenCase} onSwitchBusy={setSwitchingSeries} />}
+      {detail.catalog && onOpenCase && <StudySeriesSwitcher key={caseId} caseId={caseId} context={detail.catalog} disabled={saving || reviewSaving || finalizing} beforeSwitch={flushBeforeLeave} onOpenCase={onOpenCase} onSwitchBusy={setSwitchingSeries} />}
 
       <section className="viewer-toolbar" aria-label="Viewer and annotation controls">
         <div className="toolbar-group" role="group" aria-labelledby="view-controls-label">

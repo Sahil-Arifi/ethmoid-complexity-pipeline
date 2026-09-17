@@ -209,7 +209,7 @@ function CountReview({ caseId, onBack, onOpenCase, registerNavigationGuard, onPr
         {completed && run ? <a className="button secondary" aria-disabled={busy} href={countingApi.exportUrl(caseId, run.run_id, revision)} onClick={event => { event.preventDefault(); if (!busy) void download(); }}>Export revision {revision}</a> : <button className="button secondary" disabled>Export</button>}
       </div>
     </header>
-    {detail.catalog && onOpenCase && <StudySeriesSwitcher key={caseId} context={detail.catalog} disabled={busy} beforeSwitch={guard} onOpenCase={onOpenCase} onSwitchBusy={setSwitchingSeries} />}
+    {detail.catalog && onOpenCase && <StudySeriesSwitcher key={caseId} caseId={caseId} context={detail.catalog} disabled={busy} beforeSwitch={guard} onOpenCase={onOpenCase} onSwitchBusy={setSwitchingSeries} />}
     <div className="scan-quality"><strong>{detail.validation_status === "VERIFIED" ? "Conversion verified" : detail.validation_status === "FAILED" ? "Volume verification failed" : "Conversion unverified"}.</strong> {detail.validation_status === "FAILED" ? "A count cannot be attempted on this volume." : "Ready to attempt a count does not mean a count has completed."}{scanNotes.length > 0 && <details open><summary>Scan quality notes before counting</summary><ul>{scanNotes.map((note, i) => <li key={i}>{note}</li>)}</ul></details>}</div>
     {error && <div className="alert danger" role="alert">{error}</div>}
     {notice && <div className="alert" role="status">{notice}</div>}

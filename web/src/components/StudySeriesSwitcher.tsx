@@ -5,6 +5,7 @@ import { canPrepare, orderedSeries, preparationLabel, seriesDescription } from "
 import "./catalog.css";
 
 type Props = {
+  caseId: string;
   context: CatalogContext;
   disabled?: boolean;
   beforeSwitch: () => Promise<boolean>;
@@ -12,7 +13,7 @@ type Props = {
   onSwitchBusy?: (busy: boolean) => void;
 };
 
-export function StudySeriesSwitcher({ context, disabled, beforeSwitch, onOpenCase, onSwitchBusy }: Props) {
+export function StudySeriesSwitcher({ caseId, context, disabled, beforeSwitch, onOpenCase, onSwitchBusy }: Props) {
   const [series, setSeries] = useState<CatalogSeries[]>([]);
   const [selected, setSelected] = useState(context.series_id);
   const [error, setError] = useState("");
@@ -35,8 +36,9 @@ export function StudySeriesSwitcher({ context, disabled, beforeSwitch, onOpenCas
     return () => { cancelled = true; clearTimeout(timer); };
   }, [context.study_id, refresh]);
   const target = series.find(item => item.series_id === selected);
+  const viewingTarget = target?.case_id === caseId;
   const open = async () => {
-    if (!target?.case_id || target.preparation_status !== "ready" || busy || disabled) return;
+    if (!target?.case_id || viewingTarget || target.preparation_status !== "ready" || busy || disabled) return;
     setBusy(true); onSwitchBusy?.(true); setError("");
     try {
       if (!(await beforeSwitch())) { setSelected(context.series_id); return; }
@@ -58,10 +60,10 @@ export function StudySeriesSwitcher({ context, disabled, beforeSwitch, onOpenCas
       {!series.length && <option value={context.series_id}>{context.series_label}</option>}
       {orderedSeries(series).map(item => <option key={item.series_id} value={item.series_id}>{seriesDescription(item)}{item.preparation_status === "unavailable" ? " · Unavailable" : ""}</option>)}
     </select></label>
-    {target?.preparation_status === "ready" ? <button className="button compact" disabled={busy || disabled || selected === context.series_id} onClick={() => void open()}>Open selected series</button>
+    {target?.preparation_status === "ready" ? <button className="button compact" disabled={busy || disabled || viewingTarget} onClick={() => void open()}>Open selected series</button>
       : target && (canPrepare(target) || target.preparation_status === "queued") ? <button className="button compact" disabled={busy || disabled} onClick={() => void prepare()}>{target.preparation_status === "unavailable" ? "Retry preparation" : target.preparation_status === "queued" ? "Prepare next" : "Prepare series"}</button> : null}
     <span>Viewing {context.series_label}</span>
-    {target && selected !== context.series_id && <p className="series-feedback">{preparationLabel(target)}{target.reason ? `. ${target.reason}` : ""}</p>}
+    {target && (!viewingTarget || target.preparation_status !== "ready") && <p className="series-feedback">{preparationLabel(target)}{target.reason ? `. ${target.reason}` : ""}</p>}
     {error && <p className="series-feedback" role="alert">{error}</p>}
   </section>;
 }

@@ -135,6 +135,51 @@ describe("3D counting workspace", () => {
     expect(screen.queryByTestId("total-count")).not.toBeInTheDocument();
   });
 
+  it("opens the current volume of the same series only after the retained-volume edit guard accepts", async () => {
+    const context = { study_id: "study-1", study_label: "Case003", series_id: readySeries.series_id, series_label: readySeries.series_label, spacing_mm: readySeries.spacing_mm, slice_thickness_mm: 0.625, resolution_class: readySeries.resolution_class, warnings: ["This retained volume belongs to an earlier source version."] };
+    vi.mocked(api.getCase).mockResolvedValue({ ...detail, catalog: context });
+    vi.mocked(api.listStudySeries).mockResolvedValue({ series: [{ ...readySeries, case_id: "current-volume" }] });
+    vi.mocked(api.selectStudySeries).mockResolvedValue({ study: studyFixture });
+    const open = vi.fn(); const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const props = { caseId: "case-1", onBack: vi.fn(), onOpenCase: open, registerNavigationGuard: vi.fn() };
+    const mounted = render(<CountingWorkspace {...props} />);
+    await userEvent.click(await screen.findByRole("button", { name: "Add cell" }));
+    const openCurrent = screen.getByRole("button", { name: "Open selected series" });
+    expect(openCurrent).toBeEnabled();
+    await userEvent.click(openCurrent);
+    expect(confirm).toHaveBeenCalled();
+    expect(api.selectStudySeries).not.toHaveBeenCalled();
+    expect(open).not.toHaveBeenCalled();
+    expect(screen.getByRole("heading", { name: "Add a cell" })).toBeVisible();
+    expect(screen.getByTestId("total-count")).toHaveTextContent("2");
+    confirm.mockReturnValue(true);
+    await userEvent.click(openCurrent);
+    expect(api.selectStudySeries).toHaveBeenCalledWith("study-1", readySeries.series_id);
+    expect(open).toHaveBeenCalledWith("current-volume");
+    vi.mocked(api.getCase).mockResolvedValue({ ...detail, case_id: "current-volume", catalog: { ...context, warnings: [] } });
+    vi.mocked(countingApi.list).mockResolvedValue({ runs: [] });
+    mounted.rerender(<CountingWorkspace {...props} caseId="current-volume" />);
+    await screen.findByRole("button", { name: "Run automatic count" });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Open selected series" })).toBeDisabled());
+    expect(screen.queryByTestId("total-count")).not.toBeInTheDocument();
+    expect(screen.getByTestId("overlay-url")).toBeEmptyDOMElement();
+    expect(screen.queryByRole("heading", { name: "Add a cell" })).not.toBeInTheDocument();
+    expect(countingApi.start).not.toHaveBeenCalled();
+    expect(countingApi.correct).not.toHaveBeenCalled();
+    confirm.mockRestore();
+  });
+
+  it("shows the current same-series preparation failure while reviewing retained history", async () => {
+    const reason = "The source files changed. Prepare this series again.";
+    vi.mocked(api.getCase).mockResolvedValue({ ...detail, catalog: { study_id: "study-1", study_label: "Case003", series_id: readySeries.series_id, series_label: readySeries.series_label, spacing_mm: readySeries.spacing_mm, slice_thickness_mm: 0.625, resolution_class: readySeries.resolution_class, warnings: [] } });
+    vi.mocked(api.listStudySeries).mockResolvedValue({ series: [{ ...readySeries, case_id: null, preparation_status: "unavailable", retryable: true, reason }] });
+    render(<CountingWorkspace caseId="case-1" onBack={vi.fn()} onOpenCase={vi.fn()} registerNavigationGuard={vi.fn()} />);
+    expect(await screen.findByText(`Unavailable. ${reason}`)).toBeVisible();
+    expect(screen.getByRole("button", { name: "Retry preparation" })).toBeEnabled();
+    expect(screen.getByTestId("total-count")).toHaveTextContent("2");
+    expect(countingApi.start).not.toHaveBeenCalled();
+  });
+
   it("guards series selection before persisting it and clears masks/counts on the next case", async () => {
     const context = { study_id: "study-1", study_label: "Case003", series_id: "series-thin", series_label: "Series007", spacing_mm: readySeries.spacing_mm, slice_thickness_mm: 0.625, resolution_class: readySeries.resolution_class, warnings: [] };
     vi.mocked(api.getCase).mockResolvedValue({ ...detail, catalog: context });
