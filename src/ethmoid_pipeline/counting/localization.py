@@ -41,6 +41,36 @@ class Localization:
     warnings: list[str]
 
 
+def localize_native(hu: np.ndarray, affine: np.ndarray, masks: dict[str, np.ndarray], config: CountingConfig, plan: dict) -> Localization:
+    """Map anatomical membership back before any cavity or air classification."""
+    if plan["mode"] == "native_axis_aligned":
+        return automatic_region(hu, affine, masks, config)
+    from .grids import anatomy_proxy, resample
+
+    proxy_hu, proxy_affine, proxy_masks, valid = anatomy_proxy(hu, affine, masks, plan)
+    localized = automatic_region(proxy_hu, proxy_affine, proxy_masks, config)
+    if np.any(localized.region & (~valid | ndi.binary_dilation(~valid))):
+        raise CountingError("TARGET_CLIPPED", "The anatomical proxy reaches the acquired source field-of-view boundary.")
+
+    def native(mask: np.ndarray, outside: int = 0) -> np.ndarray:
+        return resample(mask.astype(np.uint8), proxy_affine, hu.shape, affine, order=0, outside=outside).astype(bool)
+
+    excluded = native(localized.excluded, outside=1)
+    # Reapply native learned contents: interpolation must not reintroduce brain,
+    # eyes, or nerves that the original source-bound masks explicitly exclude.
+    for name in ("brain", "eye_left", "eye_right", "optic_nerve_left", "optic_nerve_right"):
+        excluded |= masks[name]
+    region = native(localized.region) & ~excluded
+    if not region.any():
+        raise CountingError("EMPTY_REGION", "No anatomical membership remains on the original source grid.")
+    lo, hi = _bounds(region)
+    if any(lo[i] == 0 or hi[i] == hu.shape[i] - 1 for i in range(3)):
+        raise CountingError("TARGET_CLIPPED", "The mapped counting region reaches the source field-of-view edge.")
+    variants = {name: native(mask) & ~excluded for name, mask in localized.variants.items()}
+    return Localization(region, excluded, variants, localized.midline_ras_x,
+                        localized.warnings + ["Oblique anatomical bounds were mapped from a linear-HU localization proxy; all cavity, septum and air decisions use original native CT samples."])
+
+
 def _predict_task(source: Path, destination: Path, task: str, *, full_extent: bool = False) -> dict[str, Any]:
     """Bounded GPU-then-CPU attempt; preserve source/native output geometry."""
     import torch

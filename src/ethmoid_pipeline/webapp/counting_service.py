@@ -22,10 +22,11 @@ from ..util import atomic_write_text, repo_root, sha256_canonical_json, sha256_f
 from .service import AppService, WebAppError, inspect_nifti, _atomic_save_nifti
 from .store import decode_json, encode_json
 from .counting_reports import build_count_reports
+from ..counting.protocol import PROTOCOL_VERSION
+from ..counting.quality import acquisition_snapshot, resolution_quality
 
 
 ARTIFACTS = {"cavities": "cavities.nii.gz", "air": "air.nii.gz", "region": "region.nii.gz"}
-PROTOCOL_VERSION = "ethmoid-count-prototype-v1"
 ELIGIBILITY = "EXPLORATORY_UNVALIDATED_ELIGIBILITY_UNCONFIRMED"
 ENGINE_FAILURE_CODES = {
     "INVALID_CONFIG", "INVALID_GEOMETRY", "INVALID_VOLUME", "EMPTY_REGION",
@@ -38,7 +39,7 @@ ENGINE_FAILURE_CODES = {
     "ROOF_UNRESOLVED", "SPHENOID_UNRESOLVED", "SPHENOID_AMBIGUOUS", "TARGET_CLIPPED",
     "LOCALIZATION_ORIENTATION", "OBLIQUE_GRID_UNSUPPORTED",
     "LANDMARK_PROVENANCE", "LANDMARK_SOURCE", "LANDMARK_INTEGRITY",
-    "INSUFFICIENT_COVERAGE",
+    "INSUFFICIENT_COVERAGE", "INVALID_ACQUISITION", "RESOURCE_LIMIT",
 }
 Executor = Callable[[Path, Path, Path], None]
 
@@ -122,6 +123,11 @@ class CountingService:
             raise _error("Count run not found.", 404)
         return row
 
+    def _assert_current_catalog_source(self, case_id: str) -> None:
+        checker = getattr(self.app, "assert_catalog_countable", None)
+        if checker is not None:
+            checker(case_id)
+
     def create_run(self, case_id: str, idempotency_key: str | None = None) -> dict[str, Any]:
         if self._closed.is_set():
             raise _error("The counting worker is stopping.", 503)
@@ -131,12 +137,20 @@ class CountingService:
         ):
             raise _error("The request identifier is invalid.")
         case, source = self._source(case_id)
+        self._assert_current_catalog_source(case_id)
         if case["state"] == "APPROVED":
             raise _error("Approved cases cannot start new count runs.", 409)
         info = inspect_nifti(source)
         if info.warnings:
             raise _error("Resolve source orientation metadata before counting.", 409)
         protocol = self.protocol()
+        context_reader = getattr(self.app, "catalog_context", None)
+        context = context_reader(case_id) if context_reader is not None else None
+        try:
+            protocol["acquisition"] = acquisition_snapshot(context, case["source_sha256"])
+        except ValueError as exc:
+            raise _error("The trusted acquisition metadata is invalid.", 409) from exc
+        protocol["source_quality"] = resolution_quality(protocol["acquisition"], np.asarray(info.affine))
         now = utc_now()
         run_id = uuid.uuid4().hex
         relative = f"cases/{case_id}/count-runs/{run_id}"
@@ -194,8 +208,12 @@ class CountingService:
         # The clinical contract is not an AlgorithmConfig. Only an explicit,
         # frozen algorithm section may override worker defaults; the worker also
         # records every effective default in its result config.
-        if "algorithm" in json.loads(config.read_text(encoding="utf-8")):
+        snapshot = json.loads(config.read_text(encoding="utf-8"))
+        if "algorithm" in snapshot:
             command.extend(["--config", str(config)])
+        acquisition_path = config.with_name("acquisition.json")
+        atomic_write_text(acquisition_path, encode_json(snapshot.get("acquisition", acquisition_snapshot(None, sha256_file(source)))))
+        command.extend(["--acquisition", str(acquisition_path)])
         with self._process_lock:
             if self._closed.is_set():
                 raise RuntimeError("Counting worker is stopping")
@@ -235,6 +253,7 @@ class CountingService:
                     return
             row = self._run(case_id, run_id)
             _, source = self._source(case_id)
+            self._assert_current_catalog_source(case_id)
             directory = self.app._path(row["output_relpath"])
             directory.mkdir(parents=True, exist_ok=True)
             protocol = decode_json(row["protocol_json"], {})
@@ -243,13 +262,27 @@ class CountingService:
             output = directory / "original"
             self._executor(source, output, config_path)
             self._source(case_id)
+            self._assert_current_catalog_source(case_id)
             result_path = self._safe_file(output, "result.json")
             result = json.loads(result_path.read_text(encoding="utf-8"))
+            # Server-derived source facts remain available even when anatomical
+            # localization abstains. Free-form worker text is never needed.
+            if row["protocol_version"] == PROTOCOL_VERSION:
+                for key, expected in (("acquisition", protocol["acquisition"]), ("quality", protocol["source_quality"])):
+                    if key in result and result[key] != expected:
+                        raise _error("The counting acquisition facts do not match the frozen source snapshot.")
+                    result[key] = copy.deepcopy(expected)
             if result.get("status") == "failed":
                 code = result.get("failure_code")
                 self._fail(run_id, code if isinstance(code, str) and code in ENGINE_FAILURE_CODES else "INFERENCE_FAILED")
                 return
             result = self._validate_result(result, source, output, row)
+            quality = result.get("quality", {})
+            result["warnings"] = list(dict.fromkeys([*quality.get("warnings", []), *result.get("warnings", [])]))
+            if quality.get("flags"):
+                for cell in result["cells"]:
+                    cell["uncertain"] = True
+                    cell["reasons"] = list(dict.fromkeys([*cell["reasons"], *quality["flags"]]))
             result["protocol_sha256"] = protocol.get("sha256", sha256_canonical_json(protocol))
             result["protocol_snapshot_sha256"] = sha256_canonical_json(protocol)
             result["revision"] = 0
@@ -408,13 +441,17 @@ class CountingService:
         if row["status"] == "completed":
             result, _, _ = self._snapshot(row, revision)
         original = decode_json(row["original_result_json"], {})
+        protocol = decode_json(row["protocol_json"], {})
+        quality = result.get("quality", {}) if result else protocol.get("source_quality", {})
         return {
             "run_id": row["id"], "case_id": case_id, "status": row["status"],
             "latest_revision": row["latest_revision"], "revision": result.get("revision") if result else None,
             "original_counts": original.get("counts") if row["status"] == "completed" else None,
             "counts": result.get("counts") if result else None,
             "cells": result.get("cells", []) if result else [],
-            "warnings": result.get("warnings", []) if result else [],
+            "warnings": result.get("warnings", []) if result else quality.get("warnings", []),
+            "quality": quality,
+            "acquisition": result.get("acquisition", {}) if result else protocol.get("acquisition", {}),
             "lineage": result.get("lineage", []) if result else [],
             "failure_code": row["failure_code"],
             "message": "The count did not complete. No anatomical count is available." if row["status"] == "failed" else None,
@@ -621,6 +658,7 @@ class CountingService:
             "revision": corrected["revision"], "original_artifact_sha256": original_hashes,
             "corrected_artifact_sha256": corrected_hashes, "training_eligibility": ELIGIBILITY,
             "clinical_accuracy": "UNMEASURED", "warnings": corrected.get("warnings", []),
+            "quality": original.get("quality", {}), "acquisition": original.get("acquisition", {}),
             "config": original.get("config", {}),
             "report_sha256": {name: hashlib.sha256(data).hexdigest() for name, data in reports.items()},
         }
@@ -638,9 +676,12 @@ class CountingService:
                     archive.writestr(name, data)
                 count_stream = io.StringIO(newline="")
                 count_writer = csv.writer(count_stream)
-                count_writer.writerow(["result", "revision", "left", "right", "total"])
+                count_writer.writerow(["result", "revision", "left", "right", "total", "resolution_class", "slice_thickness_mm", "slice_interval_mm", "quality_flags"])
                 for name, snapshot in (("original", original), ("reviewed", corrected)):
-                    count_writer.writerow([name, snapshot["revision"], *[snapshot["counts"][side] for side in ("left", "right", "total")]])
+                    quality = snapshot.get("quality", {})
+                    count_writer.writerow([name, snapshot["revision"], *[snapshot["counts"][side] for side in ("left", "right", "total")],
+                                           quality.get("resolution_class", "unknown"), quality.get("slice_thickness_mm"), quality.get("slice_interval_mm"),
+                                           " ".join(quality.get("flags", []))])
                 archive.writestr("counts.csv", count_stream.getvalue())
                 for prefix, result, directory in (("original", original, original_dir), ("reviewed", corrected, corrected_dir)):
                     for name in ["result.json", *ARTIFACTS.values()]:

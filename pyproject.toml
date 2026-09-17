@@ -30,7 +30,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "ethmoid_pipeline.webapp" = ["protocol.v1.json"]
-"ethmoid_pipeline.counting" = ["protocol.json"]
+"ethmoid_pipeline.counting" = ["protocol.json", "protocol.v1.json"]
 
 [tool.pytest.ini_options]
 addopts = "-ra --strict-markers"

@@ -60,7 +60,7 @@ def test_valid_documents_and_metadata_allowlist(synthetic):
     assert b"Cell registry" in pdf and b"Flagged" in pdf
     assert len(re.findall(rb"/Type /Page\b", pdf)) == 2
     png = Image.open(BytesIO(artifacts["representative.png"]))
-    assert png.format == "PNG" and png.size == (2100, 1240)
+    assert png.format == "PNG" and png.size == (2100, 1280)
     assert png.mode == "RGB" and not png.info
     for content in artifacts.values():
         assert b"SYNTHETIC-SECRET" not in content
@@ -81,6 +81,17 @@ def test_correction_keeps_original_and_excluded_registry(synthetic):
     assert b"Original: L 1 / R 1 / Total 2" in pdf
     assert b"Current revision: L 0 / R 1 / Total 1" in pdf
     assert b"Retired" in pdf
+
+
+@pytest.mark.parametrize("classification,text", [
+    ("outside_protocol", b"OUT-OF-PROTOCOL EXPERIMENTAL ATTEMPT"),
+    ("within_protocol", b"count completeness remain unvalidated"),
+    ("unknown", b"acquisition thickness is unknown"),
+])
+def test_presentation_explains_resolution_without_relaying_arbitrary_text(synthetic, classification, text):
+    pdf = _reports(synthetic, quality={"resolution_class": classification, "warnings": ["SYNTHETIC-SECRET"]})["summary.pdf"]
+    assert text in pdf
+    assert b"SYNTHETIC-SECRET" not in pdf
 
 
 def test_manual_point_and_empty_included_set(synthetic):

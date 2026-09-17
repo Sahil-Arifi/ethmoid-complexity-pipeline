@@ -20,6 +20,7 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
+from ..counting.quality import quality_note
 
 
 class CountReportError(ValueError):
@@ -255,8 +256,8 @@ def _view(plane: str, hu, cavity, air, affine, cells, center, bounds) -> Image.I
     return panel
 
 
-def _png_document(views: Image.Image, case: str, counts: dict, original: dict | None, revision: int, reference: int | None) -> bytes:
-    document = Image.new("RGB", (2100, 1240), PAPER)
+def _png_document(views: Image.Image, case: str, counts: dict, original: dict | None, revision: int, reference: int | None, quality_text: str) -> bytes:
+    document = Image.new("RGB", (2100, 1280), PAPER)
     draw = ImageDraw.Draw(document)
     draw.text((35, 25), "3D ETHMOID CELL COUNT", font=_font(52), fill=INK)
     draw.text((35, 92), f"{case}  |  Revision {revision}  |  " + ("Original automatic result" if revision == 0 else "Reviewed result"), font=_font(28), fill=MUTED)
@@ -271,15 +272,16 @@ def _png_document(views: Image.Image, case: str, counts: dict, original: dict | 
         detail = f"Original: left {original['left']}, right {original['right']}, total {original['total']}. Current revision: left {counts['left']}, right {counts['right']}, total {counts['total']}."
     else:
         detail = "Colored outline: cavity. Filled color: observed air. ? marks an uncertainty flag. Only included IDs are shown."
-    draw.text((35, 1164), detail, font=_font(24), fill=MUTED)
+    draw.text((35, 1164), quality_text, font=_font(24), fill=INK)
+    draw.text((35, 1200), detail, font=_font(24), fill=MUTED)
     reference_text = f"Representative orthogonal planes through cell {reference}." if reference is not None else "No included cells to overlay."
-    draw.text((35, 1200), reference_text + " Each view shows one slice; the PDF registry lists every cell.", font=_font(23), fill=MUTED)
+    draw.text((35, 1236), reference_text + " Each view shows one slice; the PDF registry lists every cell.", font=_font(23), fill=MUTED)
     output = BytesIO()
     document.save(output, format="PNG", optimize=True)
     return output.getvalue()
 
 
-def _pdf_document(views: Image.Image, case: str, cells: list[dict], counts: dict, original: dict | None, revision: int, reference: int | None) -> bytes:
+def _pdf_document(views: Image.Image, case: str, cells: list[dict], counts: dict, original: dict | None, revision: int, reference: int | None, quality_text: str) -> bytes:
     output = BytesIO()
     pdf = canvas.Canvas(output, pagesize=landscape(A4), invariant=1, pageCompression=0)
     pdf.setTitle("3D ethmoid cell count")
@@ -316,6 +318,7 @@ def _pdf_document(views: Image.Image, case: str, cells: list[dict], counts: dict
     pdf.drawImage(ImageReader(views), margin, height - 150 - image_height, image_width, image_height)
     pdf.setFillColor(colors.HexColor("#182631"))
     pdf.setFont("Helvetica-Bold", 9)
+    pdf.drawString(margin, 131, quality_text)
     pdf.drawString(margin, 115, EXPERIMENTAL_NOTE)
     pdf.setFont("Helvetica", 9)
     pdf.drawString(margin, 97, "Colored outlines show cavities; filled color shows observed air. ? marks an uncertainty flag.")
@@ -369,7 +372,8 @@ def build_count_reports(source_path: Path, cavity_path: Path, air_path: Path, re
         views = Image.new("RGB", (2100, 820), PAPER)
         for index, plane in enumerate(PLANE_AXES):
             views.paste(_view(plane, hu, cavity, air, affine, cells, center, bounds), (index * 700, 0))
-        return {"summary.pdf": _pdf_document(views, case_label, cells, counts, original, revision, reference), "representative.png": _png_document(views, case_label, counts, original, revision, reference)}
+        note = quality_note(result.get("quality"))
+        return {"summary.pdf": _pdf_document(views, case_label, cells, counts, original, revision, reference, note), "representative.png": _png_document(views, case_label, counts, original, revision, reference, note)}
     except CountReportError:
         raise
     except (OSError, ValueError, TypeError, KeyError, np.linalg.LinAlgError):

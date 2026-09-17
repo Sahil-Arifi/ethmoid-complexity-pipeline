@@ -15,10 +15,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--landmarks", type=Path)
     parser.add_argument("--config", type=Path)
+    parser.add_argument("--acquisition", type=Path, help="Server-created source-bound acquisition snapshot; never derived from voxel spacing.")
     args = parser.parse_args(argv)
     try:
         configuration = json.loads(args.config.read_text(encoding="utf-8")) if args.config else None
-        result = analyze_volume(args.input, args.output, args.landmarks, configuration)
+        acquisition = json.loads(args.acquisition.read_text(encoding="utf-8")) if args.acquisition else None
+        result = analyze_volume(args.input, args.output, args.landmarks, configuration, acquisition=acquisition)
     except CountingError as error:
         print(json.dumps({"status": "failed", "failure_code": error.code, "message": str(error)}))
         return 2

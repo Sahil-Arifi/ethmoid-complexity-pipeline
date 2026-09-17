@@ -27,6 +27,7 @@ EXACT_ALLOWED = {
     "counting-tests.in",
     "counting-tests.lock",
     "src/ethmoid_pipeline/counting/protocol.json",
+    "src/ethmoid_pipeline/counting/protocol.v1.json",
     "src/ethmoid_pipeline/webapp/protocol.v1.json",
     "src/ethmoid_pipeline/webapp/protocol.v2.draft.json",
     "tools.lock.json",

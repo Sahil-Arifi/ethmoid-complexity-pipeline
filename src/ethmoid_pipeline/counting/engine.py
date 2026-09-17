@@ -20,8 +20,8 @@ from scipy import ndimage as ndi
 from skimage.morphology import h_maxima
 from skimage.segmentation import watershed
 
-METHOD_VERSION = "native-bone-watershed-0.1.0"
-PROTOCOL_VERSION = "ethmoid-count-prototype-v1"
+METHOD_VERSION = "native-bone-watershed-0.2.0"
+PROTOCOL_VERSION = "ethmoid-count-prototype-v2"
 
 
 class CountingError(RuntimeError):
@@ -217,7 +217,8 @@ def compartment_stage(hu: np.ndarray, roi: np.ndarray, affine: np.ndarray, confi
     del components
     labels = watershed(-distance, markers=seeds, mask=free, connectivity=1).astype(np.int32)
     labels, inferred_split = _merge_unsupported_separators(labels, free, bone, spacing, cfg)
-    bone_near = ndi.distance_transform_edt(~bone, sampling=spacing) <= max(float(spacing.max()) * 1.01, 0.8)
+    # A coarse sampling interval must not make distant bone look like enclosure.
+    bone_near = ndi.distance_transform_edt(~bone, sampling=spacing) <= min(max(float(spacing.max()) * 1.01, 0.8), 1.01)
     roi_edge = search & ~ndi.binary_erosion(search)
     proposals: list[tuple[tuple[slice, ...], np.ndarray, dict[str, Any]]] = []
     rejected = 0
@@ -268,7 +269,7 @@ def compartment_stage(hu: np.ndarray, roi: np.ndarray, affine: np.ndarray, confi
             reasons.append("cavity_reconstructed_beyond_membership_boundary")
         if size < 20:
             reasons.append("small_resolution_limited_candidate")
-        if abs(float(centroid[0]) - midline_ras_x) <= float(spacing[0]):
+        if abs(float(centroid[0]) - midline_ras_x) <= float(np.abs(affine[0, :3]).sum()):
             reasons.append("midline_laterality_requires_review")
         positions = np.where(mask)
         physical_x = np.full(size, float(affine[0, 3]))
@@ -319,7 +320,7 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def analyze_volume(volume_path: str | Path, output_dir: str | Path, landmarks_dir: str | Path | None = None, config: dict[str, Any] | CountingConfig | None = None) -> dict[str, Any]:
+def analyze_volume(volume_path: str | Path, output_dir: str | Path, landmarks_dir: str | Path | None = None, config: dict[str, Any] | CountingConfig | None = None, *, acquisition: dict[str, Any] | None = None) -> dict[str, Any]:
     """Run a fully automatic first count and persist a source-grid result.
 
     Existing output directories must be empty; immutable prior results are never
@@ -335,23 +336,36 @@ def analyze_volume(volume_path: str | Path, output_dir: str | Path, landmarks_di
         "source_sha256": None, "protocol_version": PROTOCOL_VERSION, "config": {},
         "counts": {"left": None, "right": None, "total": None}, "cells": [],
         "warnings": [], "artifacts": {}, "diagnostics": {}, "localizer_provenance": {},
+        "acquisition": {}, "quality": {}, "localization_geometry": {},
     }
     try:
-        from .localization import automatic_region, cache_producer_summary, cache_producer_warnings, load_landmarks, run_localizers
+        from .localization import localize_native, cache_producer_summary, cache_producer_warnings, load_landmarks, run_localizers
+        from .grids import check_proxy_limit, localization_grid
+        from .quality import acquisition_snapshot, resolution_quality
 
+        if isinstance(config, dict) and "protocol_version" in config and config["protocol_version"] != PROTOCOL_VERSION:
+            raise CountingError("INVALID_CONFIG", "This worker cannot execute a different frozen protocol version.")
         cfg = CountingConfig.parse(config)
         result["config"] = asdict(cfg)
         source = Path(volume_path)
         if not source.is_file():
             raise CountingError("SOURCE_UNAVAILABLE", "The source volume is unavailable.")
         result["source_sha256"] = _sha256(source)
+        try:
+            if acquisition is not None and (not isinstance(acquisition, dict) or acquisition.get("source_sha256") != result["source_sha256"]):
+                raise ValueError("Acquisition snapshot must bind the exact source")
+            result["acquisition"] = acquisition_snapshot(acquisition, result["source_sha256"])
+        except ValueError:
+            raise CountingError("INVALID_ACQUISITION", "The source-bound acquisition metadata is invalid.") from None
+        result["quality"] = resolution_quality(result["acquisition"])
         image = nib.load(source)
         if len(image.shape) != 3:
             raise CountingError("INVALID_VOLUME", "Only one three-dimensional CT volume is supported.")
         spacing = geometry(image.affine)
-        if float(spacing.max()) > 1.01:
-            raise CountingError("RESOLUTION_INELIGIBLE", "The prototype requires no more than 1 mm spacing on every source axis.")
+        result["quality"] = resolution_quality(result["acquisition"], image.affine)
         canonical = nib.as_closest_canonical(image)
+        result["localization_geometry"] = localization_grid(canonical.shape, canonical.affine)
+        check_proxy_limit(result["localization_geometry"])
         # No interpolation or sharpening is used to invent resolution.
         hu = canonical.get_fdata(dtype=np.float32)
         if not np.isfinite(hu).all() or float(np.percentile(hu, 0.1)) > -300 or float(np.percentile(hu, 99.9)) < 250:
@@ -364,7 +378,7 @@ def analyze_volume(volume_path: str | Path, output_dir: str | Path, landmarks_di
             landmarks = load_landmarks(Path(landmarks_dir), canonical, source_sha256=result["source_sha256"])
             if (Path(landmarks_dir) / "localizers.local.json").is_file():
                 result["localizer_provenance"] = cache_producer_summary(Path(landmarks_dir))
-            localization = automatic_region(hu, canonical.affine, landmarks, cfg)
+            localization = localize_native(hu, canonical.affine, landmarks, cfg, result["localization_geometry"])
         except CountingError as error:
             if error.code not in {"LANDMARK_EMPTY", "TARGET_CLIPPED"}:
                 raise
@@ -375,7 +389,7 @@ def analyze_volume(volume_path: str | Path, output_dir: str | Path, landmarks_di
             landmarks = load_landmarks(retry_directory, canonical, source_sha256=result["source_sha256"])
             if (retry_directory / "localizers.local.json").is_file():
                 result["localizer_provenance"] = cache_producer_summary(retry_directory)
-            localization = automatic_region(hu, canonical.affine, landmarks, cfg)
+            localization = localize_native(hu, canonical.affine, landmarks, cfg, result["localization_geometry"])
             landmarks_dir = retry_directory
             retried_extent = True
         if retried_extent:
@@ -402,10 +416,16 @@ def analyze_volume(volume_path: str | Path, output_dir: str | Path, landmarks_di
         cavities = np.zeros(hu.shape, dtype=np.uint16)
         air = np.zeros(hu.shape, dtype=np.uint16)
         cavities[crop], air[crop] = cavities_crop, air_crop
-        physical_x = canonical.affine[0, 0] * np.arange(hu.shape[0]) + canonical.affine[0, 3]
-        region_labels = np.where(region | (cavities > 0), np.where(physical_x[:, None, None] <= localization.midline_ras_x, 1, 2), 0).astype(np.uint8)
+        physical_x = (canonical.affine[0, 0] * np.arange(hu.shape[0])[:, None, None]
+                      + canonical.affine[0, 1] * np.arange(hu.shape[1])[None, :, None]
+                      + canonical.affine[0, 2] * np.arange(hu.shape[2])[None, None, :]
+                      + canonical.affine[0, 3])
+        region_labels = np.where(region | (cavities > 0), np.where(physical_x <= localization.midline_ras_x, 1, 2), 0).astype(np.uint8)
         for cell in cells:
             region_labels[cavities == cell["id"]] = 1 if cell["side"] == "left" else 2
+            if result["quality"]["flags"]:
+                cell["uncertain"] = True
+                cell["reasons"].extend(result["quality"]["flags"])
         orientation = nib.orientations.ornt_transform(nib.orientations.io_orientation(canonical.affine), nib.orientations.io_orientation(image.affine))
         for name, array in (("cavities", cavities), ("air", air), ("region", region_labels)):
             native = nib.orientations.apply_orientation(array, orientation)
@@ -440,6 +460,7 @@ def analyze_volume(volume_path: str | Path, output_dir: str | Path, landmarks_di
         # Raw third-party exception text may contain paths or image metadata.
         (destination / "engine-error.local.txt").write_text(traceback.format_exc(), encoding="utf-8")
         result.update(failure_code="ENGINE_ERROR", message="The local counting engine failed; inspect protected local runtime diagnostics.")
+    result["warnings"] = result["quality"].get("warnings", []) + result["warnings"]
     temporary = destination / ".result.json.tmp"
     temporary.write_text(json.dumps(result, indent=2, sort_keys=True, allow_nan=False) + "\n", encoding="utf-8")
     temporary.replace(destination / "result.json")
