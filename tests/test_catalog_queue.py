@@ -122,6 +122,7 @@ def test_disk_failure_is_durable_and_only_retried_explicitly(catalog, monkeypatc
     ("a likely missing-plane gap is present", "MISSING_PLANES"),
     ("RescaleType is not explicitly HU", "HU_UNCALIBRATED"),
     ("could not parse SYNTHETIC_PRIVATE_VALUE", "METADATA_INVALID"),
+    ("quantized MPR physical corner residual exceeds the 0.001 mm limit", "GEOMETRY_RECONCILIATION_UNRESOLVED"),
 ])
 def test_preflight_failure_retains_fixed_structured_limitations(catalog, monkeypatch, issue, code):
     service, _, _ = catalog
@@ -140,6 +141,18 @@ def test_preflight_failure_retains_fixed_structured_limitations(catalog, monkeyp
     assert "SYNTHETIC_PRIVATE_VALUE" not in report.read_text()
     assert selected(service)["reason"] == value["issues"][0]["message"]
     assert selected(service)["retryable"] is False and selected(service)["counts"] is None
+
+
+def test_unresolved_serialized_geometry_has_specific_nonretryable_diagnostics(catalog,monkeypatch):
+    service,_,_=catalog;service.sync()
+    import ethmoid_pipeline.webapp.catalog_queue as module
+    def fail(*args,**kwargs):
+        raise module.GeometryReconciliationFailure("Synthetic geometry rejection",diagnostics={"stage":"reloaded_geometry","form":"qform","max_world_residual_mm":.0011,"physical_residual_limit_mm":.001})
+    monkeypatch.setattr(module,"convert_series",fail)
+    queue=PreparationQueue(service);queue.enqueue(selected(service)["series_id"]);job=queue._claim();queue.process(job)
+    result=json.loads((service.app.root/'preparation'/job['id']/'attempt-0001/geometry-failure.local.json').read_text())
+    assert result['geometry_diagnostics']['max_world_residual_mm']==.0011
+    assert selected(service)['retryable'] is False and selected(service)['preparation_status']=='unavailable'
 
 
 def test_single_process_owner_and_restart_recovers_interrupted_job(catalog):

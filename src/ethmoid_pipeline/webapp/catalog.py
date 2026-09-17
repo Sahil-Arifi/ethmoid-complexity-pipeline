@@ -20,6 +20,7 @@ REASONS = {
     "SCOUT": "This is a scout image, not a three-dimensional CT volume.",
     "PROJECTION": "Projection or averaged images cannot provide a three-dimensional cell count.",
     "GEOMETRY_INVALID": "The images do not form one consistent three-dimensional CT volume.",
+    "GEOMETRY_RECONCILIATION_UNRESOLVED": "The reconstructed geometry cannot match all source planes within the permitted physical limit. This series remains unavailable.",
     "MIXED_ACQUISITION": "This series mixes acquisitions or reconstruction settings and cannot form one reliable volume.",
     "ORIENTATION_INVALID": "Image orientations are inconsistent, nonorthogonal, or sheared within this series.",
     "DUPLICATE_PLANES": "Duplicate images or overlapping slice positions prevent a reliable three-dimensional volume.",
@@ -291,7 +292,8 @@ class CatalogService:
                     if not verified_volume(source, report_path, report_label, preflight):
                         continue
                     descriptor = decode_json(row["descriptor_json"], {})
-                    descriptor.update(spacing_mm=[*preflight.pixel_spacing, preflight.slice_spacing], slice_thickness_mm=preflight.slice_thickness, source_kind=preflight.source_kind, metadata_validated=True, warnings=list(preflight.warnings))
+                    observed_interval = preflight.grid_policy["original_median_interval_mm"] if preflight.grid_policy else preflight.slice_spacing
+                    descriptor.update(spacing_mm=[*preflight.pixel_spacing, observed_interval], fitted_spacing_mm=[*preflight.pixel_spacing, preflight.slice_spacing], grid_policy=preflight.grid_policy, slice_thickness_mm=preflight.slice_thickness, source_kind=preflight.source_kind, metadata_validated=True, warnings=list(preflight.warnings))
                     descriptor.update(acquisition(descriptor))
                     self.link(row["id"], case["id"], expected, proof, descriptor)
                 except Exception:

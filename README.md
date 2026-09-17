@@ -5,7 +5,7 @@ This repository contains the engineering foundation for the UCSD ethmoid-complex
 - a fail-closed DICOM-to-NIfTI conversion pipeline with geometry and HU verification; and
 - a local web application for automatic experimental 3D counting, scan review and revision-based correction.
 
-The experimental 3D cell-counting prototype is implemented. Its workflow is functional, but the frozen method produced candidate counts on only two of five held-out studies and withheld the other three. Clinical accuracy is unmeasured, and no composite complexity score is defined.
+The experimental 3D cell-counting prototype is implemented. The original v1 method produced candidate counts on two of five held-out studies and withheld the other three. The broader v2 workflow is described below; clinical accuracy remains unmeasured, and no composite complexity score is defined.
 
 ## Study catalog and broader counting work
 
@@ -25,7 +25,11 @@ The separate [all-series evaluation procedure](docs/CATALOG_EVALUATION.md) now h
 
 Presentation exports now use the run's frozen study/series identity alongside its legacy volume label. PDF, PNG, CSV and manifest fields keep nominal thickness, physical slice interval, acquisition spacing and native voxel spacing distinct, including unknown-thickness and oblique-localization notes. Historical metadata is never inferred from today's catalog. **81 report/revision/API checks passed**, and synthetic PDF/PNG layout inspection confirmed readable identity/quality fields without overlapping text. The final CPU suite again passed **82 tests**; npm audit reported **zero vulnerabilities**.
 
-## 3D counting implementation status
+Final integrated application checks passed **275 tests** (two SciPy modules separately covered by the 82-test CPU suite), **39 frontend tests**, **three browser workflows** and the production build. Both GitHub CI jobs passed at `ff5201a`. Real v2 API checks then ran the existing thin and thick scans without an injected executor: the 2.5 mm scan reached inference and withheld its count for `SPHENOID_AMBIGUOUS` in **140.3 seconds**, while the 0.625 mm scan completed with a verified identity/quality export in **248.8 seconds**. These are two executions on this host under concurrent engineering work, not general runtime or accuracy guarantees. The old resolution rejection is absent from the thick attempt; original runs remain intact.
+
+The first preparation pass verified **92 native volumes** and recorded an outcome for all 230 series. All ten volumetric MPRs exposed rounded-position interval drift in the converter. A separate exploratory MPR policy now recognizes measured 0.001 mm coordinate-difference quantization, fits the orthogonal grid and preserves the original observed interval. Both original forms must retain the same one-to-one native voxel assignment; both written forms must place every source corner within **0.001 mm Euclidean error**. Only the header changes, and every HU voxel is verified afterward. The strict profile is unchanged. Independent protected diagnostic conversions passed **six MPRs with zero HU error**; four remained rejected (one source fit and three saved qforms exceeded the same physical cap). All source hashes were unchanged. Production retry and final catalog/evaluation accounting remain pending.
+
+## Original v1 implementation and evidence
 
 The latest clinician email and answered questionnaire request a count of unique cells throughout the full CT volume. They supersede the older selected-landmark and anterior/posterior counting proposal. Preliminary inference is authorized before manual 3D reference counts are available. Review and correction follow the first automatic result; no patient-specific ROI, seeds, or parameter tuning precede it.
 

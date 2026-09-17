@@ -19,6 +19,7 @@ from .dicom import (
     sensitive_values,
 )
 from .inventory import resolve_selection
+from .geometry import prove_native_voxel_bijection
 from .privacy import redact_text, sanitize_sidecar, scrub_nifti_header
 from .provenance import current_code_provenance
 from .util import (
@@ -40,6 +41,13 @@ DCM2NIIX_ARCHIVE_SHA256 = "8310549ef7340b1b169c26f4721aeac69423fd73643fbbd22eec4
 DCM2NIIX_EXE_SHA256 = "de2466c1e31bb0114ad2c5a3fdfa08be62447b25beb4f4f6a426c314797e48d8"
 SLICER_VERSION = "5.12.3"
 SLICER_REVISION = 34627
+
+
+class GeometryReconciliationFailure(PipelineError):
+    """The selected series cannot meet the permitted physical geometry policy."""
+    def __init__(self, message: str, *, diagnostics: dict | None = None):
+        self.diagnostics = diagnostics
+        super().__init__(message)
 SLICER_INSTALLER_SHA512 = (
     "109508d54b204f75371f6ae99b9951993a6b753a91c855cd223fcb8eeb65b37b"
     "ac4f1096d13c1cae89b4d525910b238239a5fb05c98d49874ff090315cd19315"
@@ -229,7 +237,7 @@ def _validate_selected_paths(dicom_root: Path, paths: Iterable[Path]) -> list[Pa
 
 
 def reconcile_nifti_affine(path: Path, preflight: PreflightResult) -> dict[str, Any]:
-    """Repair small qform/sform precision disagreement using validated DICOM.
+    """Reconcile qform/sform against separately validated source geometry.
 
     Some decimal-spacing acquisitions get an sform step computed from rounded
     float32 positions, while their qform retains the correct spacing. At least
@@ -238,6 +246,11 @@ def reconcile_nifti_affine(path: Path, preflight: PreflightResult) -> dict[str, 
     the complete volume. Larger disagreement is a failure, never a repair.
     Only header bytes are written; encoded voxel bytes and HU scaling remain
     identical. Full source-to-image HU verification still runs afterward.
+
+    Exploratory quantized MPR uses its recorded fitted-grid policy instead:
+    original forms must preserve the identical discrete voxel assignment, and
+    both serialized fitted forms must satisfy the 0.001 mm source-corner cap.
+    This separate policy never resamples the pixel payload.
     """
     image = nib.load(path, mmap=True)
     if not isinstance(image, nib.Nifti1Image) or len(image.shape) != 3:
@@ -253,8 +266,11 @@ def reconcile_nifti_affine(path: Path, preflight: PreflightResult) -> dict[str, 
     source_affine = np.eye(4)
     source_affine[:3, 0] = lps_to_ras * column_direction * preflight.pixel_spacing[0]
     source_affine[:3, 1] = lps_to_ras * row_direction * preflight.pixel_spacing[1]
-    source_affine[:3, 2] = lps_to_ras * np.cross(row_direction, column_direction) * preflight.slice_spacing
-    source_affine[:3, 3] = lps_to_ras * np.asarray(record.ipp)
+    normal = np.cross(row_direction, column_direction)
+    if preflight.grid_policy is not None:
+        normal /= np.linalg.norm(normal)
+    source_affine[:3, 2] = lps_to_ras * normal * preflight.slice_spacing
+    source_affine[:3, 3] = lps_to_ras * np.asarray(preflight.fitted_origin_lps if preflight.fitted_origin_lps is not None else record.ipp)
     mapping = np.linalg.inv(qform) @ source_affine
     axes = np.argmax(np.abs(mapping[:3, :3]), axis=0)
     if len(set(int(axis) for axis in axes)) != 3:
@@ -274,15 +290,27 @@ def reconcile_nifti_affine(path: Path, preflight: PreflightResult) -> dict[str, 
     corners = np.asarray([(*corner, 1.0) for corner in product(*[(0, size - 1) for size in image.shape])]).T
     inverse_canonical = np.linalg.inv(canonical)
     residuals = [float(np.max(np.abs((inverse_canonical @ form @ corners - corners)[:3]))) for form in (qform, sform)]
-    if min(residuals) > 1e-3 or max(residuals) > 0.05:
+    original_geometry = None
+    if preflight.grid_policy is not None:
+        canonical_proof = prove_native_voxel_bijection(image.shape, canonical, preflight.records, physical_limit_mm=0.001)
+        original_proofs = [prove_native_voxel_bijection(image.shape, form, preflight.records) for form in (qform, sform)]
+        if any(proof["assignment"] != canonical_proof["assignment"] for proof in original_proofs):
+            raise PipelineError("Original image geometry does not preserve the fitted native voxel assignment.")
+        original_geometry = {"qform_max_world_residual_mm": original_proofs[0]["max_world_residual_mm"],
+                             "sform_max_world_residual_mm": original_proofs[1]["max_world_residual_mm"],
+                             "discrete_native_assignment_unchanged": True}
+    elif min(residuals) > 1e-3 or max(residuals) > 0.05:
         raise PipelineError("Converted physical geometry differs beyond bounded affine precision reconciliation.")
     result: dict[str, Any] = {
-        "method": "validated-dicom-grid-v1",
-        "applied": max(residuals) > 1e-3,
+        "method": "exploratory-mpr-quantized-grid-v1" if preflight.grid_policy is not None else "validated-dicom-grid-v1",
+        "applied": preflight.grid_policy is not None or max(residuals) > 1e-3,
         "original_qform_residual_voxel": residuals[0],
         "original_sform_residual_voxel": residuals[1],
         "voxel_payload_unchanged": True,
     }
+    if original_geometry is not None:
+        result["grid_policy"] = preflight.grid_policy
+        result["original_geometry"] = original_geometry
     if not result["applied"]:
         return result
     # nib.load consumes scl_slope/scl_inter in its in-memory header. Read the
@@ -308,6 +336,21 @@ def reconcile_nifti_affine(path: Path, preflight: PreflightResult) -> dict[str, 
     if payload_hash() != before:
         raise PipelineError("Voxel bytes changed during header-only affine reconciliation.")
     result["voxel_payload_sha256"] = before
+    if preflight.grid_policy is not None:
+        reloaded = nib.load(path, mmap=True)
+        checks = []
+        for name, form in (("qform", reloaded.get_qform()), ("sform", reloaded.get_sform())):
+            try:
+                checks.append(prove_native_voxel_bijection(reloaded.shape, form, preflight.records, physical_limit_mm=0.001))
+            except PipelineError as error:
+                if hasattr(error, "diagnostics"):
+                    error.diagnostics.update(stage="reloaded_geometry", form=name)
+                raise
+        if any(check["assignment"] != canonical_proof["assignment"] for check in checks):
+            raise PipelineError("Serialized fitted geometry changed the native voxel assignment.")
+        result["reloaded_geometry"] = {"qform_max_world_residual_mm": checks[0]["max_world_residual_mm"],
+                                       "sform_max_world_residual_mm": checks[1]["max_world_residual_mm"],
+                                       "one_to_one_native_voxels": True}
     return result
 
 
@@ -390,7 +433,10 @@ def _convert_preflighted_series(
         if nifti.stem != neutral_name or sidecar.stem != neutral_name:
             raise PipelineError("dcm2niix added an unexpected output postfix or filename.")
 
-        affine_reconciliation = reconcile_nifti_affine(nifti, preflight)
+        try:
+            affine_reconciliation = reconcile_nifti_affine(nifti, preflight)
+        except PipelineError as error:
+            raise GeometryReconciliationFailure(str(error), diagnostics=getattr(error, "diagnostics", None)) from error
         sanitize_sidecar(sidecar)
         scrub_nifti_header(nifti)
         hashes_after = _source_hash_manifest(preflight.records)

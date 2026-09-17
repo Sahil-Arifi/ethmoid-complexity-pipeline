@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -50,6 +50,8 @@ class PreflightResult:
     private_tags_present: bool
     source_kind: str = "native"
     profile: str = "strict"
+    fitted_origin_lps: tuple[float, float, float] | None = None
+    grid_policy: dict[str, Any] | None = None
 
     def safe_report(self, case_label: str, series_label: str) -> dict[str, Any]:
         return {
@@ -71,13 +73,56 @@ class PreflightResult:
             "warnings": list(self.warnings),
             "source_kind": self.source_kind,
             "preflight_profile": self.profile,
+            "grid_policy": self.grid_policy,
         }
 
 
 class PreflightFailure(PipelineError):
-    def __init__(self, issues: Iterable[str]):
+    def __init__(self, issues: Iterable[str], *, diagnostics: dict | None = None):
         self.issues = tuple(dict.fromkeys(issues))
+        self.diagnostics = diagnostics
         super().__init__("Series preflight failed: " + "; ".join(self.issues))
+
+
+def _quantized_mpr_grid(result: PreflightResult) -> PreflightResult:
+    """Recognize translated 0.001-mm quantization without changing source records.
+
+    The fixed IOP axes and pixel spacing are preserved. Only origin and the
+    normal-direction interval are fitted; shear/resampling cannot be introduced.
+    Every original slice corner must remain within 0.001 mm Euclidean distance.
+    """
+    if result.profile != "exploratory" or result.source_kind != "mpr":
+        return result
+    positions = np.asarray([record.ipp for record in result.records], dtype=float)
+    differences = positions - positions[0]
+    lattice_error = float(np.max(np.abs(differences - np.round(differences, 3))))
+    if lattice_error > 1e-7:
+        return result
+    iop = np.asarray(result.iop)
+    normal = np.cross(iop[:3], iop[3:])
+    normal /= np.linalg.norm(normal)
+    indices = np.arange(len(positions), dtype=float)
+    centered = indices - indices.mean()
+    coordinates = positions @ normal
+    interval = float(centered @ (coordinates - coordinates.mean()) / (centered @ centered))
+    if not math.isfinite(interval) or interval <= 0:
+        raise PreflightFailure(["quantized MPR fitted slice interval is invalid"])
+    origin = positions.mean(axis=0) - normal * interval * indices.mean()
+    maximum = 0.0
+    for index, record in enumerate(result.records):
+        actual_iop = np.asarray(record.iop)
+        for row, column in ((0, 0), (0, record.columns - 1), (record.rows - 1, 0), (record.rows - 1, record.columns - 1)):
+            source = np.asarray(record.ipp) + row * record.pixel_spacing[0] * actual_iop[3:] + column * record.pixel_spacing[1] * actual_iop[:3]
+            fitted = origin + index * interval * normal + row * result.pixel_spacing[0] * iop[3:] + column * result.pixel_spacing[1] * iop[:3]
+            maximum = max(maximum, float(np.linalg.norm(source - fitted)))
+    if maximum > 0.001:
+        raise PreflightFailure(["quantized MPR physical corner residual exceeds the 0.001 mm limit"], diagnostics={"policy": "exploratory-mpr-quantized-grid-v1", "max_source_corner_residual_mm": maximum, "physical_residual_limit_mm": 0.001, "fitted_interval_mm": interval, "original_median_interval_mm": result.slice_spacing})
+    policy = {"name": "exploratory-mpr-quantized-grid-v1", "coordinate_difference_quantum_mm": 0.001,
+              "lattice_residual_mm": lattice_error, "original_median_interval_mm": result.slice_spacing,
+              "fitted_interval_mm": interval, "max_source_corner_residual_mm": maximum,
+              "physical_residual_limit_mm": 0.001, "source_pixels_resampled": False}
+    return replace(result, slice_spacing=interval, fitted_origin_lps=tuple(float(v) for v in origin), grid_policy=policy,
+                   warnings=(*result.warnings, "Exploratory MPR coordinate quantization is represented by an orthogonal fitted grid with a 0.001 mm physical error ceiling; source pixels are not resampled."))
 
 
 def _as_float_tuple(value: Any, expected: int, field: str) -> tuple[float, ...]:
@@ -456,7 +501,7 @@ def preflight_series(
         for item in pending
     )
     first = pending[0]
-    return PreflightResult(
+    return _quantized_mpr_grid(PreflightResult(
         records=records,
         rows=first["rows"],
         columns=first["columns"],
@@ -471,7 +516,7 @@ def preflight_series(
         private_tags_present=private_tags_present,
         source_kind=first["source_kind"],
         profile=profile,
-    )
+    ))
 
 
 def assert_pilot_fingerprint(result: PreflightResult, case_label: str, series_label: str) -> None:

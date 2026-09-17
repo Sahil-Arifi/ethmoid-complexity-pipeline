@@ -11,6 +11,7 @@ import pydicom
 from .conversion import _selection_identity_sha256, _validate_selected_paths
 from .dicom import PreflightResult, assert_pilot_fingerprint, preflight_series
 from .inventory import resolve_selection
+from .geometry import prove_native_voxel_bijection
 from .privacy import NEUTRAL_NIFTI_DESCRIPTION, verify_sanitized_sidecar
 from .provenance import current_code_provenance
 from .util import (
@@ -57,7 +58,11 @@ def _full_volume_hu_metrics(
     image: nib.spatialimages.SpatialImage,
     records: tuple[Any, ...],
     inverse_affine: np.ndarray,
+    *,
+    physical_limit_mm: float | None = None,
 ) -> dict[str, Any]:
+    if physical_limit_mm is not None:
+        prove_native_voxel_bijection(image.shape, np.linalg.inv(inverse_affine), records, physical_limit_mm=physical_limit_mm)
     voxel_count = 0
     finite_error_count = 0
     nonfinite_count = 0
@@ -78,7 +83,7 @@ def _full_volume_hu_metrics(
             float(np.max(np.abs(origin_float - origin))),
             float(np.max(np.abs(row_float - row_index))),
             float(np.max(np.abs(column_float - column_index))),
-        ) > 1e-3:
+        ) > 1e-3 and physical_limit_mm is None:
             raise PipelineError("Full-volume HU mapping is not on the NIfTI voxel grid.")
         row_step = row_index - origin
         column_step = column_index - origin
@@ -277,7 +282,13 @@ def _verify_preflighted_conversion(
             if row == record.rows // 2 and column == record.columns // 2:
                 center_indices.append(rounded)
 
-    geometry_ok = all_inside and max_index_residual <= 1e-3 and max_world_residual <= 0.05
+    physical_limit = 0.001 if preflight.grid_policy is not None else None
+    if physical_limit is not None:
+        for form in (image.get_qform(), image.get_sform()):
+            prove_native_voxel_bijection(shape, form, preflight.records, physical_limit_mm=physical_limit)
+        geometry_ok = all_inside and max_index_residual < 0.5 and max_world_residual <= physical_limit
+    else:
+        geometry_ok = all_inside and max_index_residual <= 1e-3 and max_world_residual <= 0.05
     add_check(
         "DICOM-to-NIfTI physical coordinates",
         geometry_ok,
@@ -412,7 +423,7 @@ def _verify_preflighted_conversion(
             "NIfTI storage dtype or scaling differs from the audited CT encoding",
         )
 
-    hu_metrics = _full_volume_hu_metrics(image, preflight.records, inverse_affine)
+    hu_metrics = _full_volume_hu_metrics(image, preflight.records, inverse_affine, physical_limit_mm=physical_limit)
     expected_voxels = len(preflight.records) * preflight.rows * preflight.columns
     hu_ok = (
         hu_metrics["voxel_count"] == expected_voxels
@@ -463,6 +474,7 @@ def _verify_preflighted_conversion(
         },
         "manual_slicer_qc": "PENDING",
         "clinical_series_and_coverage_review": "PENDING",
+        "grid_policy": preflight.grid_policy,
     }
     atomic_write_json(pilot_dir / "qc_report.json", report)
     atomic_write_text(pilot_dir / "qc_report.md", _report_markdown(report))

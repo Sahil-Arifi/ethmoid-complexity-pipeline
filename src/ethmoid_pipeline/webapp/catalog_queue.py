@@ -10,7 +10,7 @@ import threading
 import traceback
 import uuid
 
-from ..conversion import convert_series
+from ..conversion import GeometryReconciliationFailure, convert_series
 from ..dicom import PreflightFailure, preflight_series
 from ..provenance import current_code_provenance
 from ..util import sha256_file, utc_now
@@ -29,6 +29,7 @@ class PreparationFailure(RuntimeError):
 def preflight_issue_codes(issues) -> list[str]:
     """Translate diagnostics to fixed neutral categories, never raw tag values."""
     categories = (
+        ("GEOMETRY_RECONCILIATION_UNRESOLVED", ("quantized MPR",)),
         ("PRIVACY_FLAG", ("BurnedInAnnotation", "RecognizableVisualFeatures", "overlay data", "graphic annotation")),
         ("SCOUT", ("localizer/scout",)),
         ("PROJECTION", ("projection or slab-average",)),
@@ -239,7 +240,8 @@ class PreparationQueue:
             fingerprint = fingerprint_hashes(sha256_file(path) for path in paths)
             preflight = preflight_series(paths, row["study_uid"], row["series_uid"], profile="exploratory")
             descriptor = decode_json(row["descriptor_json"], {})
-            descriptor.update(spacing_mm=[*preflight.pixel_spacing, preflight.slice_spacing], slice_thickness_mm=preflight.slice_thickness, source_kind=preflight.source_kind, metadata_validated=True, warnings=list(preflight.warnings))
+            observed_interval = preflight.grid_policy["original_median_interval_mm"] if preflight.grid_policy else preflight.slice_spacing
+            descriptor.update(spacing_mm=[*preflight.pixel_spacing, observed_interval], fitted_spacing_mm=[*preflight.pixel_spacing, preflight.slice_spacing], grid_policy=preflight.grid_policy, slice_thickness_mm=preflight.slice_thickness, source_kind=preflight.source_kind, metadata_validated=True, warnings=list(preflight.warnings))
             descriptor.update(acquisition(descriptor))
             (directory / "preflight.local.json").write_text(json.dumps(preflight.safe_report(row["study_label"], row["series_label"]), indent=2), encoding="utf-8")
             existing = self._existing(row, fingerprint, preflight)
@@ -276,7 +278,13 @@ class PreparationQueue:
             codes = preflight_issue_codes(failure.issues)
             error = codes[0]
             try:
-                (directory / "preflight-failure.local.json").write_text(json.dumps({"schema_version": 1, "profile": "exploratory", "issue_count": len(failure.issues), "issues": [{"code": code, "message": REASONS[code]} for code in codes]}, indent=2), encoding="utf-8")
+                (directory / "preflight-failure.local.json").write_text(json.dumps({"schema_version": 1, "profile": "exploratory", "issue_count": len(failure.issues), "issues": [{"code": code, "message": REASONS[code]} for code in codes], "geometry_diagnostics": failure.diagnostics}, indent=2), encoding="utf-8")
+            except OSError:
+                error = "DISK_SPACE"
+        except GeometryReconciliationFailure as failure:
+            error = "GEOMETRY_RECONCILIATION_UNRESOLVED"
+            try:
+                (directory / "geometry-failure.local.json").write_text(json.dumps({"reason_code": error, "message": REASONS[error], "grid_policy": preflight.grid_policy, "geometry_diagnostics": failure.diagnostics}, indent=2), encoding="utf-8")
             except OSError:
                 error = "DISK_SPACE"
         except PreparationFailure as failure:

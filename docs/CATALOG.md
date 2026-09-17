@@ -88,6 +88,34 @@ are `outside_protocol` and carry an exploratory warning. Missing resolution is
 `unknown`, never silently within protocol. Engineering preparation is not evidence
 of anatomical coverage, correct cell counts, or clinical suitability.
 
+### Bounded MPR coordinate quantization
+
+The explicit `exploratory-mpr-quantized-grid-v1` policy applies only to exploratory
+pure MPR sources whose IPP coordinate differences lie on a 0.001 mm lattice
+(maximum lattice residual 0.0000001 mm). Some translated reconstructions have
+many decimal places in their DICOM strings despite an earlier 0.001 mm rounding
+step; this policy records measured differences rather than claiming decimal-string
+precision. The original source records and pixel values remain unchanged.
+
+The policy fits the positive interval along the fixed unit IOP normal and an
+origin. In-plane axes and pixel spacing remain fixed; no shear or resampling is
+introduced. Every original DICOM corner must be within **0.001 mm Euclidean**
+distance of the fitted grid. A source above the ceiling remains unavailable.
+Median adjacent IPP interval, fitted interval, measured lattice residual, physical
+ceiling, and observed maximum error are recorded separately in protected QC and
+conversion provenance. Catalog acquisition spacing retains the observed median;
+the fitted volume spacing and policy are separate descriptor fields.
+
+Both original NIfTI forms must describe the same discrete signed-axis permutation,
+dimensions, corner assignments, and complete consecutive planes as the fitted
+grid. The converter changes header geometry only and checks encoded pixel bytes
+remain identical. Both reloaded forms must still meet the 0.001 mm ceiling.
+Verification and catalog reuse prove every source voxel maps exactly once to a
+native voxel, then compare all calibrated HU values. Duplicate planes cannot pass
+by having identical intensities. The strict profile and original frozen v1
+tolerances do not use this policy. A physical-limit failure has a specific
+nonretryable geometry reason, not a generic transient converter error.
+
 Recommendation tiers are thin native sharp-kernel images, then other thin native
 images, then broader exploratory sources. Within a tier, smaller slice interval,
 larger physical coverage, and stable series label determine the order. Ready status

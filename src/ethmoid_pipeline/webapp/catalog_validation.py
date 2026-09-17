@@ -4,6 +4,7 @@ import numpy as np
 
 from ..util import sha256_file
 from ..verification import _dicom_pixel_ras, _full_volume_hu_metrics, _map_to_nifti
+from ..geometry import prove_native_voxel_bijection
 from .service import _read_qc_report, inspect_nifti
 
 
@@ -20,20 +21,23 @@ def verified_volume(volume, report_path, expected_label, preflight) -> bool:
         if int(np.prod(image.shape)) != expected:
             return False
         inverse = np.linalg.inv(image.affine)
+        if preflight.grid_policy is not None:
+            for form in (image.get_qform(), image.get_sform()):
+                prove_native_voxel_bijection(image.shape, form, preflight.records, physical_limit_mm=0.001)
         corners = []
         for record in preflight.records:
             for row, column in ((0, 0), (0, record.columns - 1), (record.rows - 1, 0), (record.rows - 1, record.columns - 1)):
                 point = _dicom_pixel_ras(record, row, column)
                 floating, index = _map_to_nifti(point, inverse)
-                if np.max(np.abs(floating - index)) > 1e-3 or any(value < 0 or value >= image.shape[axis] for axis, value in enumerate(index)):
+                if (np.max(np.abs(floating - index)) > 1e-3 and preflight.grid_policy is None) or any(value < 0 or value >= image.shape[axis] for axis, value in enumerate(index)):
                     return False
-                if np.max(np.abs((image.affine @ np.append(index, 1))[:3] - point)) > 1e-3:
+                if np.linalg.norm((image.affine @ np.append(index, 1))[:3] - point) > 1e-3:
                     return False
                 corners.append(index)
         extent = np.asarray(corners)
         if not np.array_equal(extent.min(axis=0), np.zeros(3)) or not np.array_equal(extent.max(axis=0), np.asarray(image.shape) - 1):
             return False
-        metrics = _full_volume_hu_metrics(image, preflight.records, inverse)
+        metrics = _full_volume_hu_metrics(image, preflight.records, inverse, physical_limit_mm=0.001 if preflight.grid_policy is not None else None)
         return metrics["voxel_count"] == expected and metrics["finite_error_count"] == expected and metrics["nonfinite_count"] == 0 and metrics["max_absolute_error"] is not None and metrics["max_absolute_error"] <= 1.0
     except Exception:
         return False
