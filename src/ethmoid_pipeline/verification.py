@@ -481,12 +481,13 @@ def verify_conversion(
     artifact_dir: Path | None = None,
     pipeline_provenance: dict[str, Any] | None = None,
     require_clean_provenance: bool = True,
+    preflight_profile: str = "strict",
 ) -> dict[str, Any]:
     """Verify one generic conversion against its selected source series."""
     validate_labels(case_label, series_label)
     validate_roots(dicom_root, work_root, repo_root())
     selected = _validate_selected_paths(dicom_root, paths)
-    preflight = preflight_series(selected, expected_study_uid, expected_series_uid)
+    preflight = preflight_series(selected, expected_study_uid, expected_series_uid, profile=preflight_profile)
     neutral_name = f"{case_label}_{series_label}"
     destination = artifact_dir or (work_root / "conversions" / neutral_name)
     return _verify_preflighted_conversion(

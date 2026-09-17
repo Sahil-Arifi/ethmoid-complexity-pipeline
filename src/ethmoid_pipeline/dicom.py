@@ -48,6 +48,8 @@ class PreflightResult:
     transfer_syntax: str
     warnings: tuple[str, ...]
     private_tags_present: bool
+    source_kind: str = "native"
+    profile: str = "strict"
 
     def safe_report(self, case_label: str, series_label: str) -> dict[str, Any]:
         return {
@@ -67,6 +69,8 @@ class PreflightResult:
             "transfer_syntax": self.transfer_syntax,
             "private_tags_present": self.private_tags_present,
             "warnings": list(self.warnings),
+            "source_kind": self.source_kind,
+            "preflight_profile": self.profile,
         }
 
 
@@ -149,8 +153,11 @@ def _constant_exact(values: list[Any], field: str, issues: list[str]) -> None:
 
 
 def preflight_series(
-    paths: Iterable[Path], expected_study_uid: str | None = None, expected_series_uid: str | None = None
+    paths: Iterable[Path], expected_study_uid: str | None = None, expected_series_uid: str | None = None,
+    *, profile: str = "strict",
 ) -> PreflightResult:
+    if profile not in {"strict", "exploratory"}:
+        raise PreflightFailure(["unknown preflight profile"])
     input_paths = list(paths)
     if not input_paths:
         raise PreflightFailure(["no source files were selected"])
@@ -230,15 +237,29 @@ def preflight_series(
             issues.append("photometric interpretation is not MONOCHROME2")
         if rescale_type != "HU":
             issues.append("RescaleType is not explicitly HU")
-        if multienergy not in {"", "NO"}:
+        if multienergy not in {"", "NO"} and profile == "strict":
             issues.append("multienergy CT is outside milestone-one HU validation scope")
-        if not {"ORIGINAL", "PRIMARY", "AXIAL"}.issubset(set(image_type)):
+        if profile == "strict" and not {"ORIGINAL", "PRIMARY", "AXIAL"}.issubset(set(image_type)):
             issues.append("images are not ORIGINAL/PRIMARY/AXIAL")
         combined_terms = set(image_type) | set(description.replace("/", " ").split())
+        combined_terms.update(term for item in image_type for term in item.split())
         if combined_terms & localizer_terms:
             issues.append("a localizer/scout image is present")
-        if combined_terms & derived_terms:
+        if profile == "strict" and combined_terms & derived_terms:
             issues.append("a derived/reformatted image is present")
+        if profile == "exploratory":
+            if combined_terms & {"MIP", "MINIP", "AVERAGE", "PROJECTION"}:
+                issues.append("a projection or slab-average image is not a native 3D volume")
+            if not ({"ORIGINAL", "PRIMARY"}.issubset(set(image_type)) or
+                    {"DERIVED", "SECONDARY"}.issubset(set(image_type)) and
+                    bool(combined_terms & {"REFORMATTED", "MPR"})):
+                issues.append("the image is neither native CT nor an identified volumetric reformat")
+            if multienergy not in {"", "NO"} or "VMI" in combined_terms:
+                warnings.append("calibrated multienergy reconstruction is exploratory")
+            if combined_terms & {"DERIVED", "REFORMATTED", "MPR"}:
+                warnings.append("derived volumetric reconstruction is exploratory")
+            if rows <= 0 or columns <= 0 or min(pixel_spacing) <= 0 or slice_thickness <= 0:
+                issues.append("image dimensions, spacing and thickness must be positive")
         if any(item < 0 for item in bits):
             issues.append("pixel encoding metadata is incomplete")
 
@@ -287,6 +308,7 @@ def preflight_series(
                 "instance_number": instance_number,
                 "coordinate": coordinate,
                 "image_type": image_type,
+                "source_kind": "mpr" if combined_terms & {"DERIVED", "REFORMATTED", "MPR"} else "native",
                 "kernel": kernel,
                 "rescale_type": rescale_type,
                 "multienergy": multienergy,
@@ -317,6 +339,8 @@ def preflight_series(
     _constant_exact([item["transfer_syntax"] for item in pending], "TransferSyntaxUID", issues)
     _constant_exact([item["photometric"] for item in pending], "PhotometricInterpretation", issues)
     _constant_exact([item["bits"] for item in pending], "pixel encoding", issues)
+    if profile == "exploratory":
+        _constant_exact([item["image_type"] for item in pending], "ImageType", issues)
     _constant_numeric([item["pixel_spacing"] for item in pending], 1e-4, "PixelSpacing", issues)
     _constant_numeric([(item["slice_thickness"],) for item in pending], 0.01, "SliceThickness", issues)
     _constant_numeric([(item["slope"], item["intercept"]) for item in pending], 1e-8, "HU rescale", issues)
@@ -342,10 +366,10 @@ def preflight_series(
     axial_angle = _angle_degrees(
         baseline_normal, np.asarray([0.0, 0.0, 1.0]), undirected=True
     )
-    if axial_angle > 15.0:
+    if axial_angle > 15.0 and profile == "strict":
         issues.append("series orientation is more than 15 degrees from axial")
     elif axial_angle > 5.0:
-        warnings.append("series is axial-oblique by more than 5 degrees")
+        warnings.append("series is oblique or non-axial" if profile == "exploratory" else "series is axial-oblique by more than 5 degrees")
     for item in pending[1:]:
         iop = np.asarray(item["iop"], dtype=float)
         if max(_angle_degrees(iop[:3], baseline_row), _angle_degrees(iop[3:], baseline_column)) > 0.1:
@@ -373,6 +397,14 @@ def preflight_series(
             warnings.append(f"{title} is absent")
 
     pending.sort(key=lambda item: item["coordinate"])
+    if profile == "exploratory":
+        origin = np.asarray(pending[0]["ipp"], dtype=float)
+        normal_unit = baseline_normal / np.linalg.norm(baseline_normal) if np.linalg.norm(baseline_normal) else baseline_normal
+        for item in pending[1:]:
+            offset = np.asarray(item["ipp"], dtype=float) - origin
+            if np.linalg.norm(offset - np.dot(offset, normal_unit) * normal_unit) > 0.01:
+                issues.append("slice positions contain in-plane drift or shear")
+                break
     coordinates = np.asarray([item["coordinate"] for item in pending], dtype=float)
     if len(coordinates) < 2:
         issues.append("fewer than two spatial planes are present")
@@ -437,6 +469,8 @@ def preflight_series(
         transfer_syntax=first["transfer_syntax"],
         warnings=tuple(dict.fromkeys(warnings)),
         private_tags_present=private_tags_present,
+        source_kind=first["source_kind"],
+        profile=profile,
     )
 
 

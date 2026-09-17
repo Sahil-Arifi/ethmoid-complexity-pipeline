@@ -7,6 +7,12 @@ This repository contains the engineering foundation for the UCSD ethmoid-complex
 
 The experimental 3D cell-counting prototype is implemented. Its workflow is functional, but the frozen method produced candidate counts on only two of five held-out studies and withheld the other three. Clinical accuracy is unmeasured, and no composite complexity score is defined.
 
+## Study catalog and broader counting work
+
+Implementation is in progress for the approved 26-study, 230-series local catalog. The Cases page will group every reconstruction under its study, prepare usable 3D volumes automatically and run counting only on request. Existing volume IDs, annotations and original predictions must be preserved. The clinician questionnaire explicitly specifies at most 1 mm slice thickness; broader experimental attempts will retain that distinction, with thickness recorded separately from actual slice spacing. The original v1 evaluation remains immutable.
+
+Completed conversion foundation: a separate exploratory preflight profile accepts calibrated volumetric reformats and orthogonal oblique acquisitions without disabling geometry, HU or source-integrity checks. Scouts, projection averages, mixed image types, in-plane drift and missing/duplicate planes are rejected explicitly. The original strict profile remains the default. **48 preflight/conversion tests passed**, including actual dcm2niix conversions at 0, 30 and 90 degrees with zero full-volume HU error and unchanged synthetic source hashes. Catalog migration, background preparation, broader inference, the grouped interface and full-collection evaluation are still pending integration.
+
 ## 3D counting implementation status
 
 The latest clinician email and answered questionnaire request a count of unique cells throughout the full CT volume. They supersede the older selected-landmark and anterior/posterior counting proposal. Preliminary inference is authorized before manual 3D reference counts are available. Review and correction follow the first automatic result; no patient-specific ROI, seeds, or parameter tuning precede it.

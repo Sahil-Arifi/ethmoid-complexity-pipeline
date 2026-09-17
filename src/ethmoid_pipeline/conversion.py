@@ -497,6 +497,7 @@ def convert_series(
     final_dir: Path | None = None,
     pipeline_provenance: dict[str, Any] | None = None,
     require_clean_provenance: bool = True,
+    preflight_profile: str = "strict",
 ) -> dict[str, Any]:
     """Convert one caller-selected clean CT series without pilot fingerprinting."""
     validate_labels(case_label, series_label)
@@ -504,7 +505,7 @@ def convert_series(
     work_root.mkdir(parents=True, exist_ok=True)
     validate_roots(dicom_root, work_root, repo_root())
     selected = _validate_selected_paths(dicom_root, paths)
-    preflight = preflight_series(selected, expected_study_uid, expected_series_uid)
+    preflight = preflight_series(selected, expected_study_uid, expected_series_uid, profile=preflight_profile)
     neutral_name = f"{case_label}_{series_label}"
     destination = final_dir or (work_root / "conversions" / neutral_name)
     return _convert_preflighted_series(
