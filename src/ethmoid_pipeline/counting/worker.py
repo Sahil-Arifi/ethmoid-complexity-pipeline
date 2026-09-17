@@ -1,0 +1,33 @@
+"""Subprocess entry point for the separate local Python 3.12 inference runtime."""
+
+from __future__ import annotations
+
+import argparse
+import json
+from pathlib import Path
+
+from .engine import CountingError, analyze_volume
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Run a local experimental 3D ethmoid count.")
+    parser.add_argument("--input", required=True, type=Path)
+    parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--landmarks", type=Path)
+    parser.add_argument("--config", type=Path)
+    args = parser.parse_args(argv)
+    try:
+        configuration = json.loads(args.config.read_text(encoding="utf-8")) if args.config else None
+        result = analyze_volume(args.input, args.output, args.landmarks, configuration)
+    except CountingError as error:
+        print(json.dumps({"status": "failed", "failure_code": error.code, "message": str(error)}))
+        return 2
+    except (OSError, ValueError):
+        print(json.dumps({"status": "failed", "failure_code": "INVALID_CONFIG", "message": "The fixed counting configuration is unreadable."}))
+        return 2
+    print(json.dumps({"status": result["status"], "failure_code": result.get("failure_code")}))
+    return 0 if result["status"] == "completed" else 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

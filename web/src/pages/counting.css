@@ -33,6 +33,7 @@
 .count-panel details { margin-bottom: 1rem; line-height: 1.5; }
 .count-panel summary { cursor: pointer; }
 .count-workspace .viewer-toolbar { flex-wrap: wrap; flex-shrink: 0; }
+.count-workspace .viewer-toolbar .toolbar-group { flex-wrap: wrap; min-width: 0; max-width: 100%; }
 .count-workspace .alert { margin: .5rem 1rem; }
 @media (max-width: 1000px) { .count-body { grid-template-columns: minmax(0, 1fr) 310px; } .count-heading > svg { display: none; } }
 @media (max-width: 760px) { .count-workspace { height: auto; min-height: 100vh; } .count-body { grid-template-columns: 1fr; } .count-viewer { height: 65vh; min-height: 400px; } .count-panel { border-left: 0; border-top: 1px solid var(--line); overflow: visible; } .count-workspace .workspace-header { flex-wrap: wrap; } }

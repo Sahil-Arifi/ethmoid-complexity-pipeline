@@ -31,11 +31,21 @@ The machine-readable contract is packaged independently of the existing annotati
 
 ## Architecture decision
 
-Use paired pretrained anatomical localizers followed by native-resolution compartment analysis. TotalSegmentator craniofacial_structures supplies skull/head and main maxillary/frontal sinus evidence; head_glands_cavities supplies eyes, optic nerves, nasal cavities and palate. Neither is an ethmoid instance model. Recover actual bony surfaces and automatically estimate the sphenoid boundary; do not count everything inside a central box or blindly subtract all semantic sinus voxels.
+Use pretrained anatomical localizers followed by native-resolution compartment analysis. TotalSegmentator craniofacial_structures supplies skull/head and main maxillary/frontal sinus evidence; head_glands_cavities supplies eyes, optic nerves, nasal cavities and palate; the already downloaded task 297 supplies a coarse brain prior. None is an ethmoid instance model. Recover actual bony surfaces and automatically estimate the sphenoid boundary; do not count everything inside a central box or blindly subtract all semantic sinus voxels. Native bone evidence refines the brain exclusion and orbital floor. The posterior boundary follows supported anterior sphenoid-wall evidence; ambiguous evidence withholds the count.
 
 Cell proposals use bone boundaries, physical-spacing-aware distance transforms, and constrained watershed. Air components and unconstrained watershed are diagnostic baselines, not interchangeable product modes. Multiple visible air pockets may share one cavity identity, and a completely opaque cavity may have no air voxels. Bone-only inference is an experimental hypothesis, not established anatomical accuracy.
 
 Failed essential localization must return a reasoned failure, never zero cells or a hidden manual fallback. The posterior boundary, included variants, and opacified cavities are explicit research risks. Parameters are frozen before held-out evaluation; no expected normal count is used as a tuning objective.
+
+### Implemented method and limits
+
+The frozen `protocol.json` records all twelve numerical settings. Analysis keeps the native image grid, labels cavities and air separately with `uint16` IDs, and assigns physical RAS laterality. Automatic localization currently supports near-axis-aligned acquisitions only; it explicitly rejects oblique grids rather than estimating bounds on incorrect axes. Oblique import, conversion verification, review and reports remain supported independently.
+
+Development inspection rejected earlier proposals that leaked into brain or central nasal tissue. The final development method adds brain exclusion, distinguishes bone-partitioned concha proposals from open nasal spaces, and preserves uncertainty when internal plates suggest an unresolved merge. It does not reliably identify or classify every named variant. A broad candidate region is not evidence of variant sensitivity. Fully opaque pockets are exercised synthetically; their detection in clinical scans remains unvalidated.
+
+At least half of the air in the inferred region must be assigned to accepted proposals or the run withholds its count. This is a fixed engineering completeness check, **not** 50% clinical sensitivity or an accuracy threshold. It does not measure missing opaque cells or errors in the inferred region. Passing it still produces an exploratory candidate count requiring review. The worker records the actual observed/assigned air and coverage fraction. Failed outputs retain protected diagnostics locally while exposing no numeric count or selectable masks.
+
+Localizers use hashed prefetched weights with outbound Python networking blocked and telemetry disabled. Fresh outputs bind source, package version, task IDs and model-manifest hashes. Historical development caches have source/mask checks but incomplete original producer binding; the result explicitly labels that limitation. Held-out evaluation requires complete producer binding and rejects legacy caches.
 
 ### Research sources
 

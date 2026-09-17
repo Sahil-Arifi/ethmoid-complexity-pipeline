@@ -131,6 +131,27 @@ def test_no_landmark_or_legacy_annotation_needed_and_ids_above_255_survive(compl
     assert opaque["air_voxel_count"] == 0 and opaque["included"]
 
 
+def test_empty_automatic_output_is_unavailable_not_a_zero_count(tmp_path: Path):
+    def empty_executor(source, output, config):
+        synthetic_executor(source, output, config)
+        path = output / "result.json"
+        result = json.loads(path.read_text())
+        result.update(cells=[], counts={"left": 0, "right": 0, "total": 0})
+        path.write_text(json.dumps(result))
+        for name in ARTIFACTS.values():
+            image = nib.load(output / name)
+            nib.save(nib.Nifti1Image(np.zeros(image.shape, dtype=np.uint16), image.affine), output / name)
+
+    _, case, service = setup_service(tmp_path, empty_executor)
+    try:
+        run = service.create_run(case["case_id"])
+        finished = finish(service, case["case_id"], run["run_id"])
+        assert finished["status"] == "failed"
+        assert finished["counts"] is None and finished["original_counts"] is None
+    finally:
+        service.close()
+
+
 @pytest.mark.parametrize("correct_physical_sides", [True, False])
 def test_laterality_uses_ras_direction_not_voxel_index_or_scanner_zero(tmp_path: Path, correct_physical_sides: bool):
     def reversed_axis_executor(source, output, config):

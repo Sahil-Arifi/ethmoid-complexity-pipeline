@@ -17,6 +17,20 @@
   "reference_counts_required_for_inference": false,
   "reference_counts_required_for_accuracy_claim": true,
   "failure_policy": "no_numeric_count_on_failed_localization_or_geometry",
+  "algorithm": {
+    "air_hu": -500.0,
+    "bone_hu": 200.0,
+    "seed_prominence_mm": 0.8,
+    "plate_half_width_mm": 1.5,
+    "separator_support_mm": 1.5,
+    "separator_support_fraction": 0.6,
+    "minimum_enclosure_fraction": 0.55,
+    "maximum_roi_boundary_fraction": 0.25,
+    "minimum_air_coverage_fraction": 0.5,
+    "boundary_growth_mm": 3.0,
+    "minimum_voxels": 4,
+    "max_instances": 65535
+  },
   "assumptions": {
     "cell_separation": "supported_septum_overrides_air_connectivity; communication_without_supported_septum_is_one_cell",
     "frontal": "frontal_region_cells_not_main_frontal_sinus",

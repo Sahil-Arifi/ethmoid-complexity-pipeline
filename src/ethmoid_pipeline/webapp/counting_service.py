@@ -323,7 +323,7 @@ class CountingService:
         if np.any((air != 0) & (air != cavities)):
             raise _error("Air labels do not match the cavity instances.")
         cells = result.get("cells")
-        if not isinstance(cells, list):
+        if not isinstance(cells, list) or not cells:
             raise _error("The cell registry is invalid.")
         seen: set[int] = set()
         for cell in cells:
@@ -341,6 +341,8 @@ class CountingService:
             raise _error("The cell registry does not match the instance mask.")
         if result.get("counts") != _counts(cells):
             raise _error("The reported count does not match the cell registry.")
+        if result["counts"]["total"] == 0:
+            raise _error("Automatic inference did not resolve any countable cells.")
         if not isinstance(result.get("warnings", []), list) or not all(isinstance(w, str) for w in result.get("warnings", [])):
             raise _error("Count warnings are invalid.")
         encode_json(result)

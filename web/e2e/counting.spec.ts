@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
 import fs from "node:fs";
+import path from "node:path";
+import { execFileSync } from "node:child_process";
 
 test("automatic count, uint16 overlay, corrections, original result, reload, and export", async ({ page }, testInfo) => {
   const caseLabel = `Case${902 + testInfo.repeatEachIndex}`;
@@ -19,6 +21,27 @@ test("automatic count, uint16 overlay, corrections, original result, reload, and
   await page.getByRole("button", { name: /#300 · right/ }).click();
   await expect(page.getByText("Cell #300", { exact: true }).first()).toBeVisible();
   await expect(page.locator(".count-coordinates")).toContainText("Cell #300");
+
+  // Canonical ID 300 must render without tinting label-0 background. Compare
+  // actual browser pixels, not the JavaScript LUT that the GPU may interpret.
+  const shown = await canvas.screenshot();
+  await page.getByRole("checkbox", { name: "Overlay", exact: true }).uncheck();
+  const hidden = await canvas.screenshot();
+  await page.getByRole("checkbox", { name: "Overlay", exact: true }).check();
+  const pixels = JSON.parse(execFileSync(path.resolve("..", ".venv", "Scripts", "python.exe"), ["-c", `
+import base64,io,json,sys
+import numpy as np
+from PIL import Image
+shown,hidden=[np.asarray(Image.open(io.BytesIO(base64.b64decode(value))).convert('RGB')).astype(int) for value in json.load(sys.stdin)]
+changed=np.max(np.abs(shown-hidden),axis=2)>2
+# This directional phantom has no labelled cells in its leftmost image band.
+background=(hidden.max(axis=2)<30)
+background[:,max(1,hidden.shape[1]//40):]=False
+print(json.dumps({'background_pixels':int(background.sum()),'changed_background':int((changed&background).sum()),'changed_pixels':int(changed.sum())}))
+`], { input: JSON.stringify([shown.toString("base64"), hidden.toString("base64")]), encoding: "utf8" }));
+  expect(pixels.background_pixels).toBeGreaterThan(100);
+  expect(pixels.changed_background).toBe(0);
+  expect(pixels.changed_pixels).toBeGreaterThan(100);
 
   // Load and serialize the canonical uint16 cell as an oriented binary drawing.
   await page.getByRole("button", { name: "Edit boundary" }).click();

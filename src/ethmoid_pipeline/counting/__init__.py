@@ -1,1 +1,1 @@
-"""Experimental full-volume counting; independent from legacy region annotations."""
+"""Local experimental three-dimensional ethmoid compartment counting."""

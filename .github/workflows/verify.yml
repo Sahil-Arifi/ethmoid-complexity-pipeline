@@ -3,6 +3,21 @@ on: [push, pull_request]
 permissions:
   contents: read
 jobs:
+  counting-engine:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+      PYTHONPATH: src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.14'
+      - name: Install locked CPU counting test dependencies
+        run: python -m pip install --require-hashes -r counting-tests.lock
+      - name: Native geometry and compartment tests
+        run: python -m pytest tests/test_counting_engine.py -p no:cacheprovider -q
   verify:
     runs-on: windows-latest
     timeout-minutes: 20

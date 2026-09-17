@@ -3,7 +3,7 @@
 This repository contains the engineering foundation for the UCSD ethmoid-complexity project:
 
 - a fail-closed DICOM-to-NIfTI conversion pipeline with geometry and HU verification; and
-- a function-first local web application for scan review and provisional manual annotation.
+- a local web application for automatic experimental 3D counting, scan review and revision-based correction.
 
 The current development milestone is a fully automatic, experimental 3D cell-counting prototype. Clinical accuracy is not established, and no composite complexity score is defined.
 
@@ -17,7 +17,7 @@ The implementation contract and phased plan are in [Full-volume counting prototy
 | --- | --- | --- |
 | 1. Contract and verification | Completed | Separate experimental protocol, requirement mapping, deterministic autosave regression, synthetic CI, complete-index medical-data guard |
 | 2. Runtime and cohort | Completed | Hash-locked offline GPU environment, four model manifests, ten verified volumes and immutable study split |
-| 3. Automatic counting | In progress in an isolated worktree | Paired anatomical localization and native-resolution cavity instances |
+| 3. Automatic counting | Completed as experimental inference | Three anatomical priors, native-resolution cavity instances, explicit abstention and uncertainty; settings frozen for evaluation |
 | 4. Persistent run API | Completed against synthetic inference | Durable jobs, immutable predictions, correction lineage, source checks and per-response exports |
 | 5. Review interface | Completed against synthetic inference | Numbered native-coordinate overlays, revision-bound corrections and PDF/PNG/CSV/NIfTI exports |
 | 6. Held-out evaluation | Pending | Frozen five-development/five-held-out study evaluation and handoff |
@@ -43,6 +43,14 @@ Phase 5 makes whole-volume counting the default workspace. It shows left/right/t
 Exports include original and reviewed counts, cell registries, native NIfTI labels, a paginated PDF summary and a representative PNG. Reports use physical coordinates for oblique or anisotropic scans, carry orientation labels and uncertainty markers, and avoid copying source header metadata. Report hashes bind the presentation files to the export manifest. These are protected local study outputs and must not be committed.
 
 Executed Phase 5 checks: **124 Python tests**, **34 frontend tests**, **2 browser workflows**, production build, and npm audit (**0 vulnerabilities**). The tests cover an ID above 255, opaque count-only corrections, revision conflicts, original/current export agreement, actual ZIP download bytes, and preserved annotation behavior. Browser checks use isolated Playwright Chromium; a host Edge extension was intercepting ZIP requests, so CI no longer relies on the host browser profile. The test-only inference server accepts only its exact generated phantom and is not part of the production application entry point. Clinical accuracy remains unmeasured; next action is to freeze the development-tested counting engine and evaluate every held-out study.
+
+Phase 3 now implements the full automatic worker. It uses skull/sinus/orbital/nasal landmarks plus a brain prior, then native-bone compartment proposals with stable physical-coordinate IDs. A clean source scan requires no manual outlines, seeds or case-specific settings. Earlier development attempts with brain or nasal leakage were rejected. The final shared method produced three exploratory outputs and withheld two of the five development scans because the sphenoid boundary was ambiguous or unresolved. Visible thin septa still create possible merged cells; uncertainty flags preserve this limitation. Named-variant and fully opaque-cell accuracy are not established. Oblique automatic localization is explicitly unsupported in this version, even though import, conversion verification and reports support oblique geometry.
+
+The engine passed **34 CPU tests without skips**, including whole-volume identity, septa/communication, partial/complete opacity, physical laterality, native labels, cache provenance, fallback control paths and unsupported geometry. A separate hash-locked CPU environment lets CI execute these tests without CUDA or model downloads. A full uncached real pilot run completed with all three localizers and verified producer hashes; its preliminary total agreed with the cached development run. This is repeat execution evidence, not clinical accuracy. The frozen evaluation runner passed **28 tests**, rejects split/source/model/code drift and empty false-success outputs, and records failures with unavailable counts.
+
+Additional visual QA corrected an upstream indexed-color rendering defect that tinted label-zero background for high cell IDs. The viewer now uses an RGBA display copy while preserving the canonical uint16 image for IDs and edits. A browser pixel regression verifies unchanged background and changed cell pixels; full browser workflows (**2 passed**), frontend tests (**34 passed**) and build passed again. Desktop, tablet and narrow-phone screenshots were checked; toolbar controls wrap without clipping. Exported bone views now match the interface's 300/3000 HU preset. The held-out images have not yet been used for inference; the next phase runs the committed frozen method once across their fixed split.
+
+Final freeze checks: the application Python suite passed **153 tests** with the inference module intentionally skipped because SciPy is isolated from the application environment; that module passed all **34 tests** in the dedicated CPU environment. Small GPU localizer-mask differences occurred between fresh and earlier runs, so bitwise GPU reproducibility is not claimed. Counts agreed on the pilot. [Frozen evaluation procedure](docs/COUNTING_EVALUATION.md) records how to reproduce the next phase without changing code, settings or study membership.
 
 ## Documentation rule
 

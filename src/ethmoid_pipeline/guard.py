@@ -24,6 +24,8 @@ EXACT_ALLOWED = {
     "requirements.lock",
     "inference-requirements.in",
     "inference-requirements.lock",
+    "counting-tests.in",
+    "counting-tests.lock",
     "src/ethmoid_pipeline/counting/protocol.json",
     "src/ethmoid_pipeline/webapp/protocol.v1.json",
     "src/ethmoid_pipeline/webapp/protocol.v2.draft.json",

@@ -123,6 +123,7 @@ export const NiiVueViewer = forwardRef<NiiVueViewerHandle, Props>(
   ) {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const niivueRef = useRef<Niivue | null>(null);
+    const instanceLabelsRef = useRef<import("@niivue/niivue").NVImage | null>(null);
     const historyRef = useRef<DrawingHistory>(emptyHistory());
     const initialStateRef = useRef(initialState);
     const initialHasAnnotationRef = useRef(hasAnnotation);
@@ -441,7 +442,7 @@ export const NiiVueViewer = forwardRef<NiiVueViewerHandle, Props>(
           );
           nv.onLocationChange = (payload) => {
             const location = payload as LocationPayload;
-            const labels = nv.volumes[1];
+            const labels = instanceLabelsRef.current;
             const overlayVoxel = location.mm && labels ? labels.mm2vox(Array.from(location.mm)) : null;
             const cellId = labels && overlayVoxel ? Math.round(labels.getValue(overlayVoxel[0], overlayVoxel[1], overlayVoxel[2])) : 0;
             callbacksRef.current.onLocationChange({
@@ -502,22 +503,34 @@ export const NiiVueViewer = forwardRef<NiiVueViewerHandle, Props>(
           const { NVImage } = await import("@niivue/niivue");
           const volume = await NVImage.loadFromUrl({ url: instanceOverlayUrl, name: "cells.nii.gz" });
           if (cancelled || niivueRef.current !== nv) return;
-          let maximum = 0;
-          if (volume.img) for (const value of volume.img) maximum = Math.max(maximum, value);
-          const cm = { R: [0], G: [0], B: [0], A: [0], I: [0], labels: ["Background"] };
+          if (!volume.img || !volume.hdr) throw new Error("The cell overlay could not be opened.");
           // Match the representative report palette; stable IDs carry identity
           // when colors repeat across the registry.
           const palette = [[48, 165, 219], [239, 177, 64], [103, 190, 130], [213, 125, 185], [161, 148, 220], [229, 119, 96]];
-          for (let id = 1; id <= maximum; id++) {
+          // NiiVue 0.69's indexed shader clamps low values to 2/256, which
+          // paints background label 0 when a LUT contains IDs above 255.
+          // Render an RGBA copy; retain the unchanged native uint16 image for
+          // cell picking and fetch that canonical image for binary corrections.
+          const rgba = new Uint8Array(volume.img.length * 4);
+          for (let index = 0; index < volume.img.length; index++) {
+            const id = volume.img[index];
+            if (id === 0) continue;
             const color = palette[(id - 1) % palette.length];
-            cm.R.push(color[0]); cm.G.push(color[1]); cm.B.push(color[2]);
-            cm.A.push(255); cm.I.push(id); cm.labels.push(`Cell ${id}`);
+            const offset = index * 4;
+            rgba[offset] = color[0]; rgba[offset + 1] = color[1];
+            rgba[offset + 2] = color[2]; rgba[offset + 3] = 255;
           }
-          volume.setColormapLabel(cm);
+          const display = volume.clone();
+          display.img = rgba;
+          display.hdr!.datatypeCode = 2304; // NIfTI RGBA32, display only.
+          display.hdr!.numBitsPerVoxel = 32;
+          display.hdr!.scl_slope = 1;
+          display.hdr!.scl_inter = 0;
           const controls = controlStateRef.current;
-          volume.opacity = controls.overlayVisible ? controls.overlayOpacity : 0;
-          overlay = volume;
-          nv.addVolume(volume);
+          display.opacity = controls.overlayVisible ? controls.overlayOpacity : 0;
+          instanceLabelsRef.current = volume;
+          overlay = display;
+          nv.addVolume(display);
           nv.createOnLocationChange();
         } catch (error) {
           if (!cancelled) callbacksRef.current.onError(error instanceof Error ? error.message : "Cell overlay failed to load.");
@@ -527,6 +540,7 @@ export const NiiVueViewer = forwardRef<NiiVueViewerHandle, Props>(
       return () => {
         cancelled = true;
         if (overlay && niivueRef.current === nv) {
+          instanceLabelsRef.current = null;
           nv.removeVolume(overlay);
           nv.createOnLocationChange();
         }

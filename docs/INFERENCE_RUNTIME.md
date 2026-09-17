@@ -50,10 +50,10 @@ the application's `src` directory on `PYTHONPATH`. Its local model/config paths 
 |---|---:|---|
 | `craniofacial_structures` | 115 | Skull, maxillary/frontal sinus and other head landmarks; 0.5 mm |
 | `head_glands_cavities` | 775 | Eyes, optic nerves, nasal cavities and other head landmarks; 0.75 × 0.75 × 1 mm |
-| Robust crop | 297 | 3 mm whole-body model used only to locate the skull crop |
+| Robust crop and brain prior | 297 | 3 mm whole-body model locates the skull crop and supplies a brain mask, refined against native bone |
 | Default crop | 298 | Upstream 6 mm crop dependency, prefetched for complete offline operation |
 
-Run both localizers with `robust_crop=True`, `fast=False`, `device="gpu"`,
+Run the two head localizers with `robust_crop=True`, `fast=False`, `device="gpu"`,
 `nr_thr_resamp=2`, `nr_thr_saving=1`, `statistics=False`, and `preview=False`.
 `nnUNet_compile=false` avoids compilation at first patient use. These networks
 provide **anatomical landmarks, not ethmoid masks or individual air-cell labels**.
@@ -61,6 +61,14 @@ Their internal resampling does not change the counting algorithm's native grid.
 Output masks must match the source shape and affine and contain only binary
 values. The counting worker must verify the local model-file hashes and bind
 cached landmarks to the source image hash.
+
+The final counting worker additionally runs `task="total"`, `fast=True`,
+`roi_subset=["brain"]` using task 297. This needs no extra model download.
+GPU memory exhaustion permits one CPU fallback. Missing or clipped essential
+landmarks permit one full-field retry with the same model settings. Neither
+fallback introduces a manual ROI or changes counting thresholds. Fresh cache
+manifests bind every task to the producer package and model-manifest hash;
+historical partial manifests retain an explicit unverified-producer warning.
 
 The verified Case003 pilot produced 7 craniofacial masks and 19 head-cavity masks
 in 51.86 and 35.83 seconds respectively on the machine above. All 26 matched the

@@ -210,7 +210,7 @@ def _view(plane: str, hu, cavity, air, affine, cells, center, bounds) -> Image.I
     draw.text((24, 18), plane.upper(), font=_font(32), fill=INK)
     grid, mm_per_pixel = _plane_coordinates(plane, center, bounds, 650, 650)
     coordinates = nib.affines.apply_affine(np.linalg.inv(affine), grid)
-    grey = np.uint8(np.clip((_sample_trilinear(hu, coordinates) + 600.0) / 2000.0, 0, 1) * 255)
+    grey = np.uint8(np.clip((_sample_trilinear(hu, coordinates) + 1200.0) / 3000.0, 0, 1) * 255)
     ids, air_ids = _sample_labels(cavity, coordinates), _sample_labels(air, coordinates)
     rgb = np.repeat(grey[:, :, None], 3, axis=2)
     included = [cell for cell in cells if cell["included"]]
@@ -320,7 +320,7 @@ def _pdf_document(views: Image.Image, case: str, cells: list[dict], counts: dict
     pdf.setFont("Helvetica", 9)
     pdf.drawString(margin, 97, "Colored outlines show cavities; filled color shows observed air. ? marks an uncertainty flag.")
     pdf.drawString(margin, 81, (f"Planes are centered on cell {reference}. " if reference is not None else "No included cells are overlaid. ") + "Each image is one slice; all registered cells appear in the following table.")
-    pdf.drawString(margin, 65, "Radiological orientation is labeled on each image. Physical aspect ratios are preserved; bone display WL 400 / WW 2000 HU.")
+    pdf.drawString(margin, 65, "Radiological orientation is labeled on each image. Physical aspect ratios are preserved; bone display WL 300 / WW 3000 HU.")
     if original is not None:
         pdf.setFont("Helvetica-Bold", 9)
         pdf.drawString(margin, 46, f"Original: L {original['left']} / R {original['right']} / Total {original['total']}     Current revision: L {counts['left']} / R {counts['right']} / Total {counts['total']}")

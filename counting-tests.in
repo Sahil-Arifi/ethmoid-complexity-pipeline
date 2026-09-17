@@ -1,0 +1,6 @@
+# CPU phantom tests use the same numeric packages as the isolated worker.
+numpy==2.5.3
+scipy==1.18.1
+scikit-image==0.26.0
+nibabel==5.4.2
+pytest==9.1.1
