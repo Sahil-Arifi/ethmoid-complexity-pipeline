@@ -12,6 +12,30 @@ review histories.
 
 ## Freeze and study split
 
+The local collection preparation completed with 26 studies, 230 series and
+98 verified volumes (92 native CT and six MPR), across 24 studies. The 132
+unavailable series comprise 78 projections, 26 scouts, 16 without supported HU
+calibration, eight mixed acquisitions and four unresolved MPR grids. All remain
+in the frozen collection's coverage accounting.
+
+The current v2 evaluation is in progress using these immutable inputs:
+
+- Code: `23b547893b4514a841df4552e6ef947e559d5335`.
+- Method: `native-bone-watershed-0.2.0`.
+- Protocol: `ethmoid-count-prototype-v2`, SHA256
+  `fcf7b2244737f4b660f40318d6d60b551c31b1ae7c3ed0c88ace2934b29c2652`.
+- Protected collection manifest SHA256:
+  `165ed694eea5b391da389e8230b00548c852ca5e89c61f68e527d04c6fecc7fc`.
+- Regression: 43 prepared series from the ten previously examined studies.
+- Acceptance: 55 prepared series from 14 of the remaining sixteen studies;
+  two studies have no supported 3D volume.
+
+These counts describe planned coverage, not completed inference. A final result
+requires an immutable attempt for each of the 98 prepared series, including every
+abstention or resource-limit outcome. Execution is serial on the local RTX 5070 Ti
+with 16 GB VRAM and approximately 32 GB system RAM. No runtime or accuracy claim
+is generalized beyond this host and collection.
+
 Finish every preparation job first. `scripts/freeze_catalog_evaluation.py`
 snapshots every ready series and every unavailable reason. It verifies the
 current raw DICOM fingerprints, linked immutable volume identity, converted
