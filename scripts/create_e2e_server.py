@@ -54,7 +54,7 @@ def main() -> None:
         result = {"schema_version": 1, "status": "completed", "method_version": "synthetic-browser-fixture",
                   "source_sha256": sha256_file(source_path), "protocol_version": PROTOCOL_VERSION,
                   "counts": {"left": 1, "right": 1, "total": 2}, "cells": cells,
-                  "warnings": ["Synthetic test; no clinical inference."], "config": {"air_hu": -500}, "artifacts": artifacts}
+                  "warnings": ["Synthetic test; no clinical inference."], "config": json.loads(_config.read_text(encoding="utf-8"))["algorithm"], "artifacts": artifacts}
         (output / "result.json").write_text(json.dumps(result), encoding="utf-8")
 
     app = create_app(work_root=work)

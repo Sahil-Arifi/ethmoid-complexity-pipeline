@@ -20,7 +20,7 @@ The implementation contract and phased plan are in [Full-volume counting prototy
 | 3. Automatic counting | Completed as experimental inference | Three anatomical priors, native-resolution cavity instances, explicit abstention and uncertainty; settings frozen for evaluation |
 | 4. Persistent run API | Completed against synthetic inference | Durable jobs, immutable predictions, correction lineage, source checks and per-response exports |
 | 5. Review interface | Completed against synthetic inference | Numbered native-coordinate overlays, revision-bound corrections and PDF/PNG/CSV/NIfTI exports |
-| 6. Held-out evaluation | Pending | Frozen five-development/five-held-out study evaluation and handoff |
+| 6. Held-out evaluation | In progress | Frozen development run complete; production API/export verified; five held-out attempts running |
 
 Executed Phase 1 checks: Python **54 passed**; frontend **27 passed**; production TypeScript/Vite build **passed**; real Edge/WebGL synthetic workflow **1 passed**; npm audit **0 vulnerabilities**; full Git-index medical-data guard **passed**. The browser run emitted a Windows connection-reset message during shutdown but completed successfully. One existing third-party Starlette deprecation warning and the existing large imaging-library chunk warnings remain. The previous intermittent brightness/autosave test now waits for the viewer-ready microtask and explicitly advances the debounce timer without relaxing its persistence assertion. GitHub CI is new and is checked after publishing.
 
@@ -55,6 +55,10 @@ Final freeze checks: the application Python suite passed **153 tests** with the 
 The first frozen development evaluation completed all five attempts in 343.6 seconds: three outputs passed artifact/count consistency checks and two were withheld for sphenoid-boundary failures. All 56 accepted candidates were uncertain; this aggregate is not a cohort ground-truth count. Historical development caches retain unverified producer-binding flags. The engine and twelve parameters remain frozen at `fc8206d770c113e17f678c3e54d81500deae6481` while application handoff checks continue.
 
 CI setup correction: GitHub's Python action did not provide Windows Python 3.12.14, so the engine job stopped before tests. It now uses the same uv-managed Python distribution as the local runtime, with uv 0.12.5 and the existing hash-locked CPU dependencies; [the pinned setup action](https://github.com/astral-sh/setup-uv) provides that installation path. The application job passed. Production workers now explicitly disable user-site packages and nnUNet compilation to match the evaluation environment. A focused launcher test passed; the counting/revision suite passed **34 tests**, frontend **34 tests**, and the production build passed after the handoff wording update. No frozen algorithm or threshold changed.
+
+Both remote CI jobs passed after that environment correction. Production API acceptance then ran the real offline worker on the existing verified pilot in **181.6 seconds**, with no injected executor or manual prompts. It preserved the source, all **28** prior annotation revisions and the complete case/QC metadata; schema migration created its backup. The count is saved in the local application. PDF pages, registry/count text, image bounds, PNG views, CSV, source hashes and native labels passed local automated checks. These checks are not human anatomical review. User-reviewable reports and acceptance evidence are protected under `work\counting\app-acceptance`; none is tracked in Git.
+
+The API now rejects mismatched effective settings and cell centroids, in addition to its existing source/mask/count checks. The persisted real result passed those stricter checks without modification. The updated API/revision suite passed **39 tests**. The counting browser workflow also passed with an explicit nonblank 3D-render check, return to multiplanar review, stable ID sampling, correction, reload and export. No JavaScript errors occurred. Actual background server launch was rejected by automatic approval review with the reason `blocked by policy`; it was not retried. The production API was verified in-process without a listening server. The prepared application can be launched manually with the command below.
 
 ## Documentation rule
 
@@ -194,21 +198,23 @@ From PowerShell at the repository root:
 
 ```powershell
 .\scripts\bootstrap.ps1
+.\scripts\bootstrap_inference.ps1
 .\.venv\Scripts\Activate.ps1
 ethmoid-app start
 ```
 
-The command opens `http://127.0.0.1:8765`. The default app data directory is outside Git under `%LOCALAPPDATA%\EthmoidComplexity\work\webapp`.
+The command opens `http://127.0.0.1:8765`. Bootstrap is a one-time environment setup; on the already prepared machine, `.\.venv\Scripts\ethmoid-app.exe start` starts the app directly. The inference bootstrap uses uv and prefetches public model weights before patient processing. See [runtime setup](docs/INFERENCE_RUNTIME.md). The default app data directory is outside Git under `%LOCALAPPDATA%\EthmoidComplexity\work\webapp`.
 
 Basic workflow:
 
 1. Select `Import scan` or open an existing case.
 2. Import a DICOM folder or `.nii`/`.nii.gz` file.
-3. Review the linked CT views and automated validation result.
-4. Complete the separate manual QC checklist.
-5. Draw provisional labels and save or allow autosave.
-6. Add notes, finalize for review, and approve only after the required review.
-7. Export the neutral annotation package.
+3. Select `Run automatic count`; no outlines or seed points are needed.
+4. Review the preliminary left/right/total and numbered cells, or the reason a count was withheld. Switch between air and cavity overlays and click a cell to locate it.
+5. Add, remove, split, merge or edit a boundary only after the first result. Each saved correction creates a revision and preserves the original automatic prediction.
+6. Export the current or original revision as a ZIP containing count CSV, cell registry, native labels, PDF and PNG. Keep these medical outputs protected locally.
+
+`Previous annotations` retains the earlier drawing, manual QC and approval workflow. It is not needed to start automatic inference. Its existing approval lock still protects the case from recounting or correction. A model-assisted correction is not an independent reference count.
 
 An external NIfTI without a matching QC report remains `UNVERIFIED` and viewable but cannot be approved. A failed DICOM conversion cannot be finalized.
 

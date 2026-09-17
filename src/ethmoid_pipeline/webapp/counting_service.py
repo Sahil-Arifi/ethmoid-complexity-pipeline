@@ -307,6 +307,9 @@ class CountingService:
             raise _error("The counting result format is unsupported.")
         if result.get("source_sha256") != row["source_sha256"] or result.get("protocol_version") != row["protocol_version"]:
             raise _error("The counting result does not match its source or protocol.")
+        expected_algorithm = decode_json(row["protocol_json"], {}).get("algorithm")
+        if not isinstance(expected_algorithm, dict) or not expected_algorithm or result.get("config") != expected_algorithm:
+            raise _error("The effective counting settings do not match the frozen protocol.")
         if result.get("artifacts") != ARTIFACTS or not isinstance(result.get("method_version"), str):
             raise _error("The counting artifact manifest is invalid.")
         source = nib.load(source_path)
@@ -335,6 +338,9 @@ class CountingService:
                 raise _error("The automatic cell registry is invalid.")
             seen.add(identity)
             selected = cavities == identity
+            positions = np.argwhere(selected)
+            if not len(positions) or not np.allclose(cell["centroid_ras_mm"], nib.affines.apply_affine(source.affine, positions.mean(axis=0)), rtol=0, atol=1e-4):
+                raise _error("A cell location does not match its native compartment mask.")
             if np.any(region[selected] != (1 if cell["side"] == "left" else 2)):
                 raise _error("A cell does not match the localized side of its compartment.")
             if cell.get("voxel_count") != int(np.count_nonzero(cavities == identity)) or cell.get("air_voxel_count") != int(np.count_nonzero(air == identity)):

@@ -272,7 +272,7 @@ def test_painted_additions_and_expansion_use_frozen_threshold_and_keep_opaque_co
     assert next(c for c in edited["cells"] if c["id"] == 300)["air_voxel_count"] == 0
 
 
-def test_missing_frozen_air_threshold_refuses_paint_instead_of_using_a_new_default(tmp_path: Path):
+def test_missing_frozen_air_threshold_is_rejected_before_a_count_is_published(tmp_path: Path):
     def missing_threshold(source, output, config):
         synthetic_executor(source, output, config)
         path = output / "result.json"
@@ -283,12 +283,8 @@ def test_missing_frozen_air_threshold_refuses_paint_instead_of_using_a_new_defau
     try:
         created = service.create_run(case["case_id"])
         run = finish(service, case["case_id"], created["run_id"])
-        added = np.zeros((8, 9, 6), dtype=np.uint8)
-        added[0, 2, 2] = 1
-        mask = write_nifti(tmp_path / "added.nii.gz", added)
-        with pytest.raises(WebAppError, match="frozen air-content threshold"):
-            service.revise(case["case_id"], run["run_id"], 0, {"type": "add", "side": "left"}, mask)
-        assert service.get_run(case["case_id"], run["run_id"])["revision"] == 0
+        assert run["status"] == "failed"
+        assert run["counts"] is None and run["latest_revision"] is None
     finally:
         service.close()
 
@@ -390,7 +386,7 @@ def test_outside_artifact_directory_is_rejected_without_exposing_path(completed,
     assert str(outside) not in str(exc.value)
 
 
-@pytest.mark.parametrize("kind", ["traversal", "wrong_source", "wrong_count", "uint8", "air_mismatch"])
+@pytest.mark.parametrize("kind", ["traversal", "wrong_source", "wrong_count", "wrong_config", "wrong_centroid", "uint8", "air_mismatch"])
 def test_invalid_engine_outputs_never_become_counts(tmp_path: Path, kind: str):
     def invalid(source, output, config):
         synthetic_executor(source, output, config)
@@ -402,6 +398,11 @@ def test_invalid_engine_outputs_never_become_counts(tmp_path: Path, kind: str):
             result["source_sha256"] = "0" * 64
         elif kind == "wrong_count":
             result["counts"]["total"] = 999
+        elif kind == "wrong_config":
+            result["config"]["air_hu"] = -350
+        elif kind == "wrong_centroid":
+            # Still inside the image: range validation alone is insufficient.
+            result["cells"][0]["centroid_ras_mm"] = result["cells"][1]["centroid_ras_mm"]
         else:
             path = output / ("cavities.nii.gz" if kind == "uint8" else "air.nii.gz")
             image = nib.load(path)
