@@ -20,14 +20,14 @@ describe("FirstRunGuide", () => {
     expect(screen.getByRole("button", { name: "Back" })).toBeDisabled();
 
     await user.click(screen.getByRole("button", { name: "Next" }));
-    expect(screen.getByRole("heading", { name: "Review every view" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Run the automatic count" })).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Next" }));
-    expect(screen.getByRole("heading", { name: "Mark the ethmoid regions" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Review numbered cells" })).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Back" }));
-    expect(screen.getByRole("heading", { name: "Review every view" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Run the automatic count" })).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Next" }));
     await user.click(screen.getByRole("button", { name: "Next" }));
-    expect(screen.getByRole("heading", { name: "Check, review, and export" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Export the reviewed result" })).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Finish" }));
 
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();

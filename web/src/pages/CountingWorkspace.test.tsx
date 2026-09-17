@@ -1,0 +1,128 @@
+import { forwardRef, useEffect, useImperativeHandle } from "react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { api, ApiError } from "../api/client";
+import { countingApi, type CountRun } from "../api/counting";
+import type { CaseDetail } from "../api/types";
+import { CountingWorkspace } from "./CountingWorkspace";
+
+const handles = vi.hoisted(() => ({ focus: vi.fn(), clear: vi.fn(), prepare: vi.fn() }));
+vi.mock("../api/client", async importOriginal => ({ ...(await importOriginal<object>()), api: { getCase: vi.fn(), getProtocol: vi.fn(), saveViewerState: vi.fn() } }));
+vi.mock("../api/counting", async importOriginal => ({ ...(await importOriginal<object>()), countingApi: {
+  ...(await importOriginal<{ countingApi: object }>()).countingApi,
+  list: vi.fn(), get: vi.fn(), start: vi.fn(), correct: vi.fn(),
+} }));
+vi.mock("../viewer/NiiVueViewer", () => ({ NiiVueViewer: forwardRef(function Mock(props: { onReady: () => void; onDirty: () => void; instanceOverlayUrl?: string }, ref) {
+  useEffect(() => props.onReady(), []);
+  useImperativeHandle(ref, () => ({ focusWorld: handles.focus, clearSelectionMask: handles.clear,
+    prepareCellMask: handles.prepare, getWorldPosition: () => [-12, 5, 7], getViewerState: () => ({ window_center: 300, window_width: 3000 }),
+    exportMask: async () => new Blob(["synthetic mask"]),
+  }));
+  return <div><output data-testid="overlay-url">{props.instanceOverlayUrl}</output><button onClick={props.onDirty}>Paint fixture</button></div>;
+}) }));
+
+const detail: CaseDetail = { case_id: "case-1", case_label: "Case901", source_type: "NIFTI", state: "READY", validation_status: "UNVERIFIED", review_status: "Draft", updated_at: "2026-09-01", warnings: [], shape: [10, 10, 10], voxel_spacing_mm: [1, 1, 1], orientation_codes: ["R", "A", "S"], volume_file_type: "nii", qc_checklist: { coverage: false, orientation: false, image_quality: false, slice_continuity: false }, reviewer_notes: "", metrics: [] };
+const result: CountRun = { run_id: "run-1", case_id: "case-1", status: "completed", latest_revision: 0, revision: 0, counts: { left: 1, right: 1, total: 2 }, original_counts: { left: 1, right: 1, total: 2 }, cells: [
+  { id: 300, side: "left", centroid_ras_mm: [-12, 5, 7], included: true, uncertain: true, reasons: ["Incomplete septum"], origin: "automatic", voxel_count: 22, air_voxel_count: 0 },
+  { id: 301, side: "right", centroid_ras_mm: [12, 5, 7], included: true, uncertain: false, reasons: [], origin: "automatic", voxel_count: 25, air_voxel_count: 10 },
+], warnings: [], failure_code: null, message: null, method_version: "synthetic", protocol_version: "experimental", created_at: "2026-09-01T12:00:00Z", updated_at: "2026-09-01T12:00:00Z" };
+
+describe("3D counting workspace", () => {
+  beforeEach(() => {
+    vi.clearAllMocks(); window.history.replaceState({}, "", "/cases/case-1");
+    vi.mocked(api.getCase).mockResolvedValue(detail);
+    vi.mocked(api.saveViewerState).mockResolvedValue(detail);
+    vi.mocked(api.getProtocol).mockResolvedValue({ schema_version: 1, protocol_version: "synthetic", training_eligibility: "PROVISIONAL_NOT_FOR_TRAINING", labels: [] });
+    vi.mocked(countingApi.list).mockResolvedValue({ runs: [result] });
+    vi.mocked(countingApi.get).mockResolvedValue(result);
+    vi.mocked(countingApi.correct).mockResolvedValue({ ...result, latest_revision: 1, revision: 1 });
+  });
+  function mount() { const register = vi.fn(); const back = vi.fn(); render(<CountingWorkspace caseId="case-1" onBack={back} registerNavigationGuard={register} />); return { register, back }; }
+
+  it("runs without outlines or seeds and prevents duplicate in-flight starts", async () => {
+    vi.mocked(countingApi.list).mockResolvedValue({ runs: [] });
+    vi.mocked(countingApi.start).mockResolvedValue({ ...result, status: "running", counts: null, original_counts: null, cells: [], latest_revision: null });
+    mount();
+    const start = await screen.findByRole("button", { name: "Run automatic count" });
+    expect(screen.queryByRole("button", { name: "Add cell" })).not.toBeInTheDocument();
+    await userEvent.click(start);
+    expect(countingApi.start).toHaveBeenCalledWith("case-1", expect.any(String));
+    expect(screen.getByRole("button", { name: "Counting…" })).toBeDisabled();
+    expect(screen.queryByTestId("total-count")).not.toBeInTheDocument();
+  });
+
+  it("displays failure as unavailable, never zero", async () => {
+    vi.mocked(countingApi.get).mockResolvedValue({ ...result, status: "failed", counts: null, original_counts: null, cells: [], latest_revision: null, failure_code: "LOCALIZATION_FAILED", message: "Bony boundary unavailable." });
+    mount();
+    expect(await screen.findByText("Count unavailable")).toBeVisible();
+    expect(screen.getByText(/Bony boundary unavailable/)).toBeVisible();
+    expect(screen.queryByTestId("total-count")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Export" })).toBeDisabled();
+  });
+
+  it("locates IDs above 255 in physical coordinates and preserves original counts", async () => {
+    vi.mocked(countingApi.get).mockResolvedValue({ ...result, latest_revision: 2, counts: { left: 2, right: 1, total: 3 } });
+    mount();
+    await userEvent.click(await screen.findByRole("button", { name: /#300 · left/ }));
+    expect(handles.focus).toHaveBeenCalledWith([-12, 5, 7]);
+    expect(screen.getByText(/No visible air/)).toBeVisible();
+    expect(screen.getByTestId("total-count")).toHaveTextContent("3");
+    await userEvent.click(screen.getByRole("checkbox", { name: "Show original prediction" }));
+    expect(screen.getByTestId("total-count")).toHaveTextContent("2");
+    expect(screen.getByTestId("overlay-url")).toHaveTextContent("revision=0");
+    expect(screen.getByRole("link", { name: "Export revision 0" })).toHaveAttribute("href", expect.stringContaining("revision=0"));
+    expect(screen.queryByRole("button", { name: "Remove cell" })).not.toBeInTheDocument();
+  });
+
+  it("submits a split mask bound to the selected cell and parent revision", async () => {
+    mount();
+    await userEvent.click(await screen.findByRole("button", { name: /#300 · left/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Split cell" }));
+    fireEvent.click(screen.getByRole("button", { name: "Paint fixture" }));
+    await userEvent.click(screen.getByRole("button", { name: "Apply painted correction" }));
+    await waitFor(() => expect(countingApi.correct).toHaveBeenCalledWith("case-1", "run-1", 0, { type: "split", id: 300 }, expect.any(Blob)));
+    expect(await screen.findByText(/Correction saved as revision 1/)).toBeVisible();
+    expect(handles.clear).toHaveBeenCalled();
+  });
+
+  it("loads an editable binary cell mask and guards pending corrections", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const { back } = mount();
+    await userEvent.click(await screen.findByRole("button", { name: /#300 · left/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Edit boundary" }));
+    expect(handles.prepare).toHaveBeenCalledWith(expect.stringContaining("/artifacts/cavities?revision=0"), 300);
+    await userEvent.click(screen.getByRole("button", { name: "Cases" }));
+    expect(confirm).toHaveBeenCalled(); expect(back).not.toHaveBeenCalled();
+    confirm.mockRestore();
+  });
+
+  it("never rebases a stale painted draft after a revision conflict", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    mount();
+    await userEvent.click(await screen.findByRole("button", { name: /#300 · left/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Edit boundary" }));
+    fireEvent.click(screen.getByRole("button", { name: "Paint fixture" }));
+    vi.mocked(countingApi.correct).mockRejectedValueOnce(new ApiError("Stale revision", 409));
+    vi.mocked(countingApi.get).mockResolvedValue({ ...result, latest_revision: 1, revision: 1 });
+    await userEvent.click(screen.getByRole("button", { name: "Apply painted correction" }));
+    expect(await screen.findByText(/This draft targets an earlier revision/)).toBeVisible();
+    expect(screen.getByRole("button", { name: "Apply painted correction" })).toBeDisabled();
+    expect(countingApi.correct).toHaveBeenCalledWith("case-1", "run-1", 0, { type: "update", id: 300 }, expect.any(Blob));
+    expect(countingApi.correct).toHaveBeenCalledTimes(1);
+    await userEvent.click(screen.getByRole("button", { name: "Discard correction" }));
+    await userEvent.click(screen.getByRole("button", { name: /#300 · left/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Edit boundary" }));
+    expect(handles.prepare).toHaveBeenLastCalledWith(expect.stringContaining("revision=1"), 300);
+    fireEvent.click(screen.getByRole("button", { name: "Paint fixture" }));
+    expect(screen.getByRole("button", { name: "Apply painted correction" })).not.toBeDisabled();
+    confirm.mockRestore();
+  });
+
+  it("adds an explicitly manual count-only cell at the crosshair", async () => {
+    mount();
+    await userEvent.click(await screen.findByRole("button", { name: "Add cell" }));
+    await userEvent.click(screen.getByRole("button", { name: "Add at crosshair" }));
+    expect(countingApi.correct).toHaveBeenCalledWith("case-1", "run-1", 0, expect.objectContaining({ type: "add", side: "left", centroid_ras_mm: [-12, 5, 7], uncertain: true }), undefined);
+  });
+});

@@ -31,6 +31,9 @@ jobs:
         run: ./.venv/Scripts/python.exe -m pytest -p no:cacheprovider -q -m 'not integration'
       - name: Frontend tests
         run: npm --prefix web test
+      - name: Install isolated Chromium for browser checks
+        working-directory: web
+        run: npm exec playwright install chromium
       - name: Synthetic browser workflow
         run: npm --prefix web run test:e2e
       - name: Dependency audit

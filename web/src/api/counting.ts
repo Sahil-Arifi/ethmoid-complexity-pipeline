@@ -1,0 +1,55 @@
+import { ApiError, request } from "./client";
+
+export type Counts = { left: number; right: number; total: number };
+export type Cell = {
+  id: number; side: "left" | "right"; centroid_ras_mm: [number, number, number];
+  included: boolean; uncertain: boolean; reasons: string[]; origin: string;
+  voxel_count: number; air_voxel_count: number; retired?: boolean; corrected?: boolean;
+};
+export type CountRun = {
+  run_id: string; case_id: string; status: "queued" | "running" | "completed" | "failed";
+  latest_revision: number | null; revision: number | null;
+  original_counts: Counts | null; counts: Counts | null; cells: Cell[];
+  warnings: string[]; failure_code: string | null; message: string | null;
+  method_version: string | null; protocol_version: string;
+  created_at: string; updated_at: string;
+};
+export type Correction = {
+  type: "add" | "remove" | "merge" | "split" | "update";
+  id?: number; ids?: number[]; side?: "left" | "right";
+  centroid_ras_mm?: [number, number, number]; included?: boolean;
+  uncertain?: boolean; reasons?: string[];
+};
+const path = (caseId: string, runId?: string) =>
+  `/cases/${encodeURIComponent(caseId)}/count-runs${runId ? `/${encodeURIComponent(runId)}` : ""}`;
+export const countingApi = {
+  list: (caseId: string) => request<{ runs: CountRun[] }>(path(caseId)),
+  start: (caseId: string, key: string) => request<CountRun>(path(caseId), {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ idempotency_key: key }),
+  }),
+  get: (caseId: string, runId: string) => request<CountRun>(path(caseId, runId)),
+  latest: (caseId: string, runId: string) => request<CountRun>(`${path(caseId, runId)}/revisions/latest`),
+  correct: (caseId: string, runId: string, parent: number, operation: Correction, mask?: Blob) => {
+    const metadata = { parent_revision: parent, operation };
+    if (mask) {
+      const body = new FormData();
+      body.append("metadata", JSON.stringify(metadata)); body.append("mask", mask, "selection.nii");
+      return request<CountRun>(`${path(caseId, runId)}/revisions`, { method: "POST", body });
+    }
+    return request<CountRun>(`${path(caseId, runId)}/revisions`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(metadata),
+    });
+  },
+  artifact: (caseId: string, runId: string, kind: "air" | "cavities" | "region", revision: number) =>
+    `/api${path(caseId, runId)}/artifacts/${kind}?revision=${revision}`,
+  exportUrl: (caseId: string, runId: string, revision: number) =>
+    `/api${path(caseId, runId)}/export?revision=${revision}`,
+  download: async (caseId: string, runId: string, revision: number) => {
+    const response = await fetch(`/api${path(caseId, runId)}/export?revision=${revision}`);
+    if (!response.ok || !response.headers.get("content-type")?.startsWith("application/zip")) {
+      throw new ApiError("The result could not be exported. Please try again.", response.status);
+    }
+    return response.blob();
+  },
+};

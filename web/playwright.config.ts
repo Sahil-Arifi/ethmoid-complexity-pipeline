@@ -10,13 +10,11 @@ const fixture = path.join(e2eRoot, "fixture", "directional-phantom.nii");
 process.env.ETHMOID_E2E_ROOT = e2eRoot;
 process.env.ETHMOID_E2E_FIXTURE = fixture;
 
-const programFilesX86 = process.env["ProgramFiles(x86)"];
-const defaultEdge = programFilesX86
-  ? path.join(programFilesX86, "Microsoft", "Edge", "Application", "msedge.exe")
-  : "";
-const browserExecutable = process.env.ETHMOID_BROWSER_EXECUTABLE ?? defaultEdge;
-if (!browserExecutable || !fs.existsSync(browserExecutable)) {
-  throw new Error("Set ETHMOID_BROWSER_EXECUTABLE to a Chromium-family browser executable.");
+// Use Playwright's clean bundled browser unless explicitly overridden. A host
+// browser can inherit native integrations that intercept localhost downloads.
+const browserExecutable = process.env.ETHMOID_BROWSER_EXECUTABLE;
+if (browserExecutable && !fs.existsSync(browserExecutable)) {
+  throw new Error("ETHMOID_BROWSER_EXECUTABLE does not identify an existing browser executable.");
 }
 
 const appExecutable = path.resolve(
@@ -24,8 +22,9 @@ const appExecutable = path.resolve(
   "..",
   ".venv",
   "Scripts",
-  "ethmoid-app.exe",
+  "python.exe",
 );
+const testServer = path.resolve(process.cwd(), "..", "scripts", "create_e2e_server.py");
 
 export default defineConfig({
   testDir: "./e2e",
@@ -42,14 +41,14 @@ export default defineConfig({
     headless: true,
     viewport: { width: 1280, height: 900 },
     launchOptions: {
-      executablePath: browserExecutable,
+      ...(browserExecutable ? { executablePath: browserExecutable } : {}),
       args: ["--enable-webgl", "--ignore-gpu-blocklist", "--use-angle=swiftshader"],
     },
     screenshot: "only-on-failure",
     trace: "retain-on-failure",
   },
   webServer: {
-    command: `"${appExecutable}" start --no-browser --port 8766 --work-root "${e2eRoot}"`,
+    command: `"${appExecutable}" "${testServer}" --work-root "${e2eRoot}"`,
     url: "http://127.0.0.1:8766/api/health",
     reuseExistingServer: false,
     timeout: 120_000,

@@ -40,7 +40,7 @@ describe("Dashboard", () => {
     expect(await screen.findByRole("button", { name: "Case003" })).toBeVisible();
     expect(screen.getByText("VERIFIED")).toBeVisible();
     expect(screen.getByText("Annotation revision 2")).toBeVisible();
-    await user.click(screen.getByRole("button", { name: "Continue annotation" }));
+    await user.click(screen.getByRole("button", { name: "Open case" }));
     expect(openCase).toHaveBeenCalledWith("case-1");
   });
 

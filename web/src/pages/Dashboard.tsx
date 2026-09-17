@@ -59,8 +59,8 @@ export function Dashboard({ onOpenCase }: Props) {
           <BrandMark />
           <div>
             <span className="eyebrow">Ethmoid Atlas · Local workspace</span>
-            <h1>Map anatomy with confidence.</h1>
-            <p>Review CT volumes and build traceable, provisional ethmoid annotations.</p>
+            <h1>Count ethmoid cells in 3D.</h1>
+            <p>Run an automatic whole-volume count, review individual cells, and export the result.</p>
           </div>
         </div>
         <div className="dashboard-actions">
@@ -76,14 +76,14 @@ export function Dashboard({ onOpenCase }: Props) {
       <section className="workflow-strip" aria-label="Application workflow">
         <div><span>01</span><strong>Import</strong><small>DICOM or NIfTI</small></div>
         <i aria-hidden="true">→</i>
-        <div><span>02</span><strong>Annotate</strong><small>Four provisional regions</small></div>
+        <div><span>02</span><strong>Count</strong><small>Unique cells across all slices</small></div>
         <i aria-hidden="true">→</i>
-        <div><span>03</span><strong>Review</strong><small>QC, notes, and export</small></div>
+        <div><span>03</span><strong>Review</strong><small>Correct cells and export</small></div>
       </section>
 
       <div className="provisional-banner" role="note">
         <span className="provisional-icon" aria-hidden="true">◇</span>
-        <span><strong>Provisional protocol.</strong> Annotations are not approved for model training.</span>
+        <span><strong>Experimental prototype.</strong> Preliminary cell counts require review. Clinical accuracy is not established.</span>
       </div>
 
       {error ? (
@@ -144,7 +144,7 @@ export function Dashboard({ onOpenCase }: Props) {
                     <td>
                       <div className="row-actions">
                         <button className="button compact" type="button" onClick={() => onOpenCase(item.case_id)}>
-                          {item.latest_revision ? "Continue annotation" : "Open"}
+                          Open case
                         </button>
                         {item.latest_revision ? (
                           <a className="button compact secondary" href={api.exportUrl(item.case_id)} download>

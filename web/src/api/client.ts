@@ -36,7 +36,7 @@ async function responseMessage(response: Response): Promise<string> {
   }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_ROOT}${path}`, init);
   if (!response.ok) throw new ApiError(await responseMessage(response), response.status);
   return (await response.json()) as T;

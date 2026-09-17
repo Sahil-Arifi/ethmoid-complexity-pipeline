@@ -10,7 +10,7 @@ test("directional NIfTI can be viewed, annotated, resumed, finalized, and export
 
   await page.goto("/");
   await expect(page.getByRole("dialog", { name: "Import a scan" })).toBeVisible();
-  for (const title of ["Review every view", "Mark the ethmoid regions", "Check, review, and export"]) {
+  for (const title of ["Run the automatic count", "Review numbered cells", "Export the reviewed result"]) {
     await page.getByRole("button", { name: "Next" }).click();
     await expect(page.getByRole("heading", { name: title })).toBeVisible();
   }
@@ -22,6 +22,7 @@ test("directional NIfTI can be viewed, annotated, resumed, finalized, and export
   await page.getByRole("button", { name: "Import scan" }).last().click();
 
   await expect(page.getByRole("heading", { name: "Case901" })).toBeVisible();
+  await page.getByRole("button", { name: "Previous annotations" }).click();
   await expect(page.getByText("UNVERIFIED", { exact: true })).toBeVisible();
   await expect(page.getByText("R · A · S", { exact: true })).toBeVisible();
   const canvas = page.getByLabel("Linked axial, coronal, sagittal, and 3D CT viewer");
@@ -100,8 +101,9 @@ test("directional NIfTI can be viewed, annotated, resumed, finalized, and export
   // the same guard with an annotation change pending.
   await page.getByRole("textbox", { name: "Reviewer notes" }).fill("Browser-back persistence check");
   await page.goBack();
-  await expect(page.getByRole("heading", { name: "Map anatomy with confidence." })).toBeVisible();
-  await page.getByRole("button", { name: "Continue annotation" }).click();
+  await expect(page.getByRole("heading", { name: "Count ethmoid cells in 3D." })).toBeVisible();
+  await page.getByRole("button", { name: "Case901", exact: true }).click();
+  await page.getByRole("button", { name: "Previous annotations" }).click();
   await expect(page.locator(".metadata-grid").getByText("1", { exact: true })).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Reviewer notes" })).toHaveValue(
     "Browser-back persistence check",
@@ -124,5 +126,5 @@ test("directional NIfTI can be viewed, annotated, resumed, finalized, and export
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toMatch(/^Case901_annotation\.zip$/);
   expect(await download.path()).toBeTruthy();
-  await expect(page.getByText(/does not calculate a complexity score/i)).toBeVisible();
+  await expect(page.getByText(/do not calculate a complexity score/i)).toBeVisible();
 });

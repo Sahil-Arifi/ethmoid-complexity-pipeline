@@ -16,6 +16,7 @@ export type ViewMode = "multiplanar" | "render";
 export type ViewerLocation = {
   voxel: string;
   millimeters: string;
+  cellId?: number;
 };
 
 export type NiiVueViewerHandle = {
@@ -26,6 +27,10 @@ export type NiiVueViewerHandle = {
   canUndo: () => boolean;
   canRedo: () => boolean;
   resetView: () => void;
+  focusWorld: (point: [number, number, number]) => void;
+  getWorldPosition: () => [number, number, number];
+  clearSelectionMask: () => void;
+  prepareCellMask: (url: string, id: number) => Promise<void>;
 };
 
 type Props = {
@@ -49,6 +54,7 @@ type Props = {
   onWindowChange: (center: number, width: number) => void;
   onLocationChange: (location: ViewerLocation) => void;
   onHistoryChange: (canUndo: boolean, canRedo: boolean) => void;
+  instanceOverlayUrl?: string;
 };
 
 type LocationPayload = {
@@ -111,6 +117,7 @@ export const NiiVueViewer = forwardRef<NiiVueViewerHandle, Props>(
       onWindowChange,
       onLocationChange,
       onHistoryChange,
+      instanceOverlayUrl,
     },
     ref,
   ) {
@@ -133,6 +140,7 @@ export const NiiVueViewer = forwardRef<NiiVueViewerHandle, Props>(
       selectedLabel,
       brushSize,
       overlayOpacity,
+      overlayVisible,
       viewMode,
       windowCenter,
       windowWidth,
@@ -153,6 +161,7 @@ export const NiiVueViewer = forwardRef<NiiVueViewerHandle, Props>(
       selectedLabel,
       brushSize,
       overlayOpacity,
+      overlayVisible,
       viewMode,
       windowCenter,
       windowWidth,
@@ -272,6 +281,45 @@ export const NiiVueViewer = forwardRef<NiiVueViewerHandle, Props>(
           nv.setRenderAzimuthElevation(110, 10);
           nv.drawScene();
           callbacksRef.current.onViewStateChange();
+        },
+        focusWorld(point) {
+          const nv = niivueRef.current;
+          if (!nv) return;
+          nv.scene.crosshairPos = new Float32Array(nv.mm2frac(point));
+          nv.drawScene();
+          nv.createOnLocationChange();
+        },
+        getWorldPosition() {
+          const nv = niivueRef.current;
+          if (!nv) throw new Error("The image viewer is not ready.");
+          return Array.from(nv.frac2mm(nv.scene.crosshairPos)).slice(0, 3) as [number, number, number];
+        },
+        clearSelectionMask() {
+          const nv = niivueRef.current;
+          if (!nv) return;
+          nv.createEmptyDrawing();
+          historyRef.current = emptyHistory();
+          addHistorySnapshot(nv.drawBitmap);
+          nv.drawScene();
+        },
+        async prepareCellMask(url, id) {
+          const nv = niivueRef.current;
+          if (!nv) throw new Error("The image viewer is not ready.");
+          const { NVImage } = await import("@niivue/niivue");
+          const mask = await NVImage.loadFromUrl({ url, name: "cavities.nii.gz" });
+          if (niivueRef.current !== nv) return;
+          if (!mask.img || !mask.hdr) throw new Error("The cell mask could not be opened.");
+          // Canonical instance IDs remain uint16 in the overlay. Only the
+          // selected cell becomes a binary editable drawing; loadDrawing
+          // handles the source-to-display orientation transformation.
+          mask.img = Uint8Array.from(mask.img, value => value === id ? 1 : 0);
+          mask.hdr.datatypeCode = 2;
+          mask.hdr.numBitsPerVoxel = 8;
+          mask.hdr.scl_slope = 1;
+          mask.hdr.scl_inter = 0;
+          if (!nv.loadDrawing(mask)) throw new Error("The cell mask geometry does not match this CT.");
+          historyRef.current = emptyHistory();
+          addHistorySnapshot(nv.drawBitmap);
         },
       }),
       [],
@@ -393,9 +441,13 @@ export const NiiVueViewer = forwardRef<NiiVueViewerHandle, Props>(
           );
           nv.onLocationChange = (payload) => {
             const location = payload as LocationPayload;
+            const labels = nv.volumes[1];
+            const overlayVoxel = location.mm && labels ? labels.mm2vox(Array.from(location.mm)) : null;
+            const cellId = labels && overlayVoxel ? Math.round(labels.getValue(overlayVoxel[0], overlayVoxel[1], overlayVoxel[2])) : 0;
             callbacksRef.current.onLocationChange({
               voxel: formatTriplet(location.vox, 0),
               millimeters: formatTriplet(location.mm, 1),
+              cellId: Number.isFinite(cellId) && cellId > 0 ? cellId : undefined,
             });
           };
           nv.onAzimuthElevationChange = () => {
@@ -441,6 +493,50 @@ export const NiiVueViewer = forwardRef<NiiVueViewerHandle, Props>(
 
     useEffect(() => {
       const nv = niivueRef.current;
+      if (!nv || loading) return;
+      let cancelled = false;
+      let overlay: import("@niivue/niivue").NVImage | undefined;
+      const load = async () => {
+        try {
+          if (!instanceOverlayUrl) return;
+          const { NVImage } = await import("@niivue/niivue");
+          const volume = await NVImage.loadFromUrl({ url: instanceOverlayUrl, name: "cells.nii.gz" });
+          if (cancelled || niivueRef.current !== nv) return;
+          let maximum = 0;
+          if (volume.img) for (const value of volume.img) maximum = Math.max(maximum, value);
+          const cm = { R: [0], G: [0], B: [0], A: [0], I: [0], labels: ["Background"] };
+          // Match the representative report palette; stable IDs carry identity
+          // when colors repeat across the registry.
+          const palette = [[48, 165, 219], [239, 177, 64], [103, 190, 130], [213, 125, 185], [161, 148, 220], [229, 119, 96]];
+          for (let id = 1; id <= maximum; id++) {
+            const color = palette[(id - 1) % palette.length];
+            cm.R.push(color[0]); cm.G.push(color[1]); cm.B.push(color[2]);
+            cm.A.push(255); cm.I.push(id); cm.labels.push(`Cell ${id}`);
+          }
+          volume.setColormapLabel(cm);
+          const controls = controlStateRef.current;
+          volume.opacity = controls.overlayVisible ? controls.overlayOpacity : 0;
+          overlay = volume;
+          nv.addVolume(volume);
+          nv.createOnLocationChange();
+        } catch (error) {
+          if (!cancelled) callbacksRef.current.onError(error instanceof Error ? error.message : "Cell overlay failed to load.");
+        }
+      };
+      void load();
+      return () => {
+        cancelled = true;
+        if (overlay && niivueRef.current === nv) {
+          nv.removeVolume(overlay);
+          nv.createOnLocationChange();
+        }
+      };
+      // Visibility and opacity update without downloading the label volume again.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [instanceOverlayUrl, loading]);
+
+    useEffect(() => {
+      const nv = niivueRef.current;
       if (!nv) return;
       nv.opts.penSize = brushSize;
       if (tool === "navigate") {
@@ -460,6 +556,7 @@ export const NiiVueViewer = forwardRef<NiiVueViewerHandle, Props>(
       const nv = niivueRef.current;
       if (!nv) return;
       nv.setDrawOpacity(overlayVisible ? overlayOpacity : 0);
+      if (nv.volumes.length > 1) nv.setOpacity(1, overlayVisible ? overlayOpacity : 0);
     }, [overlayOpacity, overlayVisible]);
 
     useEffect(() => {

@@ -21,16 +21,16 @@ const GUIDE_STEPS: readonly GuideStep[] = [
     description: "Choose a DICOM folder or NIfTI file. The app checks the scan before you begin.",
   },
   {
-    title: "Review every view",
-    description: "Move through axial, coronal, and sagittal slices, then adjust the brightness sliders for clarity.",
+    title: "Run the automatic count",
+    description: "The model analyzes the full CT volume and counts each candidate cell once. No manual outline or seed points are needed.",
   },
   {
-    title: "Mark the ethmoid regions",
-    description: "Choose a label and paint on the scan. Undo, erase, and autosave help protect your draft.",
+    title: "Review numbered cells",
+    description: "Locate cells in linked CT views. Add, remove, split, merge, or adjust a boundary after the first result.",
   },
   {
-    title: "Check, review, and export",
-    description: "Complete the QC checklist, add notes, and export the annotation when it is ready for review.",
+    title: "Export the reviewed result",
+    description: "Export counts and labeled masks with a record of the original prediction and corrections. Preliminary counts still need clinical validation.",
   },
 ];
 

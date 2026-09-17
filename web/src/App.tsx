@@ -2,7 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react"
 import { Dashboard } from "./pages/Dashboard";
 
 const Workspace = lazy(() =>
-  import("./pages/Workspace").then((module) => ({ default: module.Workspace })),
+  import("./pages/CountingWorkspace").then((module) => ({ default: module.CountingWorkspace })),
 );
 
 type Route = { page: "dashboard" } | { page: "workspace"; caseId: string };
@@ -65,8 +65,9 @@ export function App() {
 
   if (route.page === "workspace") {
     return (
-      <Suspense fallback={<main className="center-state">Opening annotation workspace…</main>}>
+      <Suspense fallback={<main className="center-state">Opening counting workspace…</main>}>
         <Workspace
+          key={route.caseId}
           caseId={route.caseId}
           onBack={() => navigate({ page: "dashboard" })}
           registerNavigationGuard={registerNavigationGuard}

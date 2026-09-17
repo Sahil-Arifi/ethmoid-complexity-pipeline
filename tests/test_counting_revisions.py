@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import sqlite3
 import threading
 import zipfile
@@ -15,6 +16,19 @@ from ethmoid_pipeline.webapp.counting_service import ARTIFACTS, PROTOCOL_VERSION
 from ethmoid_pipeline.webapp.service import AppService, WebAppError
 from ethmoid_pipeline.webapp.store import Store
 from tests.test_webapp_service import write_nifti
+
+
+def test_presentation_exports_match_current_revision(completed):
+    _, case, service, run = completed
+    corrected = service.revise(case["case_id"], run["run_id"], 0, {"type": "remove", "id": 300})
+    assert corrected["counts"]["total"] == 1
+    with zipfile.ZipFile(service.export(case["case_id"], run["run_id"], 1)) as archive:
+        manifest = json.loads(archive.read("manifest.json"))
+        assert archive.read("summary.pdf").startswith(b"%PDF-")
+        assert archive.read("representative.png").startswith(b"\x89PNG\r\n\x1a\n")
+        assert b"original,0,1,1,2" in archive.read("counts.csv")
+        assert b"reviewed,1,1,0,1" in archive.read("counts.csv")
+        assert manifest["report_sha256"] == {name: hashlib.sha256(archive.read(name)).hexdigest() for name in ("summary.pdf", "representative.png")}
 
 
 PROTOCOL = {"protocol_version": PROTOCOL_VERSION, "algorithm": {"air_hu": -500.0}}

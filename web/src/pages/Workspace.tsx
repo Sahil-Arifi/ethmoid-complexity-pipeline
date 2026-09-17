@@ -722,7 +722,7 @@ export function Workspace({ caseId, onBack, registerNavigationGuard }: Props) {
           {!canFinalize && detail.review_status !== "Approved" ? (
             <p className="form-hint">Save an annotation, pass all four QC checks, and resolve failed validation before finalizing.</p>
           ) : null}
-          <p className="no-score-note">This application does not calculate a complexity score or model prediction.</p>
+          <p className="no-score-note">These previous annotations do not calculate a complexity score. Automatic cell counts are available in the counting workspace.</p>
         </aside>
       </div>
     </main>

@@ -137,7 +137,7 @@ describe("Workspace", () => {
     expect(screen.getByRole("option", { name: "1. Left anterior ethmoid" })).toBeVisible();
     expect(screen.getByRole("option", { name: "4. Right posterior ethmoid" })).toBeVisible();
     expect(screen.getByText("PROVISIONAL_NOT_FOR_TRAINING")).toBeVisible();
-    expect(screen.getByText(/does not calculate a complexity score/i)).toBeVisible();
+    expect(screen.getByText(/do not calculate a complexity score/i)).toBeVisible();
   });
 
   it("saves a uint8 NIfTI mask revision with viewer state", async () => {

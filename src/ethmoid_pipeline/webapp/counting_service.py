@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import copy
 import csv
+import hashlib
 import io
 import json
 import os
@@ -20,6 +21,7 @@ import numpy as np
 from ..util import atomic_write_text, repo_root, sha256_canonical_json, sha256_file, utc_now
 from .service import AppService, WebAppError, inspect_nifti, _atomic_save_nifti
 from .store import decode_json, encode_json
+from .counting_reports import build_count_reports
 
 
 ARTIFACTS = {"cavities": "cavities.nii.gz", "air": "air.nii.gz", "region": "region.nii.gz"}
@@ -593,10 +595,14 @@ class CountingService:
                                   "parent_ids": affected, "created_ids": created})
 
     def export(self, case_id: str, run_id: str, revision: int | None = None) -> Path:
-        case, _ = self._source(case_id)
+        case, source = self._source(case_id)
         row = self._run(case_id, run_id)
         original, original_dir, original_hashes = self._snapshot(row, 0)
         corrected, corrected_dir, corrected_hashes = self._snapshot(row, revision)
+        reports = build_count_reports(
+            source, corrected_dir / ARTIFACTS["cavities"], corrected_dir / ARTIFACTS["air"],
+            {**corrected, "original_counts": original["counts"]}, case["case_label"],
+        )
         manifest = {
             "schema_version": 1, "case_label": case["case_label"], "run_id": run_id,
             "source_sha256": row["source_sha256"], "protocol_version": row["protocol_version"],
@@ -606,6 +612,7 @@ class CountingService:
             "corrected_artifact_sha256": corrected_hashes, "training_eligibility": ELIGIBILITY,
             "clinical_accuracy": "UNMEASURED", "warnings": corrected.get("warnings", []),
             "config": original.get("config", {}),
+            "report_sha256": {name: hashlib.sha256(data).hexdigest() for name, data in reports.items()},
         }
         # A second request must never replace a ZIP that FileResponse is still
         # streaming. Windows locks open download files against replacement.
@@ -617,6 +624,14 @@ class CountingService:
             with zipfile.ZipFile(temporary, "w", compression=zipfile.ZIP_DEFLATED) as archive:
                 archive.writestr("manifest.json", encode_json(manifest))
                 archive.writestr("protocol.json", row["protocol_json"])
+                for name, data in reports.items():
+                    archive.writestr(name, data)
+                count_stream = io.StringIO(newline="")
+                count_writer = csv.writer(count_stream)
+                count_writer.writerow(["result", "revision", "left", "right", "total"])
+                for name, snapshot in (("original", original), ("reviewed", corrected)):
+                    count_writer.writerow([name, snapshot["revision"], *[snapshot["counts"][side] for side in ("left", "right", "total")]])
+                archive.writestr("counts.csv", count_stream.getvalue())
                 for prefix, result, directory in (("original", original, original_dir), ("reviewed", corrected, corrected_dir)):
                     for name in ["result.json", *ARTIFACTS.values()]:
                         archive.write(self._safe_file(directory, name), f"{prefix}/{name}")
