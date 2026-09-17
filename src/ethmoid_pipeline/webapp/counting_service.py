@@ -184,7 +184,9 @@ class CountingService:
         environment = os.environ.copy()
         environment["PYTHONPATH"] = str(repo_root() / "src")
         environment["PYTHONDONTWRITEBYTECODE"] = "1"
+        environment["PYTHONNOUSERSITE"] = "1"
         environment["ETHMOID_INFERENCE_OFFLINE"] = "1"
+        environment["nnUNet_compile"] = "false"
         environment["TOTALSEG_HOME_DIR"] = str(runtime / "totalsegmentator")
         environment["TOTALSEG_WEIGHTS_PATH"] = str(runtime / "totalsegmentator" / "nnunet" / "results")
         command = [str(python), "-m", "ethmoid_pipeline.counting.worker", "--input", str(source),

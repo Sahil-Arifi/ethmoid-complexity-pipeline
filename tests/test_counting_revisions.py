@@ -6,6 +6,7 @@ import sqlite3
 import threading
 import zipfile
 from pathlib import Path
+from types import SimpleNamespace
 
 import nibabel as nib
 import numpy as np
@@ -466,6 +467,36 @@ def test_engine_failure_is_not_zero_and_only_allowlisted_code_is_exposed(tmp_pat
         assert result["failure_code"] == "SPHENOID_UNRESOLVED"
         assert result["counts"] is None and result["original_counts"] is None
         assert "potentially identifying" not in json.dumps(result)
+    finally:
+        service.close()
+
+
+def test_production_worker_matches_offline_isolated_evaluation_environment(tmp_path: Path, monkeypatch):
+    local = tmp_path / "local"
+    runtime = local / "EthmoidComplexity" / "tools" / "counting-runtime"
+    python = runtime / "Scripts" / "python.exe"
+    python.parent.mkdir(parents=True)
+    python.write_bytes(b"synthetic executable; never launched")
+    monkeypatch.setenv("LOCALAPPDATA", str(local))
+    monkeypatch.setenv("PYTHONNOUSERSITE", "0")
+    monkeypatch.setenv("nnUNet_compile", "true")
+    monkeypatch.setenv("ETHMOID_INFERENCE_OFFLINE", "0")
+    captured = {}
+    def capture(command, **options):
+        captured.update(command=command, **options)
+        return SimpleNamespace(returncode=0, wait=lambda timeout: 0)
+    monkeypatch.setattr("ethmoid_pipeline.webapp.counting_service.subprocess.Popen", capture)
+    app, case, service = setup_service(tmp_path)
+    config = tmp_path / "protocol.json"
+    config.write_text(json.dumps(PROTOCOL))
+    try:
+        service._execute_local(app.volume_path(case["case_id"]), tmp_path / "output", config)
+        assert captured["command"][0] == str(python)
+        assert captured["env"]["PYTHONNOUSERSITE"] == "1"
+        assert captured["env"]["nnUNet_compile"] == "false"
+        assert captured["env"]["ETHMOID_INFERENCE_OFFLINE"] == "1"
+        assert captured["env"]["TOTALSEG_HOME_DIR"] == str(runtime / "totalsegmentator")
+        assert captured["cwd"] == runtime
     finally:
         service.close()
 

@@ -225,7 +225,7 @@ function CountReview({ caseId, onBack, registerNavigationGuard, onPrevious }: Pr
           {run?.status === "failed" && <p role="alert">{run.message || "An essential analysis check failed."} {run.failure_code && <small>({run.failure_code})</small>}</p>}
           {!run && <p className="muted">Run once to identify cells throughout the volume. No outline or seed points are required.</p>}
           {active && <p className="muted">The job continues locally if you leave this page. Return to see its result.</p>}
-          {completed && <p className="muted">One number per 3D cell, across all slices. Review numbered compartments and uncertain cells before presenting the result.</p>}
+          {completed && <p className="muted">Each candidate ID is counted once across the 3D volume. Review possible missed or merged cells before presenting the result.</p>}
           {!!run?.latest_revision && <label><input type="checkbox" checked={showOriginal} disabled={busy || !!edit} onChange={e => { setShowOriginal(e.target.checked); setSelected([]); }} /> Show original prediction</label>}
           {runs.length > 1 && <label className="count-field">Run history<select aria-label="Run history" disabled={busy} value={run?.run_id} onChange={e => void selectRun(e.target.value)}>{runs.map((r, index) => <option key={r.run_id} value={r.run_id}>Run {runs.length - index} · {new Date(r.created_at).toLocaleString()}</option>)}</select></label>}
         </section>
@@ -237,7 +237,7 @@ function CountReview({ caseId, onBack, registerNavigationGuard, onPrevious }: Pr
               <input type="checkbox" aria-label={`Select cell ${cell.id}`} disabled={!!edit || busy} checked={selected.includes(cell.id)} onChange={e => setSelected(ids => e.target.checked ? [...ids, cell.id] : ids.filter(id => id !== cell.id))} />
               <button disabled={!ready || !!edit} onClick={() => focus(cell)}><strong>#{cell.id} · {cell.side}</strong><span>{cell.uncertain ? "Needs review" : "Candidate"}{cell.origin === "manual" ? " · Manual" : ""}{cell.air_voxel_count === 0 ? " · No visible air" : ""}</span></button>
             </div>)}</div>
-            {selected.length === 1 && selectedCell && <div className="count-cell-detail"><strong>Cell #{selectedCell.id}</strong>{selectedCell.reasons.map((r, i) => <p key={i}>{r}</p>)}<small>{selectedCell.voxel_count} compartment voxels · {selectedCell.air_voxel_count} air voxels</small></div>}
+            {selected.length === 1 && selectedCell && <div className="count-cell-detail"><strong>Cell #{selectedCell.id}</strong>{selectedCell.reasons.map((r, i) => <p key={i}>{r.replaceAll("_", " ")}</p>)}<small>{selectedCell.voxel_count} compartment voxels · {selectedCell.air_voxel_count} air voxels</small></div>}
           </section>
           {!edit ? <section><h2>Correct the result</h2><div className="count-actions">
             <button className="button" disabled={!canEdit} onClick={() => void prepare("add")}>Add cell</button>
