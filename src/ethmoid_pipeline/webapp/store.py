@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import uuid
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 class Store:
@@ -93,13 +94,62 @@ class Store:
             row = connection.execute(
                 "SELECT value FROM metadata WHERE key = 'schema_version'"
             ).fetchone()
+            previous_version = int(row["value"]) if row is not None else None
+            if previous_version not in {None, 1, SCHEMA_VERSION}:
+                raise RuntimeError("The web application database schema is unsupported.")
+            if previous_version == 1:
+                # SQLite's backup API includes committed WAL pages. Keep the backup
+                # beside the protected database, never in the source checkout.
+                backup_path = self.root / f"schema-v1-{uuid.uuid4().hex}.sqlite3"
+                with sqlite3.connect(backup_path) as backup:
+                    connection.backup(backup)
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute(
+                """CREATE TABLE IF NOT EXISTS count_runs (
+                    id TEXT PRIMARY KEY,
+                    case_id TEXT NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+                    idempotency_key TEXT,
+                    status TEXT NOT NULL CHECK(status IN ('queued','running','completed','failed')),
+                    source_sha256 TEXT NOT NULL,
+                    protocol_version TEXT NOT NULL,
+                    protocol_json TEXT NOT NULL,
+                    output_relpath TEXT NOT NULL,
+                    original_result_json TEXT,
+                    original_hashes_json TEXT,
+                    latest_revision INTEGER,
+                    failure_code TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(case_id, idempotency_key)
+                )"""
+            )
+            connection.execute(
+                """CREATE UNIQUE INDEX IF NOT EXISTS idx_count_run_active
+                    ON count_runs(case_id) WHERE status IN ('queued','running')"""
+            )
+            connection.execute(
+                """CREATE TABLE IF NOT EXISTS cell_revisions (
+                    run_id TEXT NOT NULL REFERENCES count_runs(id) ON DELETE CASCADE,
+                    revision INTEGER NOT NULL,
+                    parent_revision INTEGER NOT NULL,
+                    result_json TEXT NOT NULL,
+                    artifact_relpath TEXT NOT NULL,
+                    hashes_json TEXT NOT NULL,
+                    operation_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY(run_id, revision)
+                )"""
+            )
             if row is None:
                 connection.execute(
                     "INSERT INTO metadata(key, value) VALUES('schema_version', ?)",
                     (str(SCHEMA_VERSION),),
                 )
-            elif int(row["value"]) != SCHEMA_VERSION:
-                raise RuntimeError("The web application database schema is unsupported.")
+            else:
+                connection.execute(
+                    "UPDATE metadata SET value = ? WHERE key = 'schema_version'",
+                    (str(SCHEMA_VERSION),),
+                )
 
 
 def encode_json(value: Any) -> str:

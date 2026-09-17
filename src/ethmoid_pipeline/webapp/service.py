@@ -884,9 +884,16 @@ class AppService:
 
     def delete_draft(self, case_id: str) -> None:
         with self.store.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
             row = self._get_case_row(connection, case_id)
             if row["review_status"] != "Draft" or row["state"] == "APPROVED":
                 raise WebAppError("Only draft cases can be deleted.", status_code=409)
+            active_run = connection.execute(
+                "SELECT 1 FROM count_runs WHERE case_id=? AND status IN ('queued','running')",
+                (case_id,),
+            ).fetchone()
+            if active_run is not None:
+                raise WebAppError("Wait for the active count run before deleting this case.", status_code=409)
             connection.execute("DELETE FROM cases WHERE id = ?", (case_id,))
         case_dir = (self.root / "cases" / case_id).resolve()
         case_dir.relative_to((self.root / "cases").resolve())

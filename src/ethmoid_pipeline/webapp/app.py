@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import shutil
 import tempfile
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -15,6 +16,8 @@ from starlette.concurrency import run_in_threadpool
 from ..util import repo_root
 from .protocol import load_protocol
 from .service import AppService, WebAppError
+from .counting_service import CountingService
+from .counting_routes import counting_router
 
 
 MAX_UPLOAD_BYTES = 4 * 1024 * 1024 * 1024
@@ -72,12 +75,22 @@ def _nifti_suffix(filename: str | None) -> str:
 
 def create_app(*, work_root: Path | None = None, dcm2niix: Path | None = None) -> FastAPI:
     service = AppService(work_root=work_root, dcm2niix=dcm2niix)
+    counting = CountingService(service)
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI):
+        yield
+        counting.close()
+
     app = FastAPI(
         title="Ethmoid Complexity App",
         version="0.1.0",
         description="Local function-first CT review and provisional annotation API.",
+        lifespan=lifespan,
     )
     app.state.ethmoid_service = service
+    app.state.counting_service = counting
+    app.include_router(counting_router(counting))
 
     @app.exception_handler(WebAppError)
     async def webapp_error_handler(_request: Request, exc: WebAppError) -> JSONResponse:

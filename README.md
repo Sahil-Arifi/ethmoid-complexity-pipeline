@@ -18,7 +18,7 @@ The implementation contract and phased plan are in [Full-volume counting prototy
 | 1. Contract and verification | Completed | Separate experimental protocol, requirement mapping, deterministic autosave regression, synthetic CI, complete-index medical-data guard |
 | 2. Runtime and cohort | Completed | Hash-locked offline GPU environment, four model manifests, ten verified volumes and immutable study split |
 | 3. Automatic counting | In progress in an isolated worktree | Paired anatomical localization and native-resolution cavity instances |
-| 4. Persistent run API | In progress in an isolated worktree | Jobs, original results, correction revisions and exports |
+| 4. Persistent run API | Completed against synthetic inference | Durable jobs, immutable predictions, correction lineage, source checks and per-response exports |
 | 5. Review interface | In progress in an isolated worktree | Numbered overlay, counts, corrections and presentation exports |
 | 6. Held-out evaluation | Pending | Frozen five-development/five-held-out study evaluation and handoff |
 
@@ -33,6 +33,10 @@ Phase 2 conversion finding: two decimal-spacing series exposed a small dcm2niix 
 Phase 2 runtime and cohort are complete; see [Runtime setup and findings](docs/INFERENCE_RUNTIME.md). The isolated Python 3.12.14 environment has 122 consistent packages and four prefetched model sets (28 hashed files). CUDA matrix and 3D-convolution smoke checks matched CPU results; external Python DNS is blocked and TotalSegmentator telemetry is disabled. Both localizers ran on the pilot and produced 26 binary masks matching its native geometry. These models supply landmarks, not ethmoid-cell labels.
 
 The protected frozen cohort contains five development and five held-out studies. All ten full-volume HU comparisons passed with maximum error **0.0**, and a repeat preparation run reused every verified image without changing the manifest. Acquisition eligibility does not establish clinical suitability. The phase worktree passed **60 Python tests** and its production build. Counts are still under development: initial real-scan runs exposed localization and candidate-rejection defects, so they are not accuracy evidence or presentable anatomical totals.
+
+Phase 4 backend work proceeded alongside algorithm development. It now persists single-worker jobs, reuses idempotent requests, handles interrupted runs, and migrates existing databases with a local backup. Every result is tied to its source and protocol. Corrections preserve revision 0, allocate new IDs for split/merge, enforce stale-revision checks, support IDs above 255, and keep anatomical cavities separate from air-only masks. Approved cases cannot be edited or recounted. Active jobs block deletion; completed case deletion removes its count artifacts.
+
+The integrated application suite passed **96 tests** before the final export fix; the final **34 counting API/revision tests** passed afterward. The export regression holds a ZIP open to reproduce Windows file locking: each response now owns a separate temporary export and cleans it up after streaming. The backend worktree's complete suite passed **84 tests**. These checks use synthetic inference. The automatic engine is still being evaluated on development scans; a working job API is not evidence of correct clinical counts.
 
 ## Documentation rule
 
