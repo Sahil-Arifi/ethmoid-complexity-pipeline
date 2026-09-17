@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import csv
+import io
 import hashlib
 import sqlite3
 import threading
@@ -30,6 +32,60 @@ def test_presentation_exports_match_current_revision(completed):
         assert b"original,0,1,1,2" in archive.read("counts.csv")
         assert b"reviewed,1,1,0,1" in archive.read("counts.csv")
         assert manifest["report_sha256"] == {name: hashlib.sha256(archive.read(name)).hexdigest() for name in ("summary.pdf", "representative.png")}
+
+
+def test_export_identity_and_acquisition_stay_bound_to_original_run(tmp_path: Path, monkeypatch):
+    app, case, service = setup_service(tmp_path)
+    frozen = {"study_id": "study-3", "study_label": "Case003", "series_id": "series-7", "series_label": "Series007", "slice_thickness_mm": 2.5, "spacing_mm": [0.5, 0.5, 0.625], "resolution_class": "outside_protocol", "warnings": []}
+    monkeypatch.setattr(app, "catalog_context", lambda _case_id: frozen)
+    try:
+        created = service.create_run(case["case_id"])
+        run = finish(service, case["case_id"], created["run_id"])
+        assert run["status"] == "completed"
+        # A later catalog association must not relabel this saved prediction.
+        monkeypatch.setattr(app, "catalog_context", lambda _case_id: {**frozen, "study_label": "Case999", "series_label": "Series999", "slice_thickness_mm": 9.0})
+        service.revise(case["case_id"], run["run_id"], 0, {"type": "remove", "id": 300})
+        with zipfile.ZipFile(service.export(case["case_id"], run["run_id"])) as archive:
+            manifest = json.loads(archive.read("manifest.json"))
+            assert manifest["identity"] == {"study_label": "Case003", "series_label": "Series007", "legacy_case_label": "Case901"}
+            assert manifest["case_label"] == "Case901"
+            rows = list(csv.DictReader(io.StringIO(archive.read("counts.csv").decode())))
+            for row in rows:
+                assert row["study_label"] == "Case003" and row["series_label"] == "Series007"
+                assert row["legacy_case_label"] == "Case901" and row["source_sha256"] == manifest["source_sha256"]
+                assert float(row["slice_thickness_mm"]) == 2.5
+                assert float(row["slice_interval_mm"]) == 0.625
+                assert [float(row[f"acquisition_spacing_{axis}_mm"]) for axis in "xyz"] == [0.5, 0.5, 0.625]
+                assert np.allclose([float(row[f"native_spacing_{axis}_mm"]) for axis in "xyz"], nib.affines.voxel_sizes(nib.load(app.volume_path(case["case_id"])).affine))
+                assert "out_of_protocol_resolution" in row["quality_flags"]
+            pdf = archive.read("summary.pdf")
+            assert b"Study Case003 / Series007 | Legacy volume Case901" in pdf
+            assert b"Acquisition thickness: 2.5 mm | Slice interval: 0.625 mm" in pdf
+            assert b"Case999" not in pdf and b"Series999" not in pdf
+            assert manifest["report_sha256"] == {name: hashlib.sha256(archive.read(name)).hexdigest() for name in ("summary.pdf", "representative.png")}
+    finally:
+        service.close()
+
+
+def test_export_without_historic_acquisition_does_not_fill_it_from_todays_catalog(completed, monkeypatch):
+    app, case, service, run = completed
+    row = service._run(case["case_id"], run["run_id"])
+    original, directory, _ = service._snapshot(row, 0)
+    original.pop("acquisition", None); original.pop("quality", None)
+    # Reconstruct the older saved format in this synthetic fixture only.
+    text = json.dumps(original)
+    (directory / "result.json").write_text(text)
+    with app.store.connect() as connection:
+        connection.execute("UPDATE count_runs SET original_result_json=?,original_hashes_json=? WHERE id=?", (text, json.dumps(service._hashes(directory)), run["run_id"]))
+    monkeypatch.setattr(app, "catalog_context", lambda _case_id: {"study_label": "Case003", "series_label": "Series007", "slice_thickness_mm": 0.625})
+    with zipfile.ZipFile(service.export(case["case_id"], run["run_id"])) as archive:
+        manifest = json.loads(archive.read("manifest.json"))
+        assert manifest["identity"] == {"legacy_case_label": "Case901", "study_label": None, "series_label": None}
+        assert b"Study/series not recorded for this run" in archive.read("summary.pdf")
+        assert b"Acquisition thickness: unknown | Slice interval: unknown" in archive.read("summary.pdf")
+        for row in csv.DictReader(io.StringIO(archive.read("counts.csv").decode())):
+            assert row["study_label"] == row["series_label"] == row["slice_thickness_mm"] == row["slice_interval_mm"] == ""
+            assert row["legacy_case_label"] == "Case901"
 
 
 PROTOCOL = {"protocol_version": PROTOCOL_VERSION, "algorithm": {"air_hu": -500.0}}

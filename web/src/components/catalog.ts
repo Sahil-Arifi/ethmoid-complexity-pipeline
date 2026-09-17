@@ -7,7 +7,7 @@ export function chosenSeries(study: StudySummary): CatalogSeries | undefined {
   return study.series.find(s => s.series_id === study.selected_series_id) ?? study.series.find(s => s.series_id === study.recommended_series_id) ?? orderedSeries(study.series)[0];
 }
 export function seriesDescription(series: CatalogSeries): string {
-  const thickness = series.slice_thickness_mm === null ? "thickness unknown" : `${series.slice_thickness_mm} mm`;
+  const thickness = series.slice_thickness_mm === null ? "thickness unknown" : `${series.slice_thickness_mm} mm thickness`;
   const kind = { native: "Native CT", mpr: "Reformatted CT", scout: "Scout", projection: "Projection", unknown: "Scan" }[series.source_kind];
   return `${series.series_label} · ${thickness} · ${kind}${series.kernel ? ` · ${series.kernel}` : ""}${series.recommended ? " · Recommended" : ""}`;
 }

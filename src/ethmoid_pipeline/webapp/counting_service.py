@@ -21,7 +21,7 @@ import numpy as np
 from ..util import atomic_write_text, repo_root, sha256_canonical_json, sha256_file, utc_now
 from .service import AppService, WebAppError, inspect_nifti, _atomic_save_nifti
 from .store import decode_json, encode_json
-from .counting_reports import build_count_reports
+from .counting_reports import build_count_reports, report_identity
 from ..counting.protocol import PROTOCOL_VERSION
 from ..counting.quality import acquisition_snapshot, resolution_quality
 
@@ -646,12 +646,15 @@ class CountingService:
         row = self._run(case_id, run_id)
         original, original_dir, original_hashes = self._snapshot(row, 0)
         corrected, corrected_dir, corrected_hashes = self._snapshot(row, revision)
+        identity = report_identity(original, case["case_label"])
+        native_spacing = nib.affines.voxel_sizes(nib.load(source).affine).tolist()
         reports = build_count_reports(
             source, corrected_dir / ARTIFACTS["cavities"], corrected_dir / ARTIFACTS["air"],
-            {**corrected, "original_counts": original["counts"]}, case["case_label"],
+            {**corrected, "original_counts": original["counts"], "acquisition": original.get("acquisition"), "quality": original.get("quality")}, case["case_label"],
         )
         manifest = {
             "schema_version": 1, "case_label": case["case_label"], "run_id": run_id,
+            "identity": identity,
             "source_sha256": row["source_sha256"], "protocol_version": row["protocol_version"],
             "protocol_sha256": original["protocol_sha256"], "method_version": original["method_version"],
             "original_counts": original["counts"], "corrected_counts": corrected["counts"],
@@ -676,12 +679,18 @@ class CountingService:
                     archive.writestr(name, data)
                 count_stream = io.StringIO(newline="")
                 count_writer = csv.writer(count_stream)
-                count_writer.writerow(["result", "revision", "left", "right", "total", "resolution_class", "slice_thickness_mm", "slice_interval_mm", "quality_flags"])
+                count_writer.writerow(["result", "revision", "left", "right", "total", "resolution_class", "slice_thickness_mm", "slice_interval_mm", "quality_flags",
+                                       "study_label", "series_label", "legacy_case_label", "source_sha256",
+                                       "acquisition_spacing_x_mm", "acquisition_spacing_y_mm", "acquisition_spacing_z_mm",
+                                       "native_spacing_x_mm", "native_spacing_y_mm", "native_spacing_z_mm"])
+                acquisition = original.get("acquisition") or {}
+                acquired_spacing = acquisition.get("spacing_mm") or [None, None, None]
                 for name, snapshot in (("original", original), ("reviewed", corrected)):
                     quality = snapshot.get("quality", {})
                     count_writer.writerow([name, snapshot["revision"], *[snapshot["counts"][side] for side in ("left", "right", "total")],
-                                           quality.get("resolution_class", "unknown"), quality.get("slice_thickness_mm"), quality.get("slice_interval_mm"),
-                                           " ".join(quality.get("flags", []))])
+                                           quality.get("resolution_class", "unknown"), acquisition.get("slice_thickness_mm"), acquired_spacing[2],
+                                           " ".join(quality.get("flags", [])), identity["study_label"], identity["series_label"], identity["legacy_case_label"], row["source_sha256"],
+                                           *acquired_spacing, *native_spacing])
                 archive.writestr("counts.csv", count_stream.getvalue())
                 for prefix, result, directory in (("original", original, original_dir), ("reviewed", corrected, corrected_dir)):
                     for name in ["result.json", *ARTIFACTS.values()]:

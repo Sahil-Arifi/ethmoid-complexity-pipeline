@@ -36,6 +36,64 @@ PLANE_AXES = {"Axial": (0, 1, 2), "Coronal": (0, 2, 1), "Sagittal": (1, 2, 0)}
 PLANE_LABELS = {"Axial": ("R", "L", "A", "P"), "Coronal": ("R", "L", "S", "I"), "Sagittal": ("A", "P", "S", "I")}
 
 
+def report_identity(result: dict, legacy_case_label: str) -> dict[str, str | None]:
+    """Use the run's frozen neutral labels; never relabel old evidence from today's catalog."""
+    if not isinstance(legacy_case_label, str) or not re.fullmatch(r"Case[0-9]{3}", legacy_case_label):
+        raise CountReportError("Reports require a neutral Case### label.")
+    acquisition = result.get("acquisition") or {}
+    if not isinstance(acquisition, dict):
+        raise CountReportError("The recorded acquisition identity is invalid.")
+    identity = {"legacy_case_label": legacy_case_label}
+    for key, pattern in (("study_label", r"Case[0-9]{3,}"), ("series_label", r"Series[0-9]{3,}")):
+        value = acquisition.get(key)
+        if value is not None and (not isinstance(value, str) or not re.fullmatch(pattern, value) or len(value) > 20):
+            raise CountReportError("The recorded acquisition identity is invalid.")
+        identity[key] = value
+    return identity
+
+
+def _presentation(result: dict, case: str, native_spacing) -> dict:
+    identity = report_identity(result, case)
+    acquisition = result.get("acquisition") or {}
+    quality = result.get("quality") or {}
+    if not isinstance(quality, dict):
+        raise CountReportError("The recorded acquisition quality is invalid.")
+
+    def number(value):
+        if value is None:
+            return "unknown"
+        if type(value) not in (int, float) or not math.isfinite(value) or value <= 0:
+            raise CountReportError("The recorded acquisition measurements are invalid.")
+        return f"{value:.6g}"
+
+    def spacing(values):
+        if values is None:
+            return "unknown"
+        if not isinstance(values, (list, tuple)) or len(values) != 3 or any(value is None for value in values):
+            raise CountReportError("The recorded acquisition measurements are invalid.")
+        return " x ".join(number(value) for value in values) + " mm"
+
+    thickness = number(acquisition.get("slice_thickness_mm"))
+    acquired = acquisition.get("spacing_mm")
+    acquired_text = spacing(acquired)
+    interval = number(acquired[2] if acquired is not None else None)
+    if identity["study_label"] or identity["series_label"]:
+        label = f"Study {identity['study_label'] or 'unrecorded'} / {identity['series_label'] or 'series unrecorded'} | Legacy volume {case}"
+    else:
+        label = f"Legacy volume {case} | Study/series not recorded for this run"
+    notes = []
+    flags = quality.get("flags", [])
+    if not isinstance(flags, list):
+        raise CountReportError("The recorded acquisition quality is invalid.")
+    if "acquisition_thickness_unknown" in flags and quality.get("resolution_class") != "unknown":
+        notes.append("Acquisition thickness is unknown; voxel spacing cannot substitute for it.")
+    if "oblique_localization_proxy" in flags:
+        notes.append("Oblique localization uses a resampled proxy; cell labels remain on the native grid.")
+    return {"identity": identity, "label": label, "quality": quality_note(quality), "notes": notes,
+            "acquisition": f"Acquisition thickness: {thickness}{' mm' if thickness != 'unknown' else ''} | Slice interval: {interval}{' mm' if interval != 'unknown' else ''}",
+            "spacing": f"Acquisition spacing: {acquired_text} | Native voxel spacing: {spacing(list(map(float, native_spacing)))}"}
+
+
 def _counts(value: Any) -> dict[str, int]:
     if not isinstance(value, dict) or any(type(value.get(key)) is not int or value[key] < 0 for key in ("left", "right", "total")):
         raise CountReportError("A completed, internally consistent count is required for a report.")
@@ -256,11 +314,11 @@ def _view(plane: str, hu, cavity, air, affine, cells, center, bounds) -> Image.I
     return panel
 
 
-def _png_document(views: Image.Image, case: str, counts: dict, original: dict | None, revision: int, reference: int | None, quality_text: str) -> bytes:
-    document = Image.new("RGB", (2100, 1280), PAPER)
+def _png_document(views: Image.Image, presentation: dict, counts: dict, original: dict | None, revision: int, reference: int | None) -> bytes:
+    document = Image.new("RGB", (2100, 1440), PAPER)
     draw = ImageDraw.Draw(document)
     draw.text((35, 25), "3D ETHMOID CELL COUNT", font=_font(52), fill=INK)
-    draw.text((35, 92), f"{case}  |  Revision {revision}  |  " + ("Original automatic result" if revision == 0 else "Reviewed result"), font=_font(28), fill=MUTED)
+    draw.text((35, 92), f"{presentation['label']} | Revision {revision} | " + ("Original automatic result" if revision == 0 else "Reviewed result"), font=_font(25), fill=MUTED)
     for index, key in enumerate(("left", "right", "total")):
         x = 35 + index * 690
         draw.rounded_rectangle((x, 145, x + 655, 280), radius=10, fill=(230, 237, 241))
@@ -272,16 +330,20 @@ def _png_document(views: Image.Image, case: str, counts: dict, original: dict | 
         detail = f"Original: left {original['left']}, right {original['right']}, total {original['total']}. Current revision: left {counts['left']}, right {counts['right']}, total {counts['total']}."
     else:
         detail = "Colored outline: cavity. Filled color: observed air. ? marks an uncertainty flag. Only included IDs are shown."
-    draw.text((35, 1164), quality_text, font=_font(24), fill=INK)
-    draw.text((35, 1200), detail, font=_font(24), fill=MUTED)
+    draw.text((35, 1164), presentation["quality"], font=_font(24), fill=INK)
+    draw.text((35, 1200), presentation["acquisition"], font=_font(24), fill=MUTED)
+    draw.text((35, 1236), presentation["spacing"], font=_font(23), fill=MUTED)
+    for index, note in enumerate(presentation["notes"]):
+        draw.text((35, 1272 + index * 32), note, font=_font(23), fill=INK)
+    draw.text((35, 1342), detail, font=_font(24), fill=MUTED)
     reference_text = f"Representative orthogonal planes through cell {reference}." if reference is not None else "No included cells to overlay."
-    draw.text((35, 1236), reference_text + " Each view shows one slice; the PDF registry lists every cell.", font=_font(23), fill=MUTED)
+    draw.text((35, 1378), reference_text + " Each view shows one slice; the PDF registry lists every cell.", font=_font(23), fill=MUTED)
     output = BytesIO()
     document.save(output, format="PNG", optimize=True)
     return output.getvalue()
 
 
-def _pdf_document(views: Image.Image, case: str, cells: list[dict], counts: dict, original: dict | None, revision: int, reference: int | None, quality_text: str) -> bytes:
+def _pdf_document(views: Image.Image, presentation: dict, cells: list[dict], counts: dict, original: dict | None, revision: int, reference: int | None) -> bytes:
     output = BytesIO()
     pdf = canvas.Canvas(output, pagesize=landscape(A4), invariant=1, pageCompression=0)
     pdf.setTitle("3D ethmoid cell count")
@@ -295,9 +357,9 @@ def _pdf_document(views: Image.Image, case: str, cells: list[dict], counts: dict
         pdf.setFillColor(colors.HexColor("#182631"))
         pdf.setFont("Helvetica-Bold", 23)
         pdf.drawString(margin, height - 43, title)
-        pdf.setFont("Helvetica", 10)
+        pdf.setFont("Helvetica", 9)
         pdf.setFillColor(colors.HexColor("#51636F"))
-        pdf.drawString(margin, height - 62, f"{case}  |  Revision {revision}  |  " + ("Original automatic result" if revision == 0 else "Reviewed result"))
+        pdf.drawString(margin, height - 62, f"{presentation['label']} | Revision {revision} | " + ("Original automatic result" if revision == 0 else "Reviewed result"))
         pdf.setFont("Helvetica", 8)
         pdf.drawRightString(width - margin, 23, f"Page {page}")
 
@@ -318,12 +380,15 @@ def _pdf_document(views: Image.Image, case: str, cells: list[dict], counts: dict
     pdf.drawImage(ImageReader(views), margin, height - 150 - image_height, image_width, image_height)
     pdf.setFillColor(colors.HexColor("#182631"))
     pdf.setFont("Helvetica-Bold", 9)
-    pdf.drawString(margin, 131, quality_text)
+    pdf.drawString(margin, 131, presentation["quality"])
     pdf.drawString(margin, 115, EXPERIMENTAL_NOTE)
     pdf.setFont("Helvetica", 9)
-    pdf.drawString(margin, 97, "Colored outlines show cavities; filled color shows observed air. ? marks an uncertainty flag.")
-    pdf.drawString(margin, 81, (f"Planes are centered on cell {reference}. " if reference is not None else "No included cells are overlaid. ") + "Each image is one slice; all registered cells appear in the following table.")
-    pdf.drawString(margin, 65, "Radiological orientation is labeled on each image. Physical aspect ratios are preserved; bone display WL 300 / WW 3000 HU.")
+    pdf.drawString(margin, 99, presentation["acquisition"])
+    pdf.setFont("Helvetica", 8)
+    pdf.drawString(margin, 85, presentation["spacing"])
+    for index, note in enumerate(presentation["notes"]):
+        pdf.drawString(margin, 71 - index * 12, note)
+    pdf.drawString(margin, 31, (f"Planes through cell {reference}. " if reference is not None else "No included cells are overlaid. ") + "Cavity outline / air fill; ? = uncertainty. Radiological orientation; bone WL 300 / WW 3000 HU.")
     if original is not None:
         pdf.setFont("Helvetica-Bold", 9)
         pdf.drawString(margin, 46, f"Original: L {original['left']} / R {original['right']} / Total {original['total']}     Current revision: L {counts['left']} / R {counts['right']} / Total {counts['total']}")
@@ -372,8 +437,8 @@ def build_count_reports(source_path: Path, cavity_path: Path, air_path: Path, re
         views = Image.new("RGB", (2100, 820), PAPER)
         for index, plane in enumerate(PLANE_AXES):
             views.paste(_view(plane, hu, cavity, air, affine, cells, center, bounds), (index * 700, 0))
-        note = quality_note(result.get("quality"))
-        return {"summary.pdf": _pdf_document(views, case_label, cells, counts, original, revision, reference, note), "representative.png": _png_document(views, case_label, counts, original, revision, reference, note)}
+        presentation = _presentation(result, case_label, np.linalg.norm(affine[:3, :3], axis=0))
+        return {"summary.pdf": _pdf_document(views, presentation, cells, counts, original, revision, reference), "representative.png": _png_document(views, presentation, counts, original, revision, reference)}
     except CountReportError:
         raise
     except (OSError, ValueError, TypeError, KeyError, np.linalg.LinAlgError):

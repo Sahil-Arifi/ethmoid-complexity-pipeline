@@ -5,7 +5,7 @@ import re
 
 import nibabel as nib
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageDraw
 import pytest
 
 from ethmoid_pipeline.webapp.counting_reports import (
@@ -60,7 +60,7 @@ def test_valid_documents_and_metadata_allowlist(synthetic):
     assert b"Cell registry" in pdf and b"Flagged" in pdf
     assert len(re.findall(rb"/Type /Page\b", pdf)) == 2
     png = Image.open(BytesIO(artifacts["representative.png"]))
-    assert png.format == "PNG" and png.size == (2100, 1280)
+    assert png.format == "PNG" and png.size == (2100, 1440)
     assert png.mode == "RGB" and not png.info
     for content in artifacts.values():
         assert b"SYNTHETIC-SECRET" not in content
@@ -92,6 +92,60 @@ def test_presentation_explains_resolution_without_relaying_arbitrary_text(synthe
     pdf = _reports(synthetic, quality={"resolution_class": classification, "warnings": ["SYNTHETIC-SECRET"]})["summary.pdf"]
     assert text in pdf
     assert b"SYNTHETIC-SECRET" not in pdf
+
+
+@pytest.mark.parametrize("thickness", [2.5, None])
+def test_frozen_study_identity_and_acquisition_are_visible_in_both_reports_and_in_bounds(synthetic, monkeypatch, thickness):
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfgen.canvas import Canvas
+    png_text = []
+    real_text, real_string = ImageDraw.ImageDraw.text, Canvas.drawString
+
+    def checked_text(draw, xy, text, *args, **kwargs):
+        if draw._image.size == (2100, 1440):
+            bounds = draw.textbbox(xy, text, font=kwargs.get("font"))
+            assert 0 <= bounds[0] < bounds[2] <= 2100
+            assert 0 <= bounds[1] < bounds[3] <= 1440
+            png_text.append(text)
+        return real_text(draw, xy, text, *args, **kwargs)
+
+    def checked_string(pdf, x, y, text, *args, **kwargs):
+        width = pdfmetrics.stringWidth(text, pdf._fontname, pdf._fontsize)
+        ascent, descent = pdfmetrics.getAscentDescent(pdf._fontname, pdf._fontsize)
+        assert 0 <= x and x + width <= pdf._pagesize[0]
+        assert 0 <= y + descent and y + ascent <= pdf._pagesize[1]
+        return real_string(pdf, x, y, text, *args, **kwargs)
+
+    monkeypatch.setattr(ImageDraw.ImageDraw, "text", checked_text)
+    monkeypatch.setattr(Canvas, "drawString", checked_string)
+    acquisition = {"study_label": "Case003", "series_label": "Series007", "slice_thickness_mm": thickness, "spacing_mm": [0.488281, 0.488281, 0.625], "ignored_note": "SYNTHETIC-SECRET"}
+    quality = {"resolution_class": "outside_protocol", "flags": ["oblique_localization_proxy", *(["acquisition_thickness_unknown"] if thickness is None else [])], "warnings": ["SYNTHETIC-SECRET"]}
+    pdf = _reports(synthetic, acquisition=acquisition, quality=quality)["summary.pdf"]
+    expected = ["Study Case003 / Series007 | Legacy volume Case099", f"Acquisition thickness: {'unknown' if thickness is None else '2.5 mm'} | Slice interval: 0.625 mm",
+                "Acquisition spacing: 0.488281 x 0.488281 x 0.625 mm | Native voxel spacing: 0.6 x 0.7 x 1 mm",
+                "Oblique localization uses a resampled proxy; cell labels remain on the native grid."]
+    if thickness is None:
+        expected.append("Acquisition thickness is unknown; voxel spacing cannot substitute for it.")
+    for text in expected:
+        assert text.encode() in pdf
+        assert any(text in line for line in png_text)
+    assert b"SYNTHETIC-SECRET" not in pdf
+
+
+def test_legacy_report_does_not_invent_study_identity_or_acquisition_thickness(synthetic):
+    pdf = _reports(synthetic)["summary.pdf"]
+    assert b"Legacy volume Case099 | Study/series not recorded for this run" in pdf
+    assert b"Acquisition thickness: unknown | Slice interval: unknown" in pdf
+    assert b"Acquisition spacing: unknown | Native voxel spacing: 0.6 x 0.7 x 1 mm" in pdf
+
+
+@pytest.mark.parametrize("acquisition", [
+    {"study_label": "SYNTHETIC-SECRET"}, {"series_label": "../Series007"},
+    {"slice_thickness_mm": "SYNTHETIC-SECRET"}, {"spacing_mm": [1, 2]},
+])
+def test_report_rejects_unsafe_or_invalid_acquisition_fields(synthetic, acquisition):
+    with pytest.raises(CountReportError):
+        _reports(synthetic, acquisition=acquisition)
 
 
 def test_manual_point_and_empty_included_set(synthetic):

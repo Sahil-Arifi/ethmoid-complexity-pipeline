@@ -23,6 +23,8 @@ Completed grouped interface: study rows expose every series, preparation/count s
 
 The separate [all-series evaluation procedure](docs/CATALOG_EVALUATION.md) now has a read-only manifest freezer and a serial offline runner. They verify current raw-source fingerprints, immutable image hashes, complete acquisition/quality metadata, native outputs and frozen code/model/settings provenance. Every attempted series retains a success or failure record. **35 evaluator/freezer tests passed**; the unchanged v1 evaluator also remains covered. Real preparation is running from clean commit `b0baa49`; no all-series inference results are available yet.
 
+Presentation exports now use the run's frozen study/series identity alongside its legacy volume label. PDF, PNG, CSV and manifest fields keep nominal thickness, physical slice interval, acquisition spacing and native voxel spacing distinct, including unknown-thickness and oblique-localization notes. Historical metadata is never inferred from today's catalog. **81 report/revision/API checks passed**, and synthetic PDF/PNG layout inspection confirmed readable identity/quality fields without overlapping text. The final CPU suite again passed **82 tests**; npm audit reported **zero vulnerabilities**.
+
 ## 3D counting implementation status
 
 The latest clinician email and answered questionnaire request a count of unique cells throughout the full CT volume. They supersede the older selected-landmark and anterior/posterior counting proposal. Preliminary inference is authorized before manual 3D reference counts are available. Review and correction follow the first automatic result; no patient-specific ROI, seeds, or parameter tuning precede it.
