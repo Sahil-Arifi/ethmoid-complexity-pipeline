@@ -5,7 +5,7 @@ This repository contains the engineering foundation for the UCSD ethmoid-complex
 - a fail-closed DICOM-to-NIfTI conversion pipeline with geometry and HU verification; and
 - a local web application for automatic experimental 3D counting, scan review and revision-based correction.
 
-The current development milestone is a fully automatic, experimental 3D cell-counting prototype. Clinical accuracy is not established, and no composite complexity score is defined.
+The experimental 3D cell-counting prototype is implemented. Its workflow is functional, but the frozen method produced candidate counts on only two of five held-out studies and withheld the other three. Clinical accuracy is unmeasured, and no composite complexity score is defined.
 
 ## 3D counting implementation status
 
@@ -18,9 +18,9 @@ The implementation contract and phased plan are in [Full-volume counting prototy
 | 1. Contract and verification | Completed | Separate experimental protocol, requirement mapping, deterministic autosave regression, synthetic CI, complete-index medical-data guard |
 | 2. Runtime and cohort | Completed | Hash-locked offline GPU environment, four model manifests, ten verified volumes and immutable study split |
 | 3. Automatic counting | Completed as experimental inference | Three anatomical priors, native-resolution cavity instances, explicit abstention and uncertainty; settings frozen for evaluation |
-| 4. Persistent run API | Completed against synthetic inference | Durable jobs, immutable predictions, correction lineage, source checks and per-response exports |
-| 5. Review interface | Completed against synthetic inference | Numbered native-coordinate overlays, revision-bound corrections and PDF/PNG/CSV/NIfTI exports |
-| 6. Held-out evaluation | In progress | Frozen development run complete; production API/export verified; five held-out attempts running |
+| 4. Persistent run API | Completed; real offline worker acceptance passed | Durable jobs, immutable predictions, correction lineage, source checks and per-response exports |
+| 5. Review interface | Completed; synthetic browser and real report checks passed | Numbered native-coordinate overlays, revision-bound corrections and PDF/PNG/CSV/NIfTI exports |
+| 6. Held-out evaluation | Completed as engineering feasibility evaluation | All ten attempts recorded; 3/5 development and 2/5 held-out outputs; clinical accuracy unmeasured |
 
 Executed Phase 1 checks: Python **54 passed**; frontend **27 passed**; production TypeScript/Vite build **passed**; real Edge/WebGL synthetic workflow **1 passed**; npm audit **0 vulnerabilities**; full Git-index medical-data guard **passed**. The browser run emitted a Windows connection-reset message during shutdown but completed successfully. One existing third-party Starlette deprecation warning and the existing large imaging-library chunk warnings remain. The previous intermittent brightness/autosave test now waits for the viewer-ready microtask and explicitly advances the debounce timer without relaxing its persistence assertion. GitHub CI is new and is checked after publishing.
 
@@ -59,6 +59,14 @@ CI setup correction: GitHub's Python action did not provide Windows Python 3.12.
 Both remote CI jobs passed after that environment correction. Production API acceptance then ran the real offline worker on the existing verified pilot in **181.6 seconds**, with no injected executor or manual prompts. It preserved the source, all **28** prior annotation revisions and the complete case/QC metadata; schema migration created its backup. The count is saved in the local application. PDF pages, registry/count text, image bounds, PNG views, CSV, source hashes and native labels passed local automated checks. These checks are not human anatomical review. User-reviewable reports and acceptance evidence are protected under `work\counting\app-acceptance`; none is tracked in Git.
 
 The API now rejects mismatched effective settings and cell centroids, in addition to its existing source/mask/count checks. The persisted real result passed those stricter checks without modification. The updated API/revision suite passed **39 tests**. The counting browser workflow also passed with an explicit nonblank 3D-render check, return to multiplanar review, stable ID sampling, correction, reload and export. No JavaScript errors occurred. Actual background server launch was rejected by automatic approval review with the reason `blocked by policy`; it was not retried. The production API was verified in-process without a listening server. The prepared application can be launched manually with the command below.
+
+Phase 6 is complete: all five held-out studies ran once against the frozen engine, unchanged settings, fixed split and verified model provenance. **Two produced candidate outputs; three withheld counts** (one ambiguous and two unresolved sphenoid boundaries). The run took **746.9 seconds** including local checks. Every accepted held-out candidate is uncertain. No clinical reference counts were available, so neither execution success nor geometric air coverage is counting accuracy. [Full evaluation findings](docs/COUNTING_EVALUATION.md) record all aggregates, failures and provenance limits. Per-study results, numeric review and clinician-review montages remain protected locally.
+
+Final held-out numeric review passed the two outputs' native geometry, source binding, IDs, air values, centroids, volumes and laterality checks. All **71** evaluator-recorded file hashes were unchanged. The **51** uncertain candidates include **31** possible internal-septum merge flags. Six protected montages are ready for human review; automated overlap checks do not establish anatomical correctness.
+
+The final implementation CI at `b50633f` passed: **152 application tests** (four local integration tests deselected, one inference module intentionally skipped), **34 dedicated CPU engine tests**, **34 frontend tests**, **2 browser workflows**, production build, npm audit (**0 vulnerabilities**) and the complete tracked-file medical-data guard. The separate engine job executes the module skipped by the application environment. Earlier local full-suite and real-source checks are recorded above; these results establish software behavior, not clinical accuracy.
+
+The deliverable is a working presentation prototype with real preliminary outputs, correction lineage and exports. It is **not a reliable or validated clinical counter**. The posterior-boundary failures and possible merged cells are known model limitations. Next action: collect independent manual 3D counts and expert cell/boundary review, then improve the model on development data and evaluate a new freeze. Do not present the older selected-slice annotations or model-assisted corrections as independent 3D ground truth.
 
 ## Documentation rule
 
@@ -190,7 +198,7 @@ The axial cine is not a 3D rendering. It is a slideshow through the 224 two-dime
 
 ## Next milestone
 
-Complete the six-phase automatic counting prototype described above. The older inactive Protocol v2 documents describe a stricter annotation/training workflow and do not block the newly authorized exploratory inference path. Their historical approvals are not fabricated or changed. Reference counts will be used to evaluate untouched automatic predictions when available; model-assisted corrections remain separate from independent ground truth. Training a bespoke supervised clinical model is not part of this first prototype.
+The six prototype engineering phases are complete. The next milestone is clinical reference review and improved localization, not additional SaaS features. The older inactive Protocol v2 documents retain their historical approval states. Reference counts will evaluate untouched automatic predictions when available; model-assisted corrections remain separate from independent ground truth. Training a bespoke supervised clinical model was not part of this first prototype.
 
 ## Start the application
 

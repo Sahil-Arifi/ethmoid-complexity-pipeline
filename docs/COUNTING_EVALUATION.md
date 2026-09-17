@@ -148,6 +148,59 @@ using held-out outputs and then describe the same run as an independent test.
 
 ## Formal results
 
-Formal evaluation results are pending. Append only aggregates from executed,
-preserved evaluation outputs, including failed cases and provenance limitations.
-Do not infer count accuracy without reference counts.
+The formal runs used clean frozen commit
+`fc8206d770c113e17f678c3e54d81500deae6481` and algorithm SHA-256
+`f96635b49167695f609816c9a03bdd283b30b23fceb992cfe3ab7d3c610d8edc`.
+Every attempt checked the same exact cohort hash, runtime/model files and
+effective settings. The engine and evaluator remained unchanged throughout the
+held-out run. Its protected evidence is under
+`work\counting\evaluations\{development,held-out}-freeze-v1`.
+
+| Split | Attempted | Candidate outputs passing engineering checks | Counts withheld | Elapsed seconds |
+|---|---:|---:|---:|---:|
+| Development | 5 | 3 | 2 | 343.631 |
+| Held-out | 5 | 2 | 3 | 746.947 |
+
+Development withheld one `SPHENOID_AMBIGUOUS` and one `SPHENOID_UNRESOLVED` case.
+Held-out withheld one `SPHENOID_AMBIGUOUS` and two `SPHENOID_UNRESOLVED` cases.
+Each withheld case has unavailable counts, an empty public registry and no
+public artifact links; it is not a zero-cell result. The runner's nonzero exit
+status correctly reflects these failures. Do not describe the cohort evaluation
+as an all-case pass.
+
+The completed development outputs contain 56 candidate IDs in aggregate; the
+two completed held-out outputs contain 51. These totals exclude withheld scans.
+Every accepted candidate carries an uncertainty flag. Three development and one
+held-out proposals have no air voxels; they are unvalidated opaque-cavity
+proposals, not expert-confirmed cells or diagnoses. Internal-septum flags also
+identify possible merged cells. Correct geometry and matching count/registry
+totals do not resolve those anatomical uncertainties.
+
+All five development attempts used historical source/mask-verified caches with
+incomplete original producer binding. All held-out localizers were generated
+fresh with verified producer package and model-manifest binding. The runtimes
+therefore have different workloads and are not comparative speed benchmarks.
+They include local inference and engineering checks on the documented machine;
+no other hardware or dataset throughput is claimed.
+
+Independent local numeric review passed native geometry, source binding,
+registry/count agreement, air-HU, centroid, volume and laterality checks for
+both held-out outputs. All 71 evaluator-recorded hashes remained unchanged.
+The 51 candidates include 31 possible internal-septum merge flags. Learned
+brain, eye, optic-nerve, nasal and frontal-mask overlaps were zero; a small
+maxillary overlap remains. These shared model inputs are not independent
+anatomical references, and the main sphenoid boundary has no independent
+reference mask in this review.
+
+Six protected montages are prepared for human review. Neither overlap checks
+nor automated PDF rendering establish anatomical correctness. No study
+montages belong in Git or CI.
+
+**Clinical count accuracy is unmeasured.** The current method has limited
+automatic completion, particularly at the posterior sphenoid boundary. It can
+demonstrate the automatic count/review/export workflow and preliminary outputs;
+it cannot support a claim of reliable clinical counting. Next work requires
+independent manual 3D left/right counts and expert review of missed, merged and
+extra candidates. Targeted ethmoid/sphenoid boundary references would help
+improve localization. If these held-out failures are used for development of a
+new method, reserve new untouched studies for its evaluation.

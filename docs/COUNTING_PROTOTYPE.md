@@ -1,6 +1,6 @@
 # Full-volume 3D counting prototype
 
-Status: experimental development, not clinically validated. Protocol: ethmoid-count-prototype-v1.
+Status: experimental prototype implemented, not clinically validated. Protocol: ethmoid-count-prototype-v1. See [executed evaluation findings](COUNTING_EVALUATION.md) for completion rates and known limitations.
 
 ## Source of truth
 
@@ -70,4 +70,4 @@ At each completed phase: update README with changes and executed evidence, test,
 
 Synthetic tests require correct 3D identity, communication/septa behavior, partial/complete opacity, variant configurations, native spacing/laterality, failures, correction lineage, and identifiers above 255. Integration tests require original-count preservation, stale-edit rejection, restart behavior, and matching exports. Browser tests use synthetic data.
 
-Real-scan feasibility records every attempted scan and its automatic result or failure. Runtime, memory, sensitivity, and software integrity can be measured without reference counts. Anatomical accuracy cannot. Independent manual 3D counts, when supplied, are compared with untouched predictions; model-assisted corrections are not independent ground truth.
+Real-scan feasibility records every attempted scan and its automatic result or failure. Runtime, memory, parameter sensitivity, and software integrity can be measured without reference counts. Clinical sensitivity and anatomical accuracy cannot. Independent manual 3D counts, when supplied, are compared with untouched predictions; model-assisted corrections are not independent ground truth.
