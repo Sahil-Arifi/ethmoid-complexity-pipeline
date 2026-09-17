@@ -184,17 +184,17 @@ The axial cine is not a 3D rendering. It is a slideshow through the 224 two-dime
 - Created and verified an editable Google Docs version of the clinical review form for stakeholder completion.
 - Reviewed the published SinusSegment approach. Its released model predicts one combined sinonasal foreground rather than separate anterior/posterior or left/right ethmoid structures, and the publication does not report ethmoid-only performance. It has therefore not been adopted as the project solution.
 
-## Not completed
+## Remaining validation and excluded scope
 
 - Manual 3D Slicer comparison.
 - Clinical confirmation of ethmoid-region coverage and suitability.
 - Clinical approval of Protocol v2, its anatomical rules, reviewer roles, and predeclared pilot thresholds.
 - A clinically defined and validated complexity score; Protocol v2 deliberately omits one.
 - Expert ground-truth annotations or an annotation-consistency pilot.
-- Runtime support for Protocol v2 multi-layer `uint16` individual-cell annotation; the current app remains a single `uint8` four-region editor.
-- Automated ethmoid segmentation, model training, inference, or complexity scoring.
-- Bulk conversion of the remaining studies.
-- Remote hosting, authentication, multi-user assignment, or collaboration features.
+- Clinical validation of the implemented `uint16` cell instances and automatic inference. The older four-region `uint8` editor remains available separately; the inactive Protocol v2 draft is not the counting runtime contract.
+- Training a bespoke supervised ethmoid-instance model and defining a complexity score are outside this prototype's scope.
+- Bulk conversion beyond the verified ten-study cohort remains outside this prototype's scope.
+- Remote hosting, authentication, multi-user assignment, and collaboration features are outside this prototype's scope.
 
 ## Next milestone
 
