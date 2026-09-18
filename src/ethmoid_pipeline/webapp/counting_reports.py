@@ -89,7 +89,8 @@ def _presentation(result: dict, case: str, native_spacing) -> dict:
         notes.append("Acquisition thickness is unknown; voxel spacing cannot substitute for it.")
     if "oblique_localization_proxy" in flags:
         notes.append("Oblique localization uses a resampled proxy; cell labels remain on the native grid.")
-    return {"identity": identity, "label": label, "quality": quality_note(quality), "notes": notes,
+    mode = "ASSISTED: reviewer-defined boundaries. " if result.get('analysis_mode') == 'assisted' else ''
+    return {"identity": identity, "label": label, "quality": mode + quality_note(quality), "notes": notes,
             "acquisition": f"Acquisition thickness: {thickness}{' mm' if thickness != 'unknown' else ''} | Slice interval: {interval}{' mm' if interval != 'unknown' else ''}",
             "spacing": f"Acquisition spacing: {acquired_text} | Native voxel spacing: {spacing(list(map(float, native_spacing)))}"}
 

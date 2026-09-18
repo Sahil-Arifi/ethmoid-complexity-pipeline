@@ -91,7 +91,7 @@ def test_v1_result_remains_readable_correctable_and_exportable_after_v2_upgrade(
     service.close()
     upgraded = CountingService(app, executor=synthetic_executor)
     try:
-        assert upgraded.protocol()["protocol_version"] == PROTOCOL_VERSION == "ethmoid-count-prototype-v2"
+        assert upgraded.protocol()["protocol_version"] == "ethmoid-count-prototype-v3"
         read = upgraded.get_run(case["case_id"], run["run_id"])
         assert read["protocol_version"] == "ethmoid-count-prototype-v1"
         source = nib.load(app.volume_path(case["case_id"]))

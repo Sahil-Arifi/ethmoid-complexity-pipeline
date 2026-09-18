@@ -140,7 +140,7 @@ def setup_service(tmp_path: Path, executor=synthetic_executor):
 
 
 def finish(service: CountingService, case_id: str, run_id: str):
-    service._pool.submit(lambda: None).result(timeout=10)
+    service.wait_for_idle(timeout=10)
     return service.get_run(case_id, run_id)
 
 
@@ -495,13 +495,15 @@ def test_double_click_idempotency_and_interrupted_restart(tmp_path: Path):
         final = finish(service, case["case_id"], first["run_id"])
         assert final["status"] == "completed"
         assert service.create_run(case["case_id"], "same-request")["run_id"] == first["run_id"]
+        service.close()
         with app.store.connect() as connection:
             connection.execute("UPDATE count_runs SET status='running',original_result_json=NULL,latest_revision=NULL WHERE id=?", (first["run_id"],))
+            connection.execute("UPDATE count_jobs SET state='running',stage='verifying' WHERE run_id=?", (first["run_id"],))
         restarted = CountingService(app, executor=synthetic_executor, protocol=PROTOCOL)
         try:
-            interrupted = restarted.get_run(case["case_id"], first["run_id"])
-            assert interrupted["status"] == "failed" and interrupted["failure_code"] == "INTERRUPTED"
-            assert interrupted["counts"] is None
+            recovered = finish(restarted, case["case_id"], first["run_id"])
+            assert recovered["status"] == "completed" and recovered["failure_code"] is None
+            assert recovered["counts"] == final["counts"]
         finally:
             restarted.close()
     finally:
@@ -541,8 +543,8 @@ def test_production_worker_matches_offline_isolated_evaluation_environment(tmp_p
     captured = {}
     def capture(command, **options):
         captured.update(command=command, **options)
-        return SimpleNamespace(returncode=0, wait=lambda timeout: 0)
-    monkeypatch.setattr("ethmoid_pipeline.webapp.counting_service.subprocess.Popen", capture)
+        return SimpleNamespace(returncode=0, poll=lambda: 0, wait=lambda timeout: 0, close=lambda: None)
+    monkeypatch.setattr("ethmoid_pipeline.webapp.counting_service.launch_owned_process", capture)
     app, case, service = setup_service(tmp_path)
     config = tmp_path / "protocol.json"
     config.write_text(json.dumps(PROTOCOL))

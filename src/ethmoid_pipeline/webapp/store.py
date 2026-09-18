@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Iterator
 
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 class Store:
@@ -95,9 +95,9 @@ class Store:
                 "SELECT value FROM metadata WHERE key = 'schema_version'"
             ).fetchone()
             previous_version = int(row["value"]) if row is not None else None
-            if previous_version not in {None, 1, 2, SCHEMA_VERSION}:
+            if previous_version not in {None, 1, 2, 3, SCHEMA_VERSION}:
                 raise RuntimeError("The web application database schema is unsupported.")
-            if previous_version in {1, 2}:
+            if previous_version in {1, 2, 3}:
                 # SQLite's backup API includes committed WAL pages. Keep the backup
                 # beside the protected database, never in the source checkout.
                 backup_path = self.root / f"schema-v{previous_version}-{uuid.uuid4().hex}.sqlite3"
@@ -173,6 +173,23 @@ class Store:
                 UNIQUE(series_id,inventory_signature))""")
             connection.execute("""CREATE UNIQUE INDEX IF NOT EXISTS idx_preparation_active
                 ON preparation_jobs(series_id) WHERE status IN ('queued','preparing')""")
+            connection.execute("""CREATE TABLE IF NOT EXISTS count_jobs (
+                run_id TEXT PRIMARY KEY REFERENCES count_runs(id) ON DELETE CASCADE,
+                state TEXT NOT NULL DEFAULT 'queued', stage TEXT NOT NULL DEFAULT 'queued',
+                outcome TEXT, owner TEXT, heartbeat_at TEXT,
+                attempt INTEGER NOT NULL DEFAULT 0, retry_count INTEGER NOT NULL DEFAULT 0,
+                cancel_requested INTEGER NOT NULL DEFAULT 0,
+                checkpoint_json TEXT, last_error TEXT, parent_run_id TEXT,
+                assistance_id TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)""")
+            connection.execute("""CREATE TABLE IF NOT EXISTS boundary_revisions (
+                id TEXT PRIMARY KEY, case_id TEXT NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+                parent_run_id TEXT NOT NULL REFERENCES count_runs(id) ON DELETE CASCADE,
+                source_sha256 TEXT NOT NULL, mask_relpath TEXT NOT NULL,
+                mask_sha256 TEXT NOT NULL, note TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL)""")
+            connection.execute("""CREATE TABLE IF NOT EXISTS catalog_series_sources (
+                series_id TEXT PRIMARY KEY REFERENCES catalog_series(id),
+                source_id TEXT NOT NULL REFERENCES catalog_sources(id))""")
             if row is None:
                 connection.execute(
                     "INSERT INTO metadata(key, value) VALUES('schema_version', ?)",

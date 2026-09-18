@@ -383,7 +383,8 @@ class AppService:
                 s.*,src.root_path FROM catalog_case_links l
                 JOIN catalog_series s ON s.id=l.series_id
                 JOIN catalog_studies t ON t.id=s.study_id
-                JOIN catalog_sources src ON src.id=t.source_id WHERE l.case_id=?""", (case_id,)).fetchone()
+                LEFT JOIN catalog_series_sources ss ON ss.series_id=s.id
+                JOIN catalog_sources src ON src.id=COALESCE(ss.source_id,t.source_id) WHERE l.case_id=?""", (case_id,)).fetchone()
         if row is None:
             return
         if row["case_id"] != case_id or row["preparation_status"] != "ready" or not row["present"] or row["linked_fingerprint"] != row["source_fingerprint"]:

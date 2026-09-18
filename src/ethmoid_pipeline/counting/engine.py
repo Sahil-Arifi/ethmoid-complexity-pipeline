@@ -320,7 +320,7 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def analyze_volume(volume_path: str | Path, output_dir: str | Path, landmarks_dir: str | Path | None = None, config: dict[str, Any] | CountingConfig | None = None, *, acquisition: dict[str, Any] | None = None) -> dict[str, Any]:
+def analyze_volume(volume_path: str | Path, output_dir: str | Path, landmarks_dir: str | Path | None = None, config: dict[str, Any] | CountingConfig | None = None, *, acquisition: dict[str, Any] | None = None, _strategy: Any = None) -> dict[str, Any]:
     """Run a fully automatic first count and persist a source-grid result.
 
     Existing output directories must be empty; immutable prior results are never
@@ -343,7 +343,9 @@ def analyze_volume(volume_path: str | Path, output_dir: str | Path, landmarks_di
         from .grids import check_proxy_limit, localization_grid
         from .quality import acquisition_snapshot, resolution_quality
 
-        if isinstance(config, dict) and "protocol_version" in config and config["protocol_version"] != PROTOCOL_VERSION:
+        if _strategy is not None:
+            result.update(_strategy.initial_metadata())
+        if isinstance(config, dict) and "protocol_version" in config and config["protocol_version"] != result["protocol_version"]:
             raise CountingError("INVALID_CONFIG", "This worker cannot execute a different frozen protocol version.")
         cfg = CountingConfig.parse(config)
         result["config"] = asdict(cfg)
@@ -365,39 +367,45 @@ def analyze_volume(volume_path: str | Path, output_dir: str | Path, landmarks_di
         result["quality"] = resolution_quality(result["acquisition"], image.affine)
         canonical = nib.as_closest_canonical(image)
         result["localization_geometry"] = localization_grid(canonical.shape, canonical.affine)
-        check_proxy_limit(result["localization_geometry"])
+        if _strategy is None:
+            check_proxy_limit(result["localization_geometry"])
         # No interpolation or sharpening is used to invent resolution.
         hu = canonical.get_fdata(dtype=np.float32)
         if not np.isfinite(hu).all() or float(np.percentile(hu, 0.1)) > -300 or float(np.percentile(hu, 99.9)) < 250:
             raise CountingError("HU_RANGE_INVALID", "Expected calibrated CT air and bone values were not found.")
-        if landmarks_dir is None:
+        if _strategy is not None:
+            localization = _strategy.localize(source, image, canonical, hu, destination, landmarks_dir, cfg, result)
+        elif landmarks_dir is None:
             landmarks_dir = destination / "localizers"
             run_localizers(source, Path(landmarks_dir))
-        retried_extent = False
-        try:
-            landmarks = load_landmarks(Path(landmarks_dir), canonical, source_sha256=result["source_sha256"])
-            if (Path(landmarks_dir) / "localizers.local.json").is_file():
-                result["localizer_provenance"] = cache_producer_summary(Path(landmarks_dir))
-            localization = localize_native(hu, canonical.affine, landmarks, cfg, result["localization_geometry"])
-        except CountingError as error:
-            if error.code not in {"LANDMARK_EMPTY", "TARGET_CLIPPED"}:
-                raise
-            # One full-source-field retry can recover anatomy omitted by the
-            # rough crop. A genuinely clipped acquisition still fails afterward.
-            retry_directory = destination / "localizers-full-extent"
-            run_localizers(source, retry_directory, full_extent=True)
-            landmarks = load_landmarks(retry_directory, canonical, source_sha256=result["source_sha256"])
-            if (retry_directory / "localizers.local.json").is_file():
-                result["localizer_provenance"] = cache_producer_summary(retry_directory)
-            localization = localize_native(hu, canonical.affine, landmarks, cfg, result["localization_geometry"])
-            landmarks_dir = retry_directory
-            retried_extent = True
-        if retried_extent:
-            localization.warnings.append("Automatic anatomical localization required one full-field retry after missing or clipped landmark evidence.")
-        cache_manifest = Path(landmarks_dir) / "localizers.local.json"
-        if cache_manifest.is_file():
-            localization.warnings.extend(cache_producer_warnings(Path(landmarks_dir)))
+        if _strategy is None:
+            retried_extent = False
+            try:
+                landmarks = load_landmarks(Path(landmarks_dir), canonical, source_sha256=result["source_sha256"])
+                if (Path(landmarks_dir) / "localizers.local.json").is_file():
+                    result["localizer_provenance"] = cache_producer_summary(Path(landmarks_dir))
+                localization = localize_native(hu, canonical.affine, landmarks, cfg, result["localization_geometry"])
+            except CountingError as error:
+                if error.code not in {"LANDMARK_EMPTY", "TARGET_CLIPPED"}:
+                    raise
+                # One full-source-field retry can recover anatomy omitted by the
+                # rough crop. A genuinely clipped acquisition still fails afterward.
+                retry_directory = destination / "localizers-full-extent"
+                run_localizers(source, retry_directory, full_extent=True)
+                landmarks = load_landmarks(retry_directory, canonical, source_sha256=result["source_sha256"])
+                if (retry_directory / "localizers.local.json").is_file():
+                    result["localizer_provenance"] = cache_producer_summary(retry_directory)
+                localization = localize_native(hu, canonical.affine, landmarks, cfg, result["localization_geometry"])
+                landmarks_dir = retry_directory
+                retried_extent = True
+            if retried_extent:
+                localization.warnings.append("Automatic anatomical localization required one full-field retry after missing or clipped landmark evidence.")
+            cache_manifest = Path(landmarks_dir) / "localizers.local.json" if landmarks_dir else None
+            if cache_manifest is not None and cache_manifest.is_file():
+                localization.warnings.extend(cache_producer_warnings(Path(landmarks_dir)))
         region = localization.region
+        if _strategy is not None:
+            _strategy.stage("counting")
         search = ndi.distance_transform_edt(~region, sampling=geometry(canonical.affine)) <= cfg.boundary_growth_mm
         search &= ~localization.excluded
         search |= region
@@ -416,6 +424,8 @@ def analyze_volume(volume_path: str | Path, output_dir: str | Path, landmarks_di
         cavities = np.zeros(hu.shape, dtype=np.uint16)
         air = np.zeros(hu.shape, dtype=np.uint16)
         cavities[crop], air[crop] = cavities_crop, air_crop
+        if _strategy is not None:
+            _strategy.assign_sides(cavities, cells)
         physical_x = (canonical.affine[0, 0] * np.arange(hu.shape[0])[:, None, None]
                       + canonical.affine[0, 1] * np.arange(hu.shape[1])[None, :, None]
                       + canonical.affine[0, 2] * np.arange(hu.shape[2])[None, None, :]
@@ -452,6 +462,8 @@ def analyze_volume(volume_path: str | Path, output_dir: str | Path, landmarks_di
             warnings=localization.warnings + warnings,
             artifacts={"cavities": "cavities.nii.gz", "air": "air.nii.gz", "region": "region.nii.gz"},
         )
+        if _strategy is not None:
+            _strategy.verify_artifacts(source, destination, result)
     except CountingError as error:
         result.update(failure_code=error.code, message=str(error))
     except (OSError, ValueError, nib.filebasedimages.ImageFileError):
@@ -460,6 +472,8 @@ def analyze_volume(volume_path: str | Path, output_dir: str | Path, landmarks_di
         # Raw third-party exception text may contain paths or image metadata.
         (destination / "engine-error.local.txt").write_text(traceback.format_exc(), encoding="utf-8")
         result.update(failure_code="ENGINE_ERROR", message="The local counting engine failed; inspect protected local runtime diagnostics.")
+    if _strategy is not None:
+        _strategy.finalize(result)
     result["warnings"] = result["quality"].get("warnings", []) + result["warnings"]
     temporary = destination / ".result.json.tmp"
     temporary.write_text(json.dumps(result, indent=2, sort_keys=True, allow_nan=False) + "\n", encoding="utf-8")

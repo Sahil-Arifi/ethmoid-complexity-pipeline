@@ -15,6 +15,7 @@ import numpy as np
 import uvicorn
 
 from ethmoid_pipeline.util import sha256_file, utc_now
+from ethmoid_pipeline.counting.profiles import sealed
 from ethmoid_pipeline.webapp.catalog import acquisition, fingerprint_hashes
 from ethmoid_pipeline.webapp.app import create_app
 
@@ -55,7 +56,7 @@ def main() -> None:
         right = ((x - 33) / 7) ** 2 + ((y - 27) / 5) ** 2 + ((z - 20) / 6) ** 2 <= 1
         cavities = np.where(left, 1, np.where(right, 300, 0)).astype(np.uint16)
         air = np.where(np.asarray(source.dataobj) < -500, cavities, 0).astype(np.uint16)
-        region = np.where(left, 1, np.where(right, 2, 0)).astype(np.uint16)
+        region = np.where(left, 1, np.where(right, 2, 0)).astype(np.uint8)
         output.mkdir(parents=True)
         artifacts = {name: f"{name}.nii.gz" for name in ("cavities", "air", "region")}
         for name, data in (("cavities", cavities), ("air", air), ("region", region)):
@@ -74,10 +75,45 @@ def main() -> None:
                   "counts": {"left": 1, "right": 1, "total": 2}, "cells": cells,
                   "warnings": ["Synthetic test; no clinical inference."], "config": frozen["algorithm"],
                   "acquisition": frozen["acquisition"], "quality": frozen["source_quality"], "artifacts": artifacts}
+        if frozen["protocol_version"] == "ethmoid-count-prototype-v3":
+            assisted = bool(frozen.get("assistance", {}).get("revision_id"))
+            result.update({"method_version": "scan-adaptive-native-0.3.0",
+                           "scan_profile": frozen["scan_profile"], "processing_plan": frozen["processing_plan"],
+                           "analysis_mode": "assisted" if assisted else "automatic",
+                           "outcome": "assisted_candidate_count" if assisted else "automatic_candidate_count",
+                           "model_identity": {"localization": "reviewer_native_region" if assisted else "v2_geometric_baseline",
+                                              "direct_ethmoid_model": "unavailable_without_promoted_weights"},
+                           "assistance": None,
+                           "artifact_verification": {"status": "verified", "source_sha256": result["source_sha256"],
+                               "sha256": {key: sha256_file(output / value) for key, value in artifacts.items()}}})
+            if assisted:
+                # Exercise the production provenance contract with generated
+                # regions only; this fixture does not establish clinical accuracy.
+                correction = frozen["assistance"]
+                boundary = nib.load(correction["region_path"])
+                labels = np.asanyarray(boundary.dataobj)
+                centers = [nib.affines.apply_affine(boundary.affine, np.argwhere(labels == label).mean(axis=0))[0] for label in (1, 2)]
+                result["assistance"] = sealed({**{key: correction[key] for key in ("schema_version", "source_sha256", "revision_id", "parent_run_id", "region_sha256")},
+                    "exclusion_sha256": None, "midline_ras_x": float(np.mean(centers))})
         (output / "result.json").write_text(json.dumps(result), encoding="utf-8")
 
     app = create_app(work_root=work)
     app.state.counting_service._executor = execute
+
+    @app.post("/__e2e__/release-workers")
+    def release_workers(root: str):
+        # Playwright runs global teardown before stopping its webServer. Release
+        # the production workers' OS locks before removing this synthetic root.
+        # This endpoint exists only in this guarded, isolated test entrypoint.
+        if root != work.name:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=409, detail="Synthetic work root mismatch")
+        if hasattr(app.state, "uploads"):
+            app.state.uploads.close()
+        app.state.catalog_service.close()
+        app.state.counting_service.close()
+        return {"work_root": work.name}
+
     service = app.state.ethmoid_service
     ready_cases = [service.import_nifti(path, case_label=label) for path, label in zip(generated[1:], ("Case910", "Case911"))]
     # Seed only neutral synthetic catalog links; production routes, guards,

@@ -17,7 +17,7 @@ if (browserExecutable && !fs.existsSync(browserExecutable)) {
   throw new Error("ETHMOID_BROWSER_EXECUTABLE does not identify an existing browser executable.");
 }
 
-const appExecutable = path.resolve(
+const appExecutable = process.env.ETHMOID_E2E_PYTHON ?? path.resolve(
   process.cwd(),
   "..",
   ".venv",

@@ -12,6 +12,10 @@ dependencies = [
   "nibabel==5.3.2",
   "numpy==2.3.5",
   "pydicom==3.0.1",
+  "pylibjpeg==2.1.0",
+  "pylibjpeg-libjpeg==2.4.0",
+  "pylibjpeg-openjpeg==2.5.0",
+  "pyjpegls==1.5.1",
   "Pillow==12.3.0",
   "reportlab==5.0.1",
   "python-multipart==0.0.32",
@@ -30,7 +34,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "ethmoid_pipeline.webapp" = ["protocol.v1.json"]
-"ethmoid_pipeline.counting" = ["protocol.json", "protocol.v1.json"]
+"ethmoid_pipeline.counting" = ["protocol.json", "protocol.v1.json", "protocol.v3.json"]
 
 [tool.pytest.ini_options]
 addopts = "-ra --strict-markers"

@@ -7,7 +7,17 @@ This repository contains the engineering foundation for the UCSD ethmoid-complex
 
 The experimental 3D cell-counting prototype is implemented. The original v1 method produced candidate counts on two of five held-out studies and withheld the other three. The broader v2 workflow is described below; clinical accuracy remains unmeasured, and no composite complexity score is defined.
 
-## Study catalog and broader counting
+## Scan-adaptive v3 implementation status
+
+The new work is tracked on `feature/scan-adaptive-labeling`. The durable counting and adaptive-processing phase is implemented: SQLite jobs, exclusive worker ownership, heartbeats, verified restart checkpoints, atomic result publication, bounded transient retries, cancellation, immutable scan profiles and processing plans, and separately labeled assisted reruns from source-aligned anatomical boundaries. Existing v1/v2 protocols and saved results remain intact. A protected database backup was created after the previous 98-volume batch finished; it contains 109 saved runs and 28 annotation revisions.
+
+V3 uses the existing v2 anatomical baseline until expert-trained weights exist. It adds bounded regional anatomy processing for oversized oblique inputs and preserves native voxels for cell separation, IDs, HU classification and measurements. Its direct nnU-Net model interface, expert annotation validator, patient-grouped dataset export and instance-evaluation utilities are implemented; **no ethmoid model has been trained or promoted, and accuracy improvement has not been demonstrated**. See [Scan-adaptive workflow and validation](docs/SCAN_ADAPTIVE.md).
+
+Executed core checks: **131 CPU engine/geometry/adaptation/model tests**, **seven frozen-evaluator tests**, and a final **63-test ownership/durability/revision/provenance/real-worker run** passed. Earlier overlapping API/catalog and report regressions also passed. The real worker integration starts the actual CPU algorithm from the application API using an oblique, flipped synthetic CT, preserves the failed automatic parent, counts the corrected regions and verifies export lineage. A real Windows hard-crash test confirms the inference child terminates when its owner dies. Tests establish the specified software behavior, not clinical accuracy.
+
+Pending in this phase: complete upload/catalog integration acceptance, finalize browser delivery, freeze and re-evaluate all 98 prepared volumes, verify production history preservation and remote CI. Expert anatomy masks, independent individual-cell references and clinician acceptance thresholds remain external dependencies for supervised training and clinical validation.
+
+## Earlier v2 catalog evidence
 
 The Cases page contains all **26 studies and 230 series** in this installation's local collection. It prepares supported 3D volumes automatically and starts counting only after **Run** is clicked. All existing volume IDs, annotations and original predictions are preserved. The clinician questionnaire explicitly specifies at most 1 mm nominal slice thickness; broader experimental attempts retain that warning, with thickness recorded separately from actual slice spacing. The original v1 evaluation remains immutable.
 

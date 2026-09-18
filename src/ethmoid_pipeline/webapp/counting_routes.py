@@ -32,6 +32,10 @@ class CorrectionRequest(BaseModel):
     operation: dict[str, Any]
 
 
+class AssistedRequest(CreateCountRequest):
+    boundary_id: str = Field(min_length=1, max_length=64)
+
+
 def _revision(value: str | None, *, default: int | None = None) -> int | None:
     if value is None:
         return default
@@ -70,6 +74,57 @@ def counting_router(service: CountingService) -> APIRouter:
     @router.get("/{run_id}/revisions/latest")
     def latest_revision(case_id: str, run_id: str) -> dict[str, Any]:
         return service.get_run(case_id, run_id)
+
+    @router.post("/{run_id}/cancel")
+    def cancel(case_id: str, run_id: str):
+        return service.cancel(case_id, run_id)
+
+    @router.post("/{run_id}/retry", status_code=202)
+    def retry(case_id: str, run_id: str, payload: CreateCountRequest | None = None):
+        return service.retry(case_id, run_id, payload.idempotency_key if payload else None)
+
+    @router.post("/{run_id}/boundaries", status_code=201)
+    async def save_boundary(case_id: str, run_id: str, request: Request):
+        incoming = Path(tempfile.mkdtemp(prefix="boundary-", dir=service.root / "incoming"))
+        try:
+            async with request.form(max_files=1, max_fields=1, max_part_size=64 * 1024) as form:
+                if set(form.keys()) - {"mask", "note"}:
+                    raise WebAppError("Unexpected boundary fields.", status_code=422)
+                upload = form.get("mask")
+                note = form.get("note", "")
+                if not isinstance(upload, UploadFile) or not isinstance(note, str):
+                    raise WebAppError("A boundary mask and optional note are required.", status_code=422)
+                filename = (upload.filename or '').lower()
+                if not filename.endswith(('.nii', '.nii.gz')):
+                    raise WebAppError("Boundary masks must be NIfTI files.", status_code=422)
+                path = incoming / ('boundary.nii.gz' if filename.endswith('.gz') else 'boundary.nii')
+                size = 0
+                with path.open('wb') as stream:
+                    while chunk := await upload.read(1024 * 1024):
+                        size += len(chunk)
+                        if size > MAX_MASK_BYTES:
+                            raise WebAppError("The boundary mask exceeds the upload limit.", status_code=413)
+                        stream.write(chunk)
+                return await run_in_threadpool(service.save_boundary, case_id, run_id, path, note)
+        finally:
+            shutil.rmtree(incoming, ignore_errors=True)
+
+    @router.get("/{run_id}/boundaries/{boundary_id}")
+    def boundary(case_id: str, run_id: str, boundary_id: str):
+        value = service.get_boundary(case_id, boundary_id)
+        if value['parent_run_id'] != run_id:
+            raise WebAppError("Boundary revision not found for this run.", status_code=404)
+        return value
+
+    @router.get("/{run_id}/boundaries/{boundary_id}/mask")
+    def boundary_mask(case_id: str, run_id: str, boundary_id: str):
+        boundary(case_id, run_id, boundary_id)
+        return FileResponse(service.boundary_path(case_id, boundary_id), media_type="application/gzip",
+                            filename="boundary.nii.gz", content_disposition_type="inline")
+
+    @router.post("/{run_id}/assisted-runs", status_code=202)
+    def assisted(case_id: str, run_id: str, payload: AssistedRequest):
+        return service.create_run(case_id, payload.idempotency_key, boundary_id=payload.boundary_id, parent_run_id=run_id)
 
     @router.get("/{run_id}/artifacts/{artifact}")
     def artifact(case_id: str, run_id: str, artifact: str, revision: str | None = None) -> FileResponse:
