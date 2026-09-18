@@ -8,16 +8,16 @@ import type { CaseDetail } from "../api/types";
 import { CountingWorkspace } from "./CountingWorkspace";
 import { readySeries, studyFixture, thickSeries } from "../testCatalog";
 
-const handles = vi.hoisted(() => ({ focus: vi.fn(), clear: vi.fn(), prepare: vi.fn() }));
+const handles = vi.hoisted(() => ({ focus: vi.fn(), clear: vi.fn(), prepare: vi.fn(), region: vi.fn() }));
 vi.mock("../api/client", async importOriginal => ({ ...(await importOriginal<object>()), api: { getCase: vi.fn(), getProtocol: vi.fn(), saveViewerState: vi.fn(), listStudySeries: vi.fn(), selectStudySeries: vi.fn(), prepareStudySeries: vi.fn() } }));
 vi.mock("../api/counting", async importOriginal => ({ ...(await importOriginal<object>()), countingApi: {
   ...(await importOriginal<{ countingApi: object }>()).countingApi,
-  list: vi.fn(), get: vi.fn(), start: vi.fn(), correct: vi.fn(),
+  list: vi.fn(), get: vi.fn(), start: vi.fn(), correct: vi.fn(), retry: vi.fn(), cancel: vi.fn(), saveBoundary: vi.fn(), assisted: vi.fn(),
 } }));
 vi.mock("../viewer/NiiVueViewer", () => ({ NiiVueViewer: forwardRef(function Mock(props: { onReady: () => void; onDirty: () => void; instanceOverlayUrl?: string }, ref) {
   useEffect(() => props.onReady(), []);
   useImperativeHandle(ref, () => ({ focusWorld: handles.focus, clearSelectionMask: handles.clear,
-    prepareCellMask: handles.prepare, getWorldPosition: () => [-12, 5, 7], getViewerState: () => ({ window_center: 300, window_width: 3000 }),
+    prepareCellMask: handles.prepare, prepareRegionMask: handles.region, getWorldPosition: () => [-12, 5, 7], getViewerState: () => ({ window_center: 300, window_width: 3000 }),
     exportMask: async () => new Blob(["synthetic mask"]),
   }));
   return <div><output data-testid="overlay-url">{props.instanceOverlayUrl}</output><button onClick={props.onDirty}>Paint fixture</button></div>;
@@ -60,6 +60,63 @@ describe("3D counting workspace", () => {
     expect(screen.getByText(/Bony boundary unavailable/)).toBeVisible();
     expect(screen.queryByTestId("total-count")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Export" })).toBeDisabled();
+  });
+
+  it("supports drawing anatomical regions after localization failure and starts an explicitly assisted child", async () => {
+    const failed: CountRun = { ...result, status: "failed", outcome: "needs_review", counts: null, original_counts: null, cells: [], latest_revision: null, failure_code: "SPHENOID_UNRESOLVED" };
+    vi.mocked(countingApi.get).mockResolvedValue(failed);
+    vi.mocked(countingApi.saveBoundary).mockResolvedValue({ boundary_id: "boundary-1" });
+    vi.mocked(countingApi.assisted).mockResolvedValue({ ...failed, run_id: "assisted-1", status: "queued", outcome: null, assistance: { boundary_id: "boundary-1", parent_run_id: "run-1" } });
+    mount(); await userEvent.click(await screen.findByRole("button", { name: "Review anatomical boundaries" }));
+    expect(screen.getByRole("combobox", { name: "Anatomical region" })).toHaveValue("1");
+    expect(screen.getByTestId("overlay-url")).toBeEmptyDOMElement();
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Anatomical region" }), "2");
+    fireEvent.click(screen.getByRole("button", { name: "Paint fixture" }));
+    expect(screen.getByRole("button", { name: "Run assisted count" })).toBeDisabled();
+    await userEvent.click(screen.getByRole("button", { name: "Save anatomical boundaries" }));
+    expect(countingApi.saveBoundary).toHaveBeenCalledWith("case-1", "run-1", expect.any(Blob), "");
+    await userEvent.click(screen.getByRole("button", { name: "Run assisted count" }));
+    expect(countingApi.assisted).toHaveBeenCalledWith("case-1", "run-1", "boundary-1", expect.any(String));
+    expect(screen.getByText("Assisted result")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Review parent attempt" })).toBeVisible();
+    expect(countingApi.correct).not.toHaveBeenCalled();
+  });
+
+  it("invalidates a saved boundary when it is painted again and guards navigation", async () => {
+    vi.mocked(countingApi.saveBoundary).mockResolvedValue({ boundary_id: "boundary-1" });
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false); const { back } = mount();
+    await userEvent.click(await screen.findByRole("button", { name: "Review anatomical boundaries" }));
+    expect(handles.region).toHaveBeenCalledWith(expect.stringContaining("/artifacts/region?revision=0"));
+    await userEvent.click(screen.getByRole("button", { name: "Save anatomical boundaries" }));
+    expect(screen.getByRole("button", { name: "Run assisted count" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Paint fixture" }));
+    expect(screen.getByRole("button", { name: "Run assisted count" })).toBeDisabled();
+    await userEvent.click(screen.getByRole("button", { name: "Cases" }));
+    expect(confirm).toHaveBeenCalled(); expect(back).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "Add cell" })).not.toBeInTheDocument(); confirm.mockRestore();
+  });
+
+  it("never displays an imported region mask before source alignment is validated", async () => {
+    vi.mocked(countingApi.get).mockResolvedValue({ ...result, status: "failed", counts: null, cells: [], failure_code: "SPHENOID_UNRESOLVED" });
+    vi.mocked(countingApi.saveBoundary).mockRejectedValue(new ApiError("Boundary geometry does not match source", 422));
+    mount(); await userEvent.click(await screen.findByRole("button", { name: "Review anatomical boundaries" }));
+    await userEvent.upload(screen.getByLabelText("Import anatomical boundary mask"), new File(["bad"], "regions.nii"));
+    expect(await screen.findByText("Boundary geometry does not match source")).toBeVisible();
+    expect(handles.region).not.toHaveBeenCalled();
+    expect(countingApi.assisted).not.toHaveBeenCalled();
+  });
+
+  it("separates technical retries from anatomical review and exposes cancellation", async () => {
+    const failed: CountRun = { ...result, status: "failed", outcome: "technical_error", counts: null, cells: [], failure_code: "INTERRUPTED" };
+    vi.mocked(countingApi.get).mockResolvedValue(failed);
+    vi.mocked(countingApi.retry).mockResolvedValue({ ...failed, run_id: "retry-1", status: "running", outcome: null, stage: "localizing" });
+    vi.mocked(countingApi.cancel).mockResolvedValue({ ...failed, run_id: "retry-1", status: "failed", outcome: "cancelled" });
+    mount(); await userEvent.click(await screen.findByRole("button", { name: "Retry interrupted analysis" }));
+    expect(countingApi.retry).toHaveBeenCalledWith("case-1", "run-1");
+    expect(screen.getByRole("list", { name: "Analysis progress" })).toHaveTextContent("Locating anatomy");
+    await userEvent.click(screen.getByRole("button", { name: "Cancel count" }));
+    expect(countingApi.cancel).toHaveBeenCalledWith("case-1", "retry-1");
+    expect(screen.getByText("Count cancelled")).toBeVisible(); expect(screen.queryByTestId("total-count")).not.toBeInTheDocument();
   });
 
   it("locates IDs above 255 in physical coordinates and preserves original counts", async () => {

@@ -88,12 +88,15 @@ if (-not (Test-Path -LiteralPath (Join-Path $repo '.venv\Scripts\python.exe'))) 
     & py -3.13 -c "import sys; raise SystemExit(0 if sys.version_info[:3] == (3, 13, 12) else 1)"
     if ($LASTEXITCODE -ne 0) { throw 'Python 3.13.12 is required by the pinned pilot environment.' }
     py -3.13 -m venv (Join-Path $repo '.venv')
+    if ($LASTEXITCODE -ne 0) { throw 'Creating the application virtual environment failed.' }
 }
 $python = Join-Path $repo '.venv\Scripts\python.exe'
 & $python -c "import sys; raise SystemExit(0 if sys.version_info[:3] == (3, 13, 12) else 1)"
 if ($LASTEXITCODE -ne 0) { throw 'The project virtual environment must use Python 3.13.12.' }
 & $python -m pip install --disable-pip-version-check --require-hashes -r (Join-Path $repo 'requirements.lock')
+if ($LASTEXITCODE -ne 0) { throw 'Installing the hashed application dependencies failed.' }
 & $python -m pip install --disable-pip-version-check --no-build-isolation --no-deps -e $repo
+if ($LASTEXITCODE -ne 0) { throw 'Installing the editable application failed.' }
 
 $nodeVersion = (& node --version 2>$null)
 if ($LASTEXITCODE -ne 0 -or $nodeVersion -ne 'v24.14.1') {

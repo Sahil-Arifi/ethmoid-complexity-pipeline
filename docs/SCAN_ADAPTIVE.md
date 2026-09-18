@@ -30,4 +30,39 @@ Core tests cover native flipped/oblique coordinates, known cavities, side confli
 
 The separate `scripts/evaluate_adaptive_catalog.py` requires a clean frozen checkout and hash-bound manifest/protocol. It writes immutable protected local evidence, retains every success/abstention/error, verifies outputs against original HU, and accounts for unavailable catalog series. All existing 26 studies are development evidence, including the former v1/v2 held-out partitions. New locked studies and independent expert references are required for an external accuracy claim.
 
-Upload/codec acceptance, browser acceptance and the 98-volume reevaluation will be recorded here as those phases complete. No inference failures are hidden to improve a completion percentage.
+Upload/codec acceptance is recorded below. Frontend acceptance passed 50 unit tests, a production build and five browser workflows, including interrupted upload/reselection and API/viewer assisted review through reload/export. The upload browser transport is simulated; the assisted browser scenario uses synthetic inference. The separate CPU subprocess test uses the actual algorithm. The 98-volume reevaluation is running from frozen code `a1e3ae4`; results remain pending. No inference failures are hidden to improve a completion percentage.
+
+## Complete uploads and DICOM compatibility
+
+The new `/api/uploads` workflow keeps every submitted original in protected local storage outside the processing root and Git. Folder selection and ZIP archives enter the same persistent study/series catalog. Exact study/series identities and source-file hash multisets determine reuse; filenames and case labels do not. Additional series of an existing study retain their own source roots. Conflicting identities preserve the existing volume/history and expose a review reason. Ancillary and unreadable members are individually accounted for.
+
+The initial limits are 20 GiB expanded data, 50,000 files, and 8 MiB per transfer chunk. ZIP extraction accepts stored/deflated entries, rejects traversal, absolute paths, links, encrypted/unsupported entries and expansion over quota, and verifies CRC while streaming. Originals survive interrupted indexing and failed extraction. The local worker owns an OS lock, resumes finalized uploads after restart, and survives temporary database errors. An unavailable configured collection does not disable new uploads.
+
+| API | Contract |
+| --- | --- |
+| `POST /api/uploads` | JSON `{files:[{name,size}]}` creates a durable session and returns `upload_id`, status, per-file offsets, study outcomes, issues and configured limits. |
+| `PUT /api/uploads/{id}/files/{index}?offset=N` | Raw bytes, at most 8 MiB. Returns the committed `received_bytes`. A repeated completed prefix is accepted only if every byte matches; mismatched reselection is rejected. A zero-length source needs one empty PUT. |
+| `GET /api/uploads/{id}` | Saved transfer offsets, indexing/preparation state, neutral study/series navigation, count-run identity and fixed actionable reasons. |
+| `POST /api/uploads/{id}/finalize` | Idempotent finalization, accepted only after all file hashes are complete. An explicit repeat retries transient indexing/storage failures; unsafe archives remain explained terminal outcomes. |
+
+Finalization authorizes preparation and one automatic analysis intent per uploaded study. Inference waits for verified geometry and HU; a stable hash-based idempotency key bridges a crash between count creation and upload-intent publication. Repeated identical uploads do not silently produce new runs. Session `completed` means ingestion/preparation and scheduling have finished; `analysis_status` separately reports the count job. Other series remain available for explicit Run. Count scheduling errors are visible and do not abandon unrelated uploads.
+
+Classic CT and Enhanced CT share physical-position validation. Enhanced functional groups supply frame-specific position, orientation, pixel measures and HU scaling; missing/conflicting groups, nonspatial acquisitions and duplicate planes fail explicitly. A private classic-frame adapter feeds the pinned converter while originals, original SOP identities, frame indices and hashes remain in provenance. Frame order is established physically before converter staging. Output geometry and **every calibrated source voxel** are checked independently before a volume becomes ready.
+
+The application pins `pylibjpeg==2.1.0`, `pylibjpeg-libjpeg==2.4.0`, `pylibjpeg-openjpeg==2.5.0` and `pyjpegls==1.5.1` in addition to `pydicom==3.0.1`. Accepted decoding includes uncompressed transfer syntaxes, native RLE, lossless JPEG, JPEG-LS and JPEG 2000. Lossy transfer syntaxes and a recorded lossy history are rejected. Compressed inference inputs use the selected lossless decoder, never an implicit Pillow fallback. See [pydicom's decoder guidance](https://pydicom.github.io/pydicom/stable/guides/user/image_data_handlers.html) and [the DICOM Enhanced CT functional-group specification](https://dicom.nema.org/medical/dicom/current/output/chtml/part03/sect_C.8.15.3.html).
+
+### Executed upload/codec verification
+
+The targeted upload, frame, catalog, conversion and geometry suite passed **139 tests** before the additional legacy-signature regression test. Synthetic lossless decode fixtures cover implicit/explicit uncompressed, RLE, JPEG process 14/SV1, JPEG-LS and JPEG 2000. Real pinned dcm2niix integration covers five lossless encoding paths and shuffled Enhanced CT with varying frame calibration: all reported **zero maximum HU error**, with unchanged originals. Tests also exercised partial transfer recovery, byte-equal prefix replay, concurrent retries/finalization, malformed/unsafe archives, expansion quota, storage exhaustion, worker ownership/restart, mixed studies, exact reuploads, identity conflicts, source-root coexistence and the actual HTTP contract. These are software and conversion checks, not anatomical accuracy measurements.
+
+A protected **copy** of the production schema-3 database was migrated to schema 4, then synchronized twice against the read-only source inventory. One migration backup was created. All rows and content hashes remained identical in 98 cases, 28 annotation revisions, 2 imports, 109 count runs, 98 case links, 230 catalog series and 26 catalog studies; there were no cell revisions. The catalog retained 98 ready and 132 unavailable series. No count callback was invoked. This metadata audit did not run inference or alter the production database. The frozen inventory-signature projection prevents new display/profile fields from invalidating unchanged existing scans.
+
+### Reproducing the application dependency lock
+
+The hashed lock includes the pinned build backend because both bootstrap and CI use `--no-build-isolation` for the editable project. Keep `requirements-build.in` synchronized with `build-system.requires` in `pyproject.toml`. Regenerate from both inputs:
+
+```powershell
+uv pip compile pyproject.toml requirements-build.in --extra test --generate-hashes --python-version 3.13 --no-header -o requirements.lock
+```
+
+The corrected lock was installed with `pip install --require-hashes` into a fresh Python 3.13 environment containing only pip, without inherited site-packages or a manually supplied `.pth` file. Editable installation with `--no-build-isolation --no-deps` succeeded and `pip check` reported no broken requirements. Two consecutive lock generations produced identical bytes. Bootstrap now stops immediately if environment creation, dependency installation or editable installation fails.

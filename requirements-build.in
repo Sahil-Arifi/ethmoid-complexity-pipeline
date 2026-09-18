@@ -1,0 +1,3 @@
+# Keep this pin equal to build-system.requires in pyproject.toml. Bootstrap and
+# CI deliberately install the editable project with --no-build-isolation.
+setuptools==80.10.2

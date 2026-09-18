@@ -10,6 +10,7 @@ import pydicom
 from pydicom.uid import CTImageStorage, ExplicitVRLittleEndian
 
 from .util import PipelineError
+from .dicom_frames import frame_headers, validate_encoding
 
 
 @dataclass(frozen=True)
@@ -32,6 +33,7 @@ class SliceRecord:
     intercept: float
     instance_number: int | None
     coordinate: float
+    frame_index: int | None = None
 
 
 @dataclass(frozen=True)
@@ -215,12 +217,13 @@ def preflight_series(
     recognizable_values: set[str | None] = set()
     identity_removed_values: set[str | None] = set()
 
+    header_inputs = []
     for path in input_paths:
         try:
-            dataset = pydicom.dcmread(path, stop_before_pixels=True)
-        except Exception:
-            issues.append("a selected DICOM could not be parsed")
-            continue
+            header_inputs.extend((path, index, ds) for index, ds in frame_headers(path, enhanced=profile == "exploratory"))
+        except Exception as error:
+            issues.append(str(error) if isinstance(error, ValueError) else "a selected DICOM could not be parsed")
+    for path, frame_index, dataset in header_inputs:
         try:
             transfer_syntax = str(dataset.file_meta.TransferSyntaxUID)
             study_uid = str(dataset.StudyInstanceUID)
@@ -272,10 +275,15 @@ def preflight_series(
         localizer_terms = {"LOCALIZER", "SCOUT", "TOPOGRAM"}
         derived_terms = {"DERIVED", "SECONDARY", "REFORMATTED", "MPR", "MIP", "MINIP"}
 
-        if modality != "CT" or sop_class != str(CTImageStorage):
+        if modality != "CT" or (sop_class != str(CTImageStorage) and frame_index is None):
             issues.append("the selection contains a non-classic-CT image")
-        if transfer_syntax != str(ExplicitVRLittleEndian):
+        if profile == "strict" and transfer_syntax != str(ExplicitVRLittleEndian):
             issues.append("the selection uses an unsupported transfer syntax")
+        if profile == "exploratory":
+            try:
+                validate_encoding(dataset)
+            except ValueError as error:
+                issues.append(str(error))
         if number_of_frames != 1:
             issues.append("multi-frame CT is outside milestone-one scope")
         if photometric != "MONOCHROME2":
@@ -333,6 +341,7 @@ def preflight_series(
         pending.append(
             {
                 "path": path,
+                "frame_index": frame_index,
                 "study_uid": study_uid,
                 "series_uid": series_uid,
                 "sop_uid": sop_uid,
@@ -388,7 +397,8 @@ def preflight_series(
         _constant_exact([item["image_type"] for item in pending], "ImageType", issues)
     _constant_numeric([item["pixel_spacing"] for item in pending], 1e-4, "PixelSpacing", issues)
     _constant_numeric([(item["slice_thickness"],) for item in pending], 0.01, "SliceThickness", issues)
-    _constant_numeric([(item["slope"], item["intercept"]) for item in pending], 1e-8, "HU rescale", issues)
+    if profile == "strict":
+        _constant_numeric([(item["slope"], item["intercept"]) for item in pending], 1e-8, "HU rescale", issues)
 
     spacing_values = [item["spacing_between_slices"] for item in pending]
     if all(value is None for value in spacing_values):
@@ -428,7 +438,7 @@ def preflight_series(
             np.dot(np.asarray(item["ipp"], dtype=float), baseline_normal)
         )
 
-    sop_uids = [item["sop_uid"] for item in pending]
+    sop_uids = [(item["sop_uid"], item["frame_index"]) for item in pending]
     if len(set(sop_uids)) != len(sop_uids):
         issues.append("duplicate SOPInstanceUID values are present")
     for field, title in (
@@ -497,6 +507,7 @@ def preflight_series(
             intercept=item["intercept"],
             instance_number=item["instance_number"],
             coordinate=item["coordinate"],
+            frame_index=item["frame_index"],
         )
         for item in pending
     )

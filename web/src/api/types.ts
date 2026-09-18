@@ -148,7 +148,8 @@ export type CatalogSeries = {
   warnings: string[];
   recommended: boolean;
   retryable: boolean;
-  count_status: "not_run" | "queued" | "running" | "completed" | "failed";
+  count_status: "not_run" | "queued" | "running" | "completed" | "failed" | "cancelled";
+  count_outcome?: string | null;
   counts: { left: number; right: number; total: number } | null;
 };
 

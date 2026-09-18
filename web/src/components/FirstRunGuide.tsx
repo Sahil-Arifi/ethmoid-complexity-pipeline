@@ -18,15 +18,15 @@ type GuideStep = {
 const GUIDE_STEPS: readonly GuideStep[] = [
   {
     title: "Import a scan",
-    description: "Choose a DICOM folder or NIfTI file. The app checks the scan before you begin.",
+    description: "Choose a DICOM folder or ZIP. The app groups every study and series, verifies volumes and starts the recommended series automatically. NIfTI import is also available.",
   },
   {
     title: "Run the automatic count",
-    description: "The model analyzes the full CT volume and counts each candidate cell once. No manual outline or seed points are needed.",
+    description: "Automatic analysis counts each candidate cell once across the full CT volume. Open another verified series and select Run to analyze it. Progress and any unresolved anatomy remain visible.",
   },
   {
     title: "Review numbered cells",
-    description: "Locate cells in linked CT views. Add, remove, split, merge, or adjust a boundary after the first result.",
+    description: "Locate and correct cells in linked CT views. If automatic localization needs help, review both anatomical regions and run a separately labeled assisted count.",
   },
   {
     title: "Export the reviewed result",

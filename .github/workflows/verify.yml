@@ -42,8 +42,11 @@ jobs:
         shell: pwsh
         run: |
           python -m venv .venv
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           ./.venv/Scripts/python.exe -m pip install --require-hashes -r requirements.lock
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           ./.venv/Scripts/python.exe -m pip install --no-build-isolation --no-deps -e .
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm --prefix web ci
       - name: Production build
         run: npm --prefix web run build

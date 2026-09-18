@@ -32,14 +32,15 @@ export function Dashboard({ onOpenCase }: Props) {
     return () => { mounted.current = false; requestId.current++; };
   }, [load]);
   const progressing = data && (data.catalog.status === "indexing" || data.catalog.status === "preparing" || data.catalog.queued > 0 || data.catalog.preparing > 0);
+  const counting = data?.studies.some(study => study.series.some(series => ["queued", "running"].includes(series.count_status)));
   useEffect(() => {
-    if (!progressing || busy) return;
+    if ((!progressing && !counting) || busy) return;
     let stopped = false;
     let timer: ReturnType<typeof setTimeout>;
     const poll = async () => { await load(); if (!stopped) timer = setTimeout(poll, 2000); };
     timer = setTimeout(poll, 2000);
     return () => { stopped = true; clearTimeout(timer); };
-  }, [busy, load, progressing]);
+  }, [busy, load, progressing, counting]);
   const act = async (study: StudySummary, action: () => Promise<void>) => {
     if (busy) return;
     requestId.current++; setBusy(study.study_id); setError("");
@@ -68,7 +69,7 @@ export function Dashboard({ onOpenCase }: Props) {
     {data && data.catalog.status !== "unconfigured" && <section className="catalog-progress" aria-label="Scan preparation" role="status">
       <strong>{data.catalog.status === "indexing" ? "Reading the study catalog…" : progressing ? "Preparing CT volumes in the background" : data.catalog.status === "error" ? "Study catalog needs attention" : "Study catalog ready"}</strong>
       <p>{data.catalog.total_studies} studies · {data.catalog.total_series} series · {data.catalog.ready} ready · {data.catalog.preparing} preparing · {data.catalog.queued} queued · {data.catalog.unavailable} unavailable{data.catalog.not_prepared > 0 ? ` · ${data.catalog.not_prepared} not prepared` : ""}</p>
-      <p>Preparation verifies the volume. It does not count cells. Counting starts only when you select Run automatic count.</p>
+      <p>Preparation verifies each volume. New uploads automatically count their recommended verified series. Select Run automatic count to analyze other series.</p>
       {data.catalog.reason && <p>{data.catalog.reason}</p>}
     </section>}
     {data && data.studies.length > 0 && <section aria-labelledby="study-list-title"><div className="section-heading"><h2 id="study-list-title">Cases</h2><span>{data.studies.length} studies</span></div>
@@ -88,6 +89,6 @@ export function Dashboard({ onOpenCase }: Props) {
       </tbody></table></div></section>}
     {data && data.unlinked_cases.length > 0 && <section aria-labelledby="imported-list-title"><div className="section-heading"><h2 id="imported-list-title">Imported scans</h2><span>{data.unlinked_cases.length} separate imports</span></div><p className="muted">These scans are not linked to the study catalog.</p><div className="case-table-wrap"><table className="case-table"><thead><tr><th scope="col">Scan</th><th scope="col">Source</th><th scope="col">Validation</th><th scope="col">Review</th><th scope="col">Last saved</th><th scope="col"><span className="sr-only">Actions</span></th></tr></thead><tbody>{data.unlinked_cases.map(item => <tr key={item.case_id}><td><button className="case-link" onClick={() => onOpenCase(item.case_id)}>{item.case_label}</button><small>{item.latest_revision ? `Annotation revision ${item.latest_revision}` : "Not annotated"}</small></td><td>{item.source_type}</td><td><span className={`status status-${item.validation_status.toLowerCase()}`}>{item.validation_status}</span></td><td>{item.review_status}</td><td>{new Date(item.updated_at).toLocaleString()}</td><td><div className="row-actions"><button className="button compact" onClick={() => onOpenCase(item.case_id)}>Open case</button>{item.latest_revision ? <a className="button compact secondary" href={api.exportUrl(item.case_id)} download>Export</a> : null}{item.review_status === "Draft" && item.state !== "APPROVED" && <button className="text-button danger" onClick={() => void deleteDraft(item)}>Delete draft</button>}</div></td></tr>)}</tbody></table></div></section>}
     {!loading && data && !data.studies.length && !data.unlinked_cases.length && <section className="empty-state"><h2>No scans available</h2><p>Import a verified DICOM series or a NIfTI volume to begin.</p><button className="button primary" onClick={() => setShowImport(true)}>Import first scan</button></section>}
-    {showImport && <ImportDialog onClose={() => setShowImport(false)} onImported={caseId => { setShowImport(false); onOpenCase(caseId); }} />}
+    {showImport && <ImportDialog onClose={() => setShowImport(false)} onCatalogUpdated={load} onImported={caseId => { setShowImport(false); onOpenCase(caseId); }} />}
   </main>;
 }

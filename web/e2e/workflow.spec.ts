@@ -17,6 +17,7 @@ test("directional NIfTI can be viewed, annotated, resumed, finalized, and export
   await page.getByRole("button", { name: "Finish" }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await page.getByRole("button", { name: "Import scan" }).last().click();
+  await page.getByRole("radio", { name: "NIfTI", exact: true }).click();
   await page.getByRole("textbox", { name: /Neutral case label/ }).fill("Case901");
   await page.getByLabel(/NIfTI volume/).setInputFiles(fixture);
   await page.getByRole("button", { name: "Import scan" }).last().click();

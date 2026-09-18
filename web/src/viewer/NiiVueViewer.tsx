@@ -31,6 +31,7 @@ export type NiiVueViewerHandle = {
   getWorldPosition: () => [number, number, number];
   clearSelectionMask: () => void;
   prepareCellMask: (url: string, id: number) => Promise<void>;
+  prepareRegionMask: (url: string) => Promise<void>;
 };
 
 type Props = {
@@ -321,6 +322,22 @@ export const NiiVueViewer = forwardRef<NiiVueViewerHandle, Props>(
           if (!nv.loadDrawing(mask)) throw new Error("The cell mask geometry does not match this CT.");
           historyRef.current = emptyHistory();
           addHistorySnapshot(nv.drawBitmap);
+        },
+        async prepareRegionMask(url) {
+          const nv = niivueRef.current;
+          if (!nv) throw new Error("The image viewer is not ready.");
+          const { NVImage } = await import("@niivue/niivue");
+          const mask = await NVImage.loadFromUrl({ url, name: "boundary.nii.gz" });
+          if (niivueRef.current !== nv) return;
+          if (!mask.img || !mask.hdr) throw new Error("The anatomical boundary mask could not be opened.");
+          for (const value of mask.img) {
+            if (value !== 0 && value !== 1 && value !== 2) throw new Error("Anatomical regions must use labels 1 for left and 2 for right.");
+          }
+          mask.img = Uint8Array.from(mask.img);
+          mask.hdr.datatypeCode = 2; mask.hdr.numBitsPerVoxel = 8;
+          mask.hdr.scl_slope = 1; mask.hdr.scl_inter = 0;
+          if (!nv.loadDrawing(mask)) throw new Error("The anatomical boundary geometry does not match this CT.");
+          historyRef.current = emptyHistory(); addHistorySnapshot(nv.drawBitmap);
         },
       }),
       [],

@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
+const python = process.env.ETHMOID_E2E_PYTHON ?? path.resolve("..", ".venv", "Scripts", "python.exe");
 
 test("automatic count, uint16 overlay, corrections, original result, reload, and export", async ({ page }, testInfo) => {
   const browserErrors: string[] = [];
@@ -12,6 +13,7 @@ test("automatic count, uint16 overlay, corrections, original result, reload, and
   await page.addInitScript(() => localStorage.setItem("ethmoid:first-run-guide", "2"));
   await page.goto("/");
   await page.getByRole("button", { name: "Import scan", exact: true }).first().click();
+  await page.getByRole("radio", { name: "NIfTI", exact: true }).click();
   await page.getByRole("textbox", { name: /Neutral case label/ }).fill(caseLabel);
   await page.getByLabel(/NIfTI volume/).setInputFiles(fixture);
   await page.getByRole("button", { name: "Import scan", exact: true }).last().click();
@@ -30,7 +32,7 @@ test("automatic count, uint16 overlay, corrections, original result, reload, and
   await page.getByRole("checkbox", { name: "Overlay", exact: true }).uncheck();
   const hidden = await canvas.screenshot();
   await page.getByRole("checkbox", { name: "Overlay", exact: true }).check();
-  const pixels = JSON.parse(execFileSync(path.resolve("..", ".venv", "Scripts", "python.exe"), ["-c", `
+  const pixels = JSON.parse(execFileSync(python, ["-c", `
 import base64,io,json,sys
 import numpy as np
 from PIL import Image
@@ -50,7 +52,7 @@ print(json.dumps({'background_pixels':int(background.sum()),'changed_background'
   await page.getByRole("button", { name: "3D", exact: true }).click();
   await expect(page.getByRole("button", { name: "3D", exact: true })).toHaveAttribute("aria-pressed", "true");
   const rendered = await canvas.screenshot();
-  const renderPixels = JSON.parse(execFileSync(path.resolve("..", ".venv", "Scripts", "python.exe"), ["-c", `
+  const renderPixels = JSON.parse(execFileSync(python, ["-c", `
 import base64,io,json,sys
 import numpy as np
 from PIL import Image

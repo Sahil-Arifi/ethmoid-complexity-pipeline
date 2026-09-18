@@ -37,3 +37,8 @@
 .count-workspace .alert { margin: .5rem 1rem; }
 @media (max-width: 1000px) { .count-body { grid-template-columns: minmax(0, 1fr) 310px; } .count-heading > svg { display: none; } }
 @media (max-width: 760px) { .count-workspace { height: auto; min-height: 100vh; } .count-body { grid-template-columns: 1fr; } .count-viewer { height: 65vh; min-height: 400px; } .count-panel { border-left: 0; border-top: 1px solid var(--line); overflow: visible; } .count-workspace .workspace-header { flex-wrap: wrap; } }
+.scan-processing-details { font-size: 0.8rem; }
+.scan-processing-details dt { margin-top: 0.5rem; font-weight: 700; }
+.scan-processing-details dd { margin-left: 0; overflow-wrap: anywhere; }
+.count-stage-list { margin: 0.75rem 0; padding-left: 1.25rem; font-size: 0.8rem; }
+.count-stage-list [aria-current="step"] { color: var(--accent, #5eead4); font-weight: 700; }

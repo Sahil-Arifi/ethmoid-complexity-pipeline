@@ -15,8 +15,11 @@ export function preparationLabel(series: CatalogSeries): string {
   return { not_prepared: "Not prepared", queued: "Queued for preparation", preparing: "Preparing volume…", ready: "Conversion verified · Ready to attempt", unavailable: "Unavailable" }[series.preparation_status];
 }
 export function countLabel(series: CatalogSeries): string {
+  if (series.count_outcome === "technical_error") return "Technical issue · Open to retry";
+  if (series.count_outcome === "needs_review") return "Needs anatomical review";
+  if (series.count_outcome === "unsupported_input") return "Unsupported input · Open for reason";
   if (series.count_status === "completed" && series.counts) return `Count complete · L ${series.counts.left} / R ${series.counts.right} / Total ${series.counts.total}`;
-  return { not_run: "Not counted", queued: "Count queued", running: "Counting…", completed: "Count unavailable", failed: "Count withheld · Open for reason" }[series.count_status];
+  return { not_run: "Not counted", queued: "Count queued", running: "Counting…", completed: "Count unavailable", failed: "Count withheld · Open for reason", cancelled: "Count cancelled" }[series.count_status];
 }
 export function qualityNotes(series: Pick<CatalogContext, "resolution_class" | "slice_thickness_mm" | "warnings">): string[] {
   const notes = [...series.warnings];

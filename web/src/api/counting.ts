@@ -7,13 +7,20 @@ export type Cell = {
   voxel_count: number; air_voxel_count: number; retired?: boolean; corrected?: boolean;
 };
 export type CountRun = {
-  run_id: string; case_id: string; status: "queued" | "running" | "completed" | "failed";
+  run_id: string; case_id: string; status: "queued" | "running" | "completed" | "failed" | "cancelled";
   latest_revision: number | null; revision: number | null;
   original_counts: Counts | null; counts: Counts | null; cells: Cell[];
   warnings: string[]; failure_code: string | null; message: string | null;
   method_version: string | null; protocol_version: string;
   created_at: string; updated_at: string;
+  stage?: string | null;
+  outcome?: "automatic_candidate_count" | "assisted_candidate_count" | "needs_review" | "unsupported_input" | "technical_error" | "cancelled" | null;
+  assistance?: { mode?: string; boundary_id?: string; parent_run_id?: string } | null;
+  scan_profile?: Record<string, unknown> | null;
+  processing_plan?: Record<string, unknown> | null;
+  model_identity?: Record<string, unknown> | null;
 };
+export type BoundaryRevision = { boundary_id: string; case_id?: string; parent_run_id?: string; created_at?: string; note?: string };
 export type Correction = {
   type: "add" | "remove" | "merge" | "split" | "update";
   id?: number; ids?: number[]; side?: "left" | "right";
@@ -29,6 +36,20 @@ export const countingApi = {
     body: JSON.stringify({ idempotency_key: key }),
   }),
   get: (caseId: string, runId: string) => request<CountRun>(path(caseId, runId)),
+  retry: (caseId: string, runId: string) => request<CountRun>(`${path(caseId, runId)}/retry`, { method: "POST" }),
+  cancel: (caseId: string, runId: string) => request<CountRun>(`${path(caseId, runId)}/cancel`, { method: "POST" }),
+  saveBoundary: (caseId: string, runId: string, mask: Blob, note: string) => {
+    const body = new FormData();
+    body.append("mask", mask, mask instanceof File ? mask.name : "boundary.nii");
+    body.append("note", note);
+    return request<BoundaryRevision>(`${path(caseId, runId)}/boundaries`, { method: "POST", body });
+  },
+  boundaryMask: (caseId: string, runId: string, boundaryId: string) =>
+    `/api${path(caseId, runId)}/boundaries/${encodeURIComponent(boundaryId)}/mask`,
+  assisted: (caseId: string, runId: string, boundaryId: string, key: string) => request<CountRun>(`${path(caseId, runId)}/assisted-runs`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ boundary_id: boundaryId, idempotency_key: key }),
+  }),
   latest: (caseId: string, runId: string) => request<CountRun>(`${path(caseId, runId)}/revisions/latest`),
   correct: (caseId: string, runId: string, parent: number, operation: Correction, mask?: Blob) => {
     const metadata = { parent_revision: parent, operation };

@@ -8,7 +8,8 @@ import nibabel as nib
 import numpy as np
 import pydicom
 
-from .conversion import _selection_identity_sha256, _validate_selected_paths
+from .conversion import _selection_identity_sha256, _validate_selected_paths, _source_hash_manifest
+from .dicom_frames import frame_pixels
 from .dicom import PreflightResult, assert_pilot_fingerprint, preflight_series
 from .inventory import resolve_selection
 from .geometry import prove_native_voxel_bijection
@@ -118,10 +119,7 @@ def _full_volume_hu_metrics(
         if int(column_step[column_axis]) < 0:
             observed = np.flip(observed, axis=1)
 
-        dataset = pydicom.dcmread(record.path)
-        expected = (
-            dataset.pixel_array.astype(np.float64) * record.slope + record.intercept
-        )
+        expected = frame_pixels(record.path, record.frame_index).astype(np.float64) * record.slope + record.intercept
         if observed.shape != expected.shape:
             raise PipelineError("Full-volume HU plane shape does not match DICOM pixels.")
         observed_float = np.asarray(observed, dtype=np.float64)
@@ -354,10 +352,7 @@ def _verify_preflighted_conversion(
 
     source_manifest = read_json(pilot_dir / "source_hashes.json")
     stored_hashes = source_manifest.get("slices", [])
-    current_hashes = [
-        {"slice_index": index, "sha256": sha256_file(record.path)}
-        for index, record in enumerate(preflight.records)
-    ]
+    current_hashes = _source_hash_manifest(preflight.records)
     hashes_ok = stored_hashes == current_hashes
     add_check(
         "source immutability",

@@ -11,6 +11,7 @@ from typing import Any, Iterable
 
 import nibabel as nib
 import numpy as np
+from pydicom.uid import ExplicitVRLittleEndian
 
 from .dicom import (
     PreflightResult,
@@ -19,6 +20,7 @@ from .dicom import (
     sensitive_values,
 )
 from .inventory import resolve_selection
+from .dicom_frames import write_classic_frame
 from .geometry import prove_native_voxel_bijection
 from .privacy import redact_text, sanitize_sidecar, scrub_nifti_header
 from .provenance import current_code_provenance
@@ -55,8 +57,9 @@ SLICER_INSTALLER_SHA512 = (
 
 
 def _source_hash_manifest(records: tuple[Any, ...]) -> list[dict[str, Any]]:
+    hashes = {path: sha256_file(path) for path in dict.fromkeys(record.path for record in records)}
     return [
-        {"slice_index": index, "sha256": sha256_file(record.path)}
+        {"slice_index": index, "sha256": hashes[record.path], **({"frame_index": record.frame_index} if record.frame_index is not None else {})}
         for index, record in enumerate(records)
     ]
 
@@ -66,7 +69,7 @@ def _selection_identity_sha256(records: tuple[Any, ...]) -> str:
     for value in (
         records[0].study_uid,
         records[0].series_uid,
-        *(record.sop_uid for record in records),
+        *(record.sop_uid if record.frame_index is None else f"{record.sop_uid}#{record.frame_index}" for record in records),
     ):
         digest.update(value.encode("ascii"))
         digest.update(b"\x00")
@@ -397,7 +400,11 @@ def _convert_preflighted_series(
             sha256_file(inventory_map_path) if inventory_map_path is not None else None
         )
         for index, record in enumerate(preflight.records):
-            shutil.copyfile(record.path, stage_dir / f"slice_{index:06d}.dcm")
+            staged = stage_dir / f"slice_{index:06d}.dcm"
+            if record.frame_index is not None or preflight.transfer_syntax != ExplicitVRLittleEndian:
+                write_classic_frame(record, staged, instance_number=index + 1)
+            else:
+                shutil.copyfile(record.path, staged)
 
         command = build_dcm2niix_command(
             dcm2niix, output_dir, neutral_name, stage_dir
@@ -417,7 +424,7 @@ def _convert_preflighted_series(
         )
         if completed.returncode != 0:
             raise PipelineError("dcm2niix returned a nonzero exit code.")
-        dangerous = _dangerous_log_categories(combined_log)
+        dangerous = _dangerous_log_categories(safe_log)
         if dangerous:
             raise PipelineError(
                 "dcm2niix reported a blocked condition: " + ", ".join(dangerous) + "."

@@ -39,7 +39,7 @@ def preflight_issue_codes(issues) -> list[str]:
         ("DUPLICATE_PLANES", ("duplicate",)),
         ("MISSING_PLANES", ("missing-plane", "fewer than two spatial planes")),
         ("SPACING_IRREGULAR", ("spacing is nonuniform", "SpacingBetweenSlices", "PixelSpacing changes", "SliceThickness changes")),
-        ("ENCODING_UNSUPPORTED", ("transfer syntax", "TransferSyntaxUID", "non-classic-CT", "multi-frame", "photometric", "PhotometricInterpretation", "pixel encoding", "neither native CT")),
+        ("ENCODING_UNSUPPORTED", ("lossy image encoding", "transfer syntax", "TransferSyntaxUID", "non-classic-CT", "multi-frame", "photometric", "PhotometricInterpretation", "pixel encoding", "neither native CT")),
     )
     codes = []
     for issue in issues:
@@ -55,6 +55,7 @@ class PreparationQueue:
         self._stop, self._wake = threading.Event(), threading.Event()
         self._thread = None
         self._lock_file = None
+        self.last_error = None
 
     def _acquire(self) -> bool:
         path = self.app.root / "catalog-preparation.lock"
@@ -156,14 +157,27 @@ class PreparationQueue:
             return dict(row) | {"attempt": row["attempt"] + 1}
 
     def _loop(self) -> None:
+        interrupted = None
         try:
             while not self._stop.is_set():
-                job = self._claim()
-                if job is None:
-                    self._wake.wait(timeout=1)
-                    self._wake.clear()
-                    continue
-                self.process(job)
+                try:
+                    if interrupted is not None:
+                        with self.store.connect() as connection:
+                            connection.execute("UPDATE preparation_jobs SET status='queued',error_code='INTERRUPTED' WHERE id=? AND status='preparing'", (interrupted['id'],))
+                            connection.execute("UPDATE catalog_series SET preparation_status='queued',reason_code='INTERRUPTED' WHERE id=? AND preparation_status='preparing'", (interrupted['series_id'],))
+                        interrupted = None
+                    job = self._claim()
+                    if job is not None:
+                        interrupted = job
+                        self.process(job)
+                        interrupted = None
+                    self.last_error = None
+                except Exception:
+                    # Retain ownership and the durable job after a temporary
+                    # SQLite/storage failure; never leave a dead worker handle.
+                    self.last_error = 'WORKER_STORAGE'
+                self._wake.wait(timeout=1)
+                self._wake.clear()
         finally:
             if self._lock_file is not None:
                 self._lock_file.close()
@@ -191,13 +205,13 @@ class PreparationQueue:
         return None
 
     def _cohort(self, fingerprint: str, preflight):
-        path = self.catalog.config.work_root / "counting/cohort.v1.local.json"
+        path = self.catalog.work_root / "counting/cohort.v1.local.json"
         if not path.exists():
             return None
         cohort = json.loads(path.read_text(encoding="utf-8"))
         for entry in cohort["entries"]:
-            source = (self.catalog.config.work_root / entry["nifti"]).resolve()
-            if not source.is_relative_to(self.catalog.config.work_root.resolve()):
+            source = (self.catalog.work_root / entry["nifti"]).resolve()
+            if not source.is_relative_to(self.catalog.work_root.resolve()):
                 continue
             hashes = source.parent / "source_hashes.json"
             if not hashes.is_file():
@@ -241,7 +255,7 @@ class PreparationQueue:
             preflight = preflight_series(paths, row["study_uid"], row["series_uid"], profile="exploratory")
             descriptor = decode_json(row["descriptor_json"], {})
             observed_interval = preflight.grid_policy["original_median_interval_mm"] if preflight.grid_policy else preflight.slice_spacing
-            descriptor.update(spacing_mm=[*preflight.pixel_spacing, observed_interval], fitted_spacing_mm=[*preflight.pixel_spacing, preflight.slice_spacing], grid_policy=preflight.grid_policy, slice_thickness_mm=preflight.slice_thickness, source_kind=preflight.source_kind, metadata_validated=True, warnings=list(preflight.warnings))
+            descriptor.update(image_count=len(preflight.records), spacing_mm=[*preflight.pixel_spacing, observed_interval], fitted_spacing_mm=[*preflight.pixel_spacing, preflight.slice_spacing], grid_policy=preflight.grid_policy, slice_thickness_mm=preflight.slice_thickness, source_kind=preflight.source_kind, metadata_validated=True, warnings=list(preflight.warnings))
             descriptor.update(acquisition(descriptor))
             (directory / "preflight.local.json").write_text(json.dumps(preflight.safe_report(row["study_label"], row["series_label"]), indent=2), encoding="utf-8")
             existing = self._existing(row, fingerprint, preflight)
@@ -249,8 +263,8 @@ class PreparationQueue:
                 self._check_source(row, fingerprint)
                 self.catalog.link(row["id"], existing, fingerprint, "existing_verified_volume", descriptor)
             else:
-                expected_bytes = sum(path.stat().st_size for path in paths) * 3 + preflight.rows * preflight.columns * len(paths) * 8
-                if shutil.disk_usage(self.app.root).free < self.catalog.config.minimum_free_bytes + expected_bytes:
+                expected_bytes = sum(path.stat().st_size for path in paths) * 3 + preflight.rows * preflight.columns * len(preflight.records) * 8
+                if shutil.disk_usage(self.app.root).free < self.catalog.minimum_free_bytes + expected_bytes:
                     raise PreparationFailure("DISK_SPACE")
                 case_id = uuid.uuid4().hex
                 destination = self.app.root / "cases" / case_id / "volume"
@@ -267,8 +281,8 @@ class PreparationQueue:
                     proof = "verified_cohort_and_dicom_hashes"
                 else:
                     provenance = current_code_provenance(require_clean=False)
-                    result = convert_series(self.catalog.config.source_root, self.catalog.config.work_root, paths, row["study_label"], row["series_label"], self.app.dcm2niix, expected_study_uid=row["study_uid"], expected_series_uid=row["series_uid"], final_dir=destination, pipeline_provenance=provenance, require_clean_provenance=False, preflight_profile="exploratory")
-                    report = verify_conversion(self.catalog.config.source_root, self.catalog.config.work_root, paths, row["study_label"], row["series_label"], expected_study_uid=row["study_uid"], expected_series_uid=row["series_uid"], artifact_dir=destination, pipeline_provenance=provenance, require_clean_provenance=False, preflight_profile="exploratory")
+                    result = convert_series(self.catalog.source_root(row), self.catalog.work_root, paths, row["study_label"], row["series_label"], self.app.dcm2niix, expected_study_uid=row["study_uid"], expected_series_uid=row["series_uid"], final_dir=destination, pipeline_provenance=provenance, require_clean_provenance=False, preflight_profile="exploratory")
+                    report = verify_conversion(self.catalog.source_root(row), self.catalog.work_root, paths, row["study_label"], row["series_label"], expected_study_uid=row["study_uid"], expected_series_uid=row["series_uid"], artifact_dir=destination, pipeline_provenance=provenance, require_clean_provenance=False, preflight_profile="exploratory")
                     if report.get("status") != "AUTOMATED_PASS_PENDING_MANUAL" or not report.get("checks") or not all(check.get("passed") is True for check in report["checks"]):
                         raise PreparationFailure("CONVERSION_FAILED")
                     volume, proof = Path(result["nifti"]), "verified_exploratory_conversion"

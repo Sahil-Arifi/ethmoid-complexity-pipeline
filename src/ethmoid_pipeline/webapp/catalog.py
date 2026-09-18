@@ -38,6 +38,7 @@ REASONS = {
     "INTERRUPTED": "Preparation was interrupted and can be retried.",
     "CONFIGURATION": "The saved local collection configuration is unavailable or invalid.",
     "INVENTORY_INVALID": "The saved local inventory is incomplete or inconsistent.",
+    "WORKER_STORAGE": "Preparation is waiting for local storage to recover. Queued jobs are retained.",
 }
 RETRYABLE = {"SOURCE_CHANGED", "SOURCE_UNAVAILABLE", "DISK_SPACE", "CONVERSION_FAILED", "INTERRUPTED"}
 
@@ -68,7 +69,9 @@ def acquisition(metadata: dict) -> dict:
         warnings.append("Outside the clinician's thin native CT protocol; any count is an exploratory result.")
     elif resolution == "unknown":
         warnings.append("Acquisition resolution has not been established.")
-    return {"spacing_mm": spacing if valid else None, "slice_thickness_mm": thickness if thickness_valid else None, "resolution_class": resolution, "warnings": list(dict.fromkeys(warnings))}
+    return {"spacing_mm": spacing if valid else None, "slice_thickness_mm": thickness if thickness_valid else None, "resolution_class": resolution, "warnings": list(dict.fromkeys(warnings)),
+            "reconstruction_kind": metadata.get("source_kind") if metadata.get("source_kind") in {"native", "mpr"} else "unknown",
+            "kernel_class": "bone" if metadata.get("kernel") in {"BONEPLUS", "Hr68s", "Hr68f"} else "soft" if metadata.get("kernel") == "STANDARD" else "unknown"}
 
 
 def safe_descriptor(summary: dict) -> dict:
@@ -106,18 +109,22 @@ class CatalogService:
         self._thread.start()
 
     def _startup(self) -> None:
+        enqueue_all = False
         try:
             if self.config is None:
                 self.config = load_local_config(self.app.root)
-            if self.config is None:
-                return
-            self.sync()
-            if not self._stop.is_set():
-                from .catalog_queue import PreparationQueue
-                self._queue = PreparationQueue(self)
-                self._queue.start(enqueue_all=self.config.auto_prepare)
+            if self.config is not None:
+                self.sync()
+                enqueue_all = self.config.auto_prepare
+            else:
+                self._status = "ready"
         except Exception:
             self._status, self._error = "error", "CONFIGURATION"
+        # An unavailable default collection must not disable valid new uploads.
+        if not self._stop.is_set():
+            from .catalog_queue import PreparationQueue
+            self._queue = PreparationQueue(self)
+            self._queue.start(enqueue_all=enqueue_all)
 
     def close(self) -> None:
         self._stop.set()
@@ -132,8 +139,23 @@ class CatalogService:
         self.config.validate(self.app.root)
         return self.config.source_root.resolve()
 
+    @property
+    def work_root(self) -> Path:
+        return self.config.work_root if self.config else self.app.root
+
+    @property
+    def minimum_free_bytes(self) -> int:
+        return self.config.minimum_free_bytes if self.config else 2 * 1024 ** 3
+
+    def source_root(self, row) -> Path:
+        with self.store.connect() as connection:
+            source = connection.execute("SELECT src.root_path FROM catalog_series s JOIN catalog_studies t ON t.id=s.study_id LEFT JOIN catalog_series_sources ss ON ss.series_id=s.id JOIN catalog_sources src ON src.id=COALESCE(ss.source_id,t.source_id) WHERE s.id=?", (row["id"],)).fetchone()
+        if source is None:
+            raise ValueError("SOURCE_UNAVAILABLE")
+        return Path(source[0]).resolve(strict=True)
+
     def files(self, row) -> list[Path]:
-        root = self._source()
+        root = self.source_root(row)
         values = decode_json(row["files_json"], [])
         if not values or len(values) != len(set(values)):
             raise ValueError("INVENTORY_INVALID")
@@ -167,12 +189,12 @@ class CatalogService:
                 source = connection.execute("SELECT id FROM catalog_sources WHERE root_path=?", (str(root),)).fetchone()
                 source_id = source[0] if source else uuid.uuid4().hex
                 connection.execute("INSERT INTO catalog_sources(id,root_path,inventory_sha256,status,updated_at) VALUES(?,?,?,'indexing',?) ON CONFLICT(root_path) DO UPDATE SET inventory_sha256=excluded.inventory_sha256,status='indexing',error_code=NULL,updated_at=excluded.updated_at", (source_id, str(root), sha256_file(inventory_dir / "inventory.redacted.json"), now))
-                connection.execute("UPDATE catalog_series SET present=0 WHERE study_id IN (SELECT id FROM catalog_studies WHERE source_id=?)", (source_id,))
+                connection.execute("UPDATE catalog_series SET present=0 WHERE study_id IN (SELECT id FROM catalog_studies WHERE source_id=?) AND id NOT IN (SELECT series_id FROM catalog_series_sources)", (source_id,))
                 for study in mapping["cases"]:
                     row = connection.execute("SELECT * FROM catalog_studies WHERE source_id=? AND study_uid=?", (source_id, study["study_uid"])).fetchone()
                     study_id = row["id"] if row else uuid.uuid4().hex
                     if row is None:
-                        used = {r[0] for r in connection.execute("SELECT study_label FROM catalog_studies WHERE source_id=?", (source_id,))}
+                        used = {r[0] for r in connection.execute("SELECT study_label FROM catalog_studies")}
                         label = self._label(study["case"], used, "Case")
                         connection.execute("INSERT INTO catalog_studies(id,source_id,study_uid,study_label) VALUES(?,?,?,?)", (study_id, source_id, study["study_uid"], label))
                     for series in study["series"]:
@@ -192,7 +214,11 @@ class CatalogService:
                                 stats.append((name, stat.st_size, stat.st_mtime_ns))
                             except OSError:
                                 stats.append((name, None, None))
-                        signature = sha256_canonical_json({"files": stats, "metadata": metadata})
+                        # The inventory signature is a frozen source-change contract.
+                        # Additive display/profile fields must not invalidate old
+                        # verified volumes when the underlying DICOM is unchanged.
+                        signature_metadata = {key: value for key, value in metadata.items() if key not in {"reconstruction_kind", "kernel_class"}}
+                        signature = sha256_canonical_json({"files": stats, "metadata": signature_metadata})
                         old = connection.execute("SELECT * FROM catalog_series WHERE study_id=? AND series_uid=?", (study_id, series["series_uid"])).fetchone()
                         if old is None:
                             used = {r[0] for r in connection.execute("SELECT series_label FROM catalog_series WHERE study_id=?", (study_id,))}
@@ -204,7 +230,7 @@ class CatalogService:
                             connection.execute("UPDATE preparation_jobs SET status='obsolete' WHERE series_id=? AND status IN ('queued','preparing')", (old["id"],))
                         else:
                             connection.execute("UPDATE catalog_series SET present=1 WHERE id=?", (old["id"],))
-                connection.execute("UPDATE catalog_series SET preparation_status='unavailable',reason_code='SOURCE_MISSING',case_id=NULL WHERE present=0")
+                connection.execute("UPDATE catalog_series SET preparation_status='unavailable',reason_code='SOURCE_MISSING',case_id=NULL WHERE present=0 AND study_id IN (SELECT id FROM catalog_studies WHERE source_id=?)", (source_id,))
                 connection.execute("UPDATE catalog_sources SET status='ready',updated_at=? WHERE id=?", (now, source_id))
             self.link_existing(mapping)
             self.refresh_recommendations()
@@ -293,7 +319,7 @@ class CatalogService:
                         continue
                     descriptor = decode_json(row["descriptor_json"], {})
                     observed_interval = preflight.grid_policy["original_median_interval_mm"] if preflight.grid_policy else preflight.slice_spacing
-                    descriptor.update(spacing_mm=[*preflight.pixel_spacing, observed_interval], fitted_spacing_mm=[*preflight.pixel_spacing, preflight.slice_spacing], grid_policy=preflight.grid_policy, slice_thickness_mm=preflight.slice_thickness, source_kind=preflight.source_kind, metadata_validated=True, warnings=list(preflight.warnings))
+                    descriptor.update(image_count=len(preflight.records), spacing_mm=[*preflight.pixel_spacing, observed_interval], fitted_spacing_mm=[*preflight.pixel_spacing, preflight.slice_spacing], grid_policy=preflight.grid_policy, slice_thickness_mm=preflight.slice_thickness, source_kind=preflight.source_kind, metadata_validated=True, warnings=list(preflight.warnings))
                     descriptor.update(acquisition(descriptor))
                     self.link(row["id"], case["id"], expected, proof, descriptor)
                 except Exception:
@@ -324,19 +350,21 @@ class CatalogService:
 
     def _summary(self, row, recommended: str | None) -> dict:
         metadata = decode_json(row["descriptor_json"], {})
-        count_status, counts = "not_run", None
+        count_status, counts, count_outcome = "not_run", None, None
         if row["case_id"]:
             with self.store.connect() as connection:
                 run = connection.execute("SELECT * FROM count_runs WHERE case_id=? ORDER BY created_at DESC,id DESC LIMIT 1", (row["case_id"],)).fetchone()
                 if run:
                     count_status = run["status"]
+                    job = connection.execute("SELECT outcome FROM count_jobs WHERE run_id=?", (run["id"],)).fetchone()
+                    count_outcome = job["outcome"] if job else None
                     if run["status"] == "completed":
                         result = decode_json(run["original_result_json"], {})
                         if run["latest_revision"]:
                             revision = connection.execute("SELECT result_json FROM cell_revisions WHERE run_id=? AND revision=?", (run["id"], run["latest_revision"])).fetchone()
                             result = decode_json(revision[0], {}) if revision else {}
                         counts = result.get("counts")
-        return {"series_id": row["id"], "series_label": row["series_label"], "case_id": row["case_id"], "preparation_status": row["preparation_status"], "reason": REASONS.get(row["reason_code"]), "retryable": row["reason_code"] in RETRYABLE, **{key:metadata.get(key) for key in ("spacing_mm", "slice_thickness_mm", "image_count", "kernel", "source_kind", "resolution_class")}, "warnings": metadata.get("warnings", []), "recommended": row["id"] == recommended, "count_status": count_status, "counts": counts}
+        return {"series_id": row["id"], "series_label": row["series_label"], "case_id": row["case_id"], "preparation_status": row["preparation_status"], "reason": REASONS.get(row["reason_code"]), "retryable": row["reason_code"] in RETRYABLE, **{key:metadata.get(key) for key in ("spacing_mm", "slice_thickness_mm", "image_count", "kernel", "source_kind", "resolution_class")}, "warnings": metadata.get("warnings", []), "recommended": row["id"] == recommended, "count_status": count_status, "count_outcome": count_outcome, "counts": counts}
 
     def study(self, study_id: str) -> dict:
         with self.store.connect() as connection:
@@ -351,7 +379,8 @@ class CatalogService:
             counts = dict(connection.execute("SELECT preparation_status,COUNT(*) FROM catalog_series GROUP BY preparation_status").fetchall())
             studies = connection.execute("SELECT COUNT(*) FROM catalog_studies").fetchone()[0]
         status = "preparing" if self._status != "error" and counts.get("queued", 0) + counts.get("preparing", 0) else self._status
-        return {"status": status, "reason": REASONS.get(self._error), "total_studies": studies, "total_series": sum(counts.values()), **{key:counts.get(key, 0) for key in ("not_prepared", "queued", "preparing", "ready", "unavailable")}}
+        worker_error = self._queue.last_error if self._queue is not None else None
+        return {"status": status, "reason": REASONS.get(self._error or worker_error), "worker_error": worker_error, "total_studies": studies, "total_series": sum(counts.values()), **{key:counts.get(key, 0) for key in ("not_prepared", "queued", "preparing", "ready", "unavailable")}}
 
     def list_studies(self) -> dict:
         with self.store.connect() as connection:

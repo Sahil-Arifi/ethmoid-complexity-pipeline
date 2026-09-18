@@ -20,6 +20,8 @@ from .counting_service import CountingService
 from .counting_routes import counting_router
 from .catalog import CatalogService
 from .catalog_routes import catalog_router
+from .upload_service import UploadService
+from .upload_routes import upload_router
 
 
 MAX_UPLOAD_BYTES = 4 * 1024 * 1024 * 1024
@@ -79,11 +81,14 @@ def create_app(*, work_root: Path | None = None, dcm2niix: Path | None = None) -
     service = AppService(work_root=work_root, dcm2niix=dcm2niix)
     counting = CountingService(service)
     catalog = CatalogService(service)
+    uploads = UploadService(service, catalog, counting.create_run)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
         catalog.start()
+        uploads.start()
         yield
+        uploads.close()
         catalog.close()
         counting.close()
 
@@ -96,16 +101,19 @@ def create_app(*, work_root: Path | None = None, dcm2niix: Path | None = None) -
     app.state.ethmoid_service = service
     app.state.counting_service = counting
     app.state.catalog_service = catalog
+    app.state.uploads = uploads
     app.include_router(counting_router(counting))
     app.include_router(catalog_router(catalog))
+    app.include_router(upload_router(uploads))
 
     @app.exception_handler(WebAppError)
     async def webapp_error_handler(_request: Request, exc: WebAppError) -> JSONResponse:
         return JSONResponse(status_code=exc.status_code, content={"detail": str(exc)})
 
     @app.get("/api/health")
-    def health() -> dict[str, str]:
-        return {"status": "ok"}
+    def health() -> dict[str, str | None]:
+        return {"status": "degraded" if counting._queue.last_error else "ok",
+                "count_worker_error": counting._queue.last_error}
 
     @app.get("/api/protocol")
     def protocol() -> dict[str, object]:

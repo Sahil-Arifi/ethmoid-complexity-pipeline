@@ -22,6 +22,7 @@ EXACT_ALLOWED = {
     "SECURITY.md",
     "pyproject.toml",
     "requirements.lock",
+    "requirements-build.in",
     "inference-requirements.in",
     "inference-requirements.lock",
     "counting-tests.in",
