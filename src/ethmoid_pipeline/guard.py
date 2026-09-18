@@ -30,6 +30,7 @@ EXACT_ALLOWED = {
     "src/ethmoid_pipeline/counting/protocol.json",
     "src/ethmoid_pipeline/counting/protocol.v1.json",
     "src/ethmoid_pipeline/counting/protocol.v3.json",
+    "src/ethmoid_pipeline/counting/protocol.research.v4.json",
     "src/ethmoid_pipeline/webapp/protocol.v1.json",
     "src/ethmoid_pipeline/webapp/protocol.v2.draft.json",
     "tools.lock.json",

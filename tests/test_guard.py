@@ -24,6 +24,18 @@ def _dicom_blob() -> bytes:
     return b"\x00" * 128 + b"DICM" + b"synthetic-only"
 
 
+def test_research_protocol_path_still_checks_medical_content(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    path = repo / "src/ethmoid_pipeline/counting/protocol.research.v4.json"
+    path.parent.mkdir(parents=True)
+    path.write_text('{"protocol_version": "ethmoid-count-research-v4"}', encoding="utf-8")
+    _git(repo, "add", ".")
+    assert scan_staged(repo) == []
+    path.write_bytes(_dicom_blob())
+    _git(repo, "add", ".")
+    assert any("DICOM" in failure for failure in scan_staged(repo))
+
+
 def test_guard_reads_staged_blob_not_worktree(tmp_path: Path) -> None:
     repo = _repo(tmp_path)
     path = repo / "src" / "safe.py"

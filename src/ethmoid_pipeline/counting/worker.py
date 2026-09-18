@@ -16,7 +16,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--landmarks", type=Path)
     parser.add_argument("--config", type=Path)
     parser.add_argument("--acquisition", type=Path, help="Server-created source-bound acquisition snapshot; never derived from voxel spacing.")
-    parser.add_argument("--method", choices=("v2", "adaptive-v3"), default="v2")
+    parser.add_argument("--method", choices=("v2", "adaptive-v3", "research-v4"), default="v2")
     parser.add_argument("--assistance", type=Path, help="Server-created immutable source-bound boundary revision.")
     parser.add_argument("--processing-plan", type=Path)
     parser.add_argument("--progress", type=Path, help="Protected atomic stage snapshot.")
@@ -25,7 +25,14 @@ def main(argv: list[str] | None = None) -> int:
     try:
         configuration = json.loads(args.config.read_text(encoding="utf-8")) if args.config else None
         acquisition = json.loads(args.acquisition.read_text(encoding="utf-8")) if args.acquisition else None
-        if args.method == "adaptive-v3":
+        if args.method == "research-v4":
+            if args.assistance or args.model_manifest:
+                raise CountingError("INVALID_CONFIG", "The research-v4 experiment does not accept assisted or direct-model membership.")
+            from .research import analyze_research_volume
+            plan = json.loads(args.processing_plan.read_text(encoding="utf-8")) if args.processing_plan else None
+            result = analyze_research_volume(args.input, args.output, args.landmarks, configuration,
+                acquisition=acquisition, processing_plan=plan, progress_path=args.progress)
+        elif args.method == "adaptive-v3":
             from .adaptive import analyze_adaptive_volume
             assistance = json.loads(args.assistance.read_text(encoding="utf-8")) if args.assistance else None
             plan = json.loads(args.processing_plan.read_text(encoding="utf-8")) if args.processing_plan else None

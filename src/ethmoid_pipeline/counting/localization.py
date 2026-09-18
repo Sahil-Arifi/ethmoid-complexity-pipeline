@@ -41,14 +41,19 @@ class Localization:
     warnings: list[str]
 
 
-def localize_native(hu: np.ndarray, affine: np.ndarray, masks: dict[str, np.ndarray], config: CountingConfig, plan: dict) -> Localization:
+def localize_native(hu: np.ndarray, affine: np.ndarray, masks: dict[str, np.ndarray], config: CountingConfig, plan: dict, *, localization_policy: dict | None = None, diagnostics: dict | None = None) -> Localization:
     """Map anatomical membership back before any cavity or air classification."""
+    options = {}
+    if localization_policy is not None:
+        options["localization_policy"] = localization_policy
+    if diagnostics is not None:
+        options["diagnostics"] = diagnostics
     if plan["mode"] == "native_axis_aligned":
-        return automatic_region(hu, affine, masks, config)
+        return automatic_region(hu, affine, masks, config, **options)
     from .grids import anatomy_proxy, resample
 
     proxy_hu, proxy_affine, proxy_masks, valid = anatomy_proxy(hu, affine, masks, plan)
-    localized = automatic_region(proxy_hu, proxy_affine, proxy_masks, config)
+    localized = automatic_region(proxy_hu, proxy_affine, proxy_masks, config, **options)
     if np.any(localized.region & (~valid | ndi.binary_dilation(~valid))):
         raise CountingError("TARGET_CLIPPED", "The anatomical proxy reaches the acquired source field-of-view boundary.")
 
@@ -408,13 +413,28 @@ def _closed_nasal_pockets(nasal: np.ndarray, bone: np.ndarray, brain: np.ndarray
     return (labels > 0) & ~np.isin(labels, open_ids)
 
 
-def _sphenoid_boundary(hu: np.ndarray, bone: np.ndarray, enclosed: np.ndarray, nasal: np.ndarray, nerves: np.ndarray, eye_bounds: tuple[np.ndarray, np.ndarray], floor: int, spacing: np.ndarray, midline: float) -> tuple[np.ndarray, np.ndarray]:
+def _sphenoid_boundary(hu: np.ndarray, bone: np.ndarray, enclosed: np.ndarray, nasal: np.ndarray, nerves: np.ndarray, eye_bounds: tuple[np.ndarray, np.ndarray], floor: int, spacing: np.ndarray, midline: float, *, localization_policy: dict | None = None, diagnostics: dict | None = None) -> tuple[np.ndarray, np.ndarray]:
     """Select posterior central bone-enclosed sinus parent, including opacity.
 
     Candidates must lie posterior to the optic-nerve centroid, beneath their
     superior extent, contact the midline neighborhood, and have an anterior
     bony wall. This is a provisional anatomical heuristic, not a learned label.
     """
+    if localization_policy is not None and (
+        not isinstance(localization_policy, dict)
+        or set(localization_policy) != {"sphenoid_seed_clearance_mm", "physical_ray_extent"}
+        or type(localization_policy["sphenoid_seed_clearance_mm"]) not in (int, float)
+        or localization_policy["sphenoid_seed_clearance_mm"] != 1.0
+        or localization_policy["physical_ray_extent"] is not True
+    ):
+        raise CountingError("INVALID_CONFIG", "The research sphenoid localization policy is unsupported.")
+    # The research setting affects a localization seed only. It does not alter
+    # native cell enclosure, separator support, or accepted-count coverage.
+    clearance = 1.0 if localization_policy is not None else max(1.0, float(spacing.max()) * 2)
+    diagnostic = {}
+    if diagnostics is not None:
+        diagnostics["sphenoid"] = diagnostic
+        diagnostic.update(seed_clearance_mm=clearance, spacing_mm=spacing.tolist())
     _, eye_hi = eye_bounds
     nerve_points = np.where(nerves)
     cutoff_y = int(np.median(nerve_points[1]))
@@ -450,6 +470,8 @@ def _sphenoid_boundary(hu: np.ndarray, bone: np.ndarray, enclosed: np.ndarray, n
         # superior/lateral smaller compartments are retained for Onodi review.
         score = size * support
         choices.append((score, label, anterior))
+    if diagnostics is not None:
+        diagnostic.update(search_voxels=int(search.sum()), connected_candidates=int(n), eligible_candidates=len(choices))
     if not choices:
         raise CountingError("SPHENOID_UNRESOLVED", "A bone-supported posterior sphenoid boundary could not be established automatically.")
     choices.sort(reverse=True)
@@ -458,22 +480,33 @@ def _sphenoid_boundary(hu: np.ndarray, bone: np.ndarray, enclosed: np.ndarray, n
         raise CountingError("SPHENOID_AMBIGUOUS", "Competing posterior compartments give incompatible sphenoid boundaries.")
     parent_seed = connected == label
     interior_distance = ndi.distance_transform_edt(parent_seed, sampling=spacing)
-    interior_seed = parent_seed & (interior_distance >= max(1.0, float(spacing.max()) * 2))
+    interior_seed = parent_seed & (interior_distance >= clearance)
+    if diagnostics is not None:
+        diagnostic.update(parent_voxels=int(parent_seed.sum()), available_interior_radius_mm=float(interior_distance.max()),
+                          interior_seed_voxels=int(interior_seed.sum()), seed_columns=int(interior_seed.any(axis=1).sum()))
     if not interior_seed.any():
         raise CountingError("SPHENOID_UNRESOLVED", "The posterior sinus candidate has no spatially resolved interior.")
     wall = np.zeros((hu.shape[0], hu.shape[2]), dtype=np.int32)
     valid = np.zeros(wall.shape, dtype=bool)
     # A seed quantile is not a bony wall. Follow the lumen anteriorly to actual
     # native bone on each supported column, with an anatomy-scaled search limit.
-    limit_y = int(np.median(np.where(nerves)[1]) + eye_width * 0.25)
+    ray_extent_voxels = eye_width * 0.25
+    if localization_policy is not None:
+        ray_extent_voxels *= spacing[0] / spacing[1]
+    limit_y = int(np.median(np.where(nerves)[1]) + ray_extent_voxels)
     limit_y = min(limit_y, hu.shape[1] - 1)
+    if diagnostics is not None:
+        diagnostic.update(ray_search_extent_mm=float(ray_extent_voxels * spacing[1]),
+                          clipped_ray_search_extent_mm=float((limit_y - np.median(nerve_points[1])) * spacing[1]))
     # Smoothing is used only to estimate a surface normal, never to change the
     # HU volume or manufacture a counted septum.
     normal_image = ndi.gaussian_filter(hu, sigma=0.5 / spacing)
+    bone_hit_rays = 0
     for xx, zz in zip(*np.where(interior_seed.any(axis=1))):
         start = int(np.flatnonzero(interior_seed[xx, :, zz]).max())
         hits = np.flatnonzero(bone[xx, start:limit_y + 1, zz])
         if hits.size:
+            bone_hit_rays += 1
             hit = start + int(hits[0])
             if xx < 1 or zz < 1 or xx >= hu.shape[0] - 1 or zz >= hu.shape[2] - 1 or hit < 2:
                 continue
@@ -484,6 +517,9 @@ def _sphenoid_boundary(hu: np.ndarray, bone: np.ndarray, enclosed: np.ndarray, n
                 continue
             wall[xx, zz] = hit
             valid[xx, zz] = True
+    if diagnostics is not None:
+        diagnostic.update(bone_hit_rays=bone_hit_rays, supported_wall_rays=int(valid.sum()),
+                          required_wall_rays=float(max(12, interior_seed.any(axis=1).sum() * 0.5)))
     if valid.sum() < max(12, interior_seed.any(axis=1).sum() * 0.5):
         raise CountingError("SPHENOID_UNRESOLVED", "The posterior sinus candidate lacks a supported anterior bony wall.")
     size = (max(1, int(np.ceil(2 / spacing[0]))), max(1, int(np.ceil(2 / spacing[2]))))
@@ -493,7 +529,7 @@ def _sphenoid_boundary(hu: np.ndarray, bone: np.ndarray, enclosed: np.ndarray, n
     return parent, wall[:, None, :]
 
 
-def automatic_region(hu: np.ndarray, affine: np.ndarray, masks: dict[str, np.ndarray], config: CountingConfig) -> Localization:
+def automatic_region(hu: np.ndarray, affine: np.ndarray, masks: dict[str, np.ndarray], config: CountingConfig, *, localization_policy: dict | None = None, diagnostics: dict | None = None) -> Localization:
     spacing = geometry(affine)
     if nib.aff2axcodes(affine) != ("R", "A", "S"):
         raise CountingError("LOCALIZATION_ORIENTATION", "Automatic localization requires a canonical RAS view of the source grid.")
@@ -538,7 +574,12 @@ def automatic_region(hu: np.ndarray, affine: np.ndarray, masks: dict[str, np.nda
     envelope = _near(nasal, eye_radius_mm * 1.25, spacing) & (z >= floor) & below_roof
     enclosed = coronal_holes | axial_holes
     skull_core = ndi.binary_erosion(masks["skull"], iterations=1) & (hu > -100)
-    sphenoid, posterior_y = _sphenoid_boundary(hu, bone, enclosed & ~skull_core & ~brain, nasal, nerves, (lo, hi), floor, spacing, midline)
+    options = {}
+    if localization_policy is not None:
+        options["localization_policy"] = localization_policy
+    if diagnostics is not None:
+        options["diagnostics"] = diagnostics
+    sphenoid, posterior_y = _sphenoid_boundary(hu, bone, enclosed & ~skull_core & ~brain, nasal, nerves, (lo, hi), floor, spacing, midline, **options)
     nasal_anterior = int(np.quantile(np.where(nasal)[1], 0.97))
     frontal = masks["sinus_frontal"]
     if frontal.any():
