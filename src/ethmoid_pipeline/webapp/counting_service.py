@@ -133,6 +133,18 @@ class CountingService:
         if checker is not None:
             checker(case_id)
 
+    def _validate_automatic_retry_parent(self, case_id: str, parent_run_id: str,
+                                         source_sha256: str, connection: Any | None = None) -> None:
+        if connection is None:
+            with self.store.connect() as connection:
+                return self._validate_automatic_retry_parent(case_id, parent_run_id, source_sha256, connection)
+        parent = self._run(case_id, parent_run_id, connection)
+        job = connection.execute("SELECT assistance_id FROM count_jobs WHERE run_id=?", (parent_run_id,)).fetchone()
+        parent_protocol = decode_json(parent["protocol_json"], {})
+        if (parent["status"] != "failed" or parent["source_sha256"] != source_sha256 or
+            (job is not None and job["assistance_id"] is not None) or parent_protocol.get("assistance") is not None):
+            raise _error("An automatic retry requires a failed automatic parent from the same source.", 409)
+
     def create_run(self, case_id: str, idempotency_key: str | None = None, *, boundary_id: str | None = None,
                    parent_run_id: str | None = None) -> dict[str, Any]:
         if self._closed.is_set():
@@ -183,6 +195,8 @@ class CountingService:
             current_case = self.app._get_case_row(connection, case_id)
             if current_case["state"] == "APPROVED":
                 raise _error("Approved cases cannot start new count runs.", 409)
+            if boundary_id is None and parent_run_id is not None:
+                self._validate_automatic_retry_parent(case_id, parent_run_id, case["source_sha256"], connection)
             existing = None
             if idempotency_key is not None:
                 existing = connection.execute(
@@ -196,9 +210,10 @@ class CountingService:
                 ).fetchone()
             if existing is not None:
                 run_id = existing["id"]
-                job = connection.execute("SELECT assistance_id FROM count_jobs WHERE run_id=?", (run_id,)).fetchone()
-                if (job["assistance_id"] if job else None) != boundary_id:
-                    raise _error("Another counting request with different assistance is already present.", 409)
+                job = connection.execute("SELECT assistance_id,parent_run_id FROM count_jobs WHERE run_id=?", (run_id,)).fetchone()
+                if ((job["assistance_id"] if job else None) != boundary_id or
+                    (job["parent_run_id"] if job else None) != parent_run_id):
+                    raise _error("Another counting request with different assistance or parent is already present.", 409)
             else:
                 connection.execute(
                     "INSERT INTO count_runs(id,case_id,idempotency_key,status,source_sha256,"
@@ -488,8 +503,11 @@ class CountingService:
             raise _error('The adaptive assistance authority differs from the queued job.')
         actual = result.get('assistance')
         if assistance is None:
-            if actual is not None or job['parent_run_id'] is not None:
+            if actual is not None:
                 raise _error('An automatic result cannot acquire assistance lineage.')
+            # A failed automatic attempt is retry provenance, not assistance.
+            if job['parent_run_id'] is not None:
+                self._validate_automatic_retry_parent(row['case_id'], job['parent_run_id'], row['source_sha256'])
         else:
             fixed = {key: assistance[key] for key in ('schema_version', 'source_sha256', 'revision_id', 'parent_run_id', 'region_sha256')}
             fixed['exclusion_sha256'] = assistance.get('exclusion_sha256')
