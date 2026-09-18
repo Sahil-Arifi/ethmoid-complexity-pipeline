@@ -1,4 +1,4 @@
-"""Independent read-only audit of a complete research-v4 development batch.
+"""Independent read-only audit of a complete research-v4 or opt-in v5 batch.
 
 Never invokes inference or alters evaluations. The optional new protected report
 contains aggregate measurements and hash bindings, not patient-level results.
@@ -27,6 +27,8 @@ def _module(name, filename):
 
 prior = _module("_research_audit_native_checks", "audit_adaptive_evaluation.py")
 runner = _module("_research_audit_policy_helpers", "evaluate_research_catalog.py")
+runner_v5 = _module("_research_v5_audit_policy_helpers", "evaluate_research_v5_catalog.py")
+RUNNERS = {4: runner, 5: runner_v5}
 checks, require, identity, bound_hash = prior.checks, prior.require, prior.identity, prior.bound_hash
 SCOPE = prior.SCOPE
 
@@ -130,13 +132,16 @@ def _cache_bindings(entry, attempt, folder, baseline, source, work, runtime):
 
 def audit(*, work_root, pipeline_root, runtime_python, manifest, evaluation, expected_code_sha,
           expected_manifest_sha256, expected_protocol_sha256, expected_studies=26, expected_series=230,
-          expected_ready=98):
+          expected_ready=98, generation=4):
+    require(type(generation) is int and generation in RUNNERS, "AUDIT_RESEARCH_GENERATION_UNSUPPORTED")
+    runner = RUNNERS[generation]
+    runner_name = "evaluate_research_catalog.py" if generation == 4 else "evaluate_research_v5_catalog.py"
     work = work_root.resolve(strict=True)
     protected = (Path(os.environ["LOCALAPPDATA"]) / "EthmoidComplexity/work").resolve(strict=True)
     require(work == protected, "PROTECTED_WORK_ROOT_REQUIRED")
     directory = checks.contained(evaluation, work)
     if not (directory / "summary.local.json").is_file():
-        return {"schema_version": 1, "status": "incomplete", "failure_code": "AUDIT_EVALUATION_NOT_FINISHED",
+        return {"schema_version": 1, "status": "incomplete", "research_generation": generation, "failure_code": "AUDIT_EVALUATION_NOT_FINISHED",
                 "finished_attempt_records": sum(1 for _ in directory.glob("*/attempt.local.json")),
                 "expected_attempts": expected_ready, "accuracy_measured": False}
     pipeline = pipeline_root.resolve(strict=True)
@@ -153,14 +158,14 @@ def audit(*, work_root, pipeline_root, runtime_python, manifest, evaluation, exp
     require(provenance.get("manifest_sha256") == expected_manifest_sha256, "AUDIT_MANIFEST_CHANGED")
     code = checks.code_provenance(pipeline, require_clean=True)
     require(code == provenance.get("code") and code["git_commit"] == expected_code_sha, "AUDIT_FROZEN_CODE_CHANGED")
-    protocol_path = bound_hash(pipeline / "src/ethmoid_pipeline/counting/protocol.research.v4.json", expected_protocol_sha256, root=pipeline)
+    protocol_path = bound_hash(pipeline / f"src/ethmoid_pipeline/counting/protocol.research.v{generation}.json", expected_protocol_sha256, root=pipeline)
     protocol = checks.read_json(protocol_path)
     require(protocol.get("protocol_version") == runner.PROTOCOL and provenance.get("protocol_sha256") == expected_protocol_sha256
             and protocol == checks.read_json(directory / "protocol.local.json"), "AUDIT_PROTOCOL_CHANGED")
     script_hashes = {name: checks.sha256(pipeline / "scripts" / name) for name in
-                     ("evaluate_research_catalog.py", "evaluate_adaptive_catalog.py", "evaluate_counting_cohort.py")}
+                     (runner_name, "evaluate_adaptive_catalog.py", "evaluate_counting_cohort.py")}
     require(script_hashes == provenance.get("evaluator_dependencies") and
-            script_hashes["evaluate_research_catalog.py"] == provenance.get("evaluator_sha256"), "AUDIT_EVALUATOR_CHANGED")
+            script_hashes[runner_name] == provenance.get("evaluator_sha256"), "AUDIT_EVALUATOR_CHANGED")
     # Low-level audit helpers must match the frozen runner helpers they check.
     for name in script_hashes:
         require(checks.sha256(Path(__file__).with_name(name)) == script_hashes[name], "AUDIT_HELPER_VERSION_MISMATCH")
@@ -261,7 +266,7 @@ def audit(*, work_root, pipeline_root, runtime_python, manifest, evaluation, exp
             and all(checks.sha256(path) == attempts_hashes[path.parent.name] for path in expected_paths), "AUDIT_INPUT_CHANGED_DURING_AUDIT")
     for relative, digest in baseline_info["sha256"].items():
         bound_hash(baseline_dir / relative, digest, root=baseline_dir)
-    return {"schema_version": 1, "status": "verified", "accuracy_measured": False,
+    return {"schema_version": 1, "status": "verified", "research_generation": generation, "accuracy_measured": False,
             "clinical_validation": "pending_independent_expert_references",
             "coverage": {"studies": expected_studies, "series": expected_series, "unique_sources": len(seen_paths), "unique_attempts": len(attempts), "unavailable": len(unavailable)},
             "bindings": {"code_sha": expected_code_sha, "manifest_sha256": expected_manifest_sha256,
@@ -289,6 +294,7 @@ def main(argv=None):
     for name, default in (("studies", 26), ("series", 230), ("ready", 98)):
         parser.add_argument("--expected-" + name, type=int, default=default)
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--generation", type=int, choices=(4, 5), default=4)
     args = vars(parser.parse_args(argv))
     output = args.pop("output")
     try:
@@ -304,7 +310,7 @@ def main(argv=None):
             checks.write_new_json(output, report)
         print(json.dumps(report, sort_keys=True, allow_nan=False))
         return 0 if report["status"] == "verified" else 3
-    except (checks.EvaluationError, runner.checks.EvaluationError) as error:
+    except (checks.EvaluationError, runner.checks.EvaluationError, runner_v5.checks.EvaluationError) as error:
         print(json.dumps({"status": "failed", "failure_code": str(error)}))
         return 2
     except (OSError, ValueError, KeyError, TypeError, nib.filebasedimages.ImageFileError):

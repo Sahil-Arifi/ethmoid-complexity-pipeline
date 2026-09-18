@@ -420,21 +420,35 @@ def _sphenoid_boundary(hu: np.ndarray, bone: np.ndarray, enclosed: np.ndarray, n
     superior extent, contact the midline neighborhood, and have an anterior
     bony wall. This is a provisional anatomical heuristic, not a learned label.
     """
-    if localization_policy is not None and (
-        not isinstance(localization_policy, dict)
-        or set(localization_policy) != {"sphenoid_seed_clearance_mm", "physical_ray_extent"}
-        or type(localization_policy["sphenoid_seed_clearance_mm"]) not in (int, float)
-        or localization_policy["sphenoid_seed_clearance_mm"] != 1.0
-        or localization_policy["physical_ray_extent"] is not True
-    ):
+    v4_policy = isinstance(localization_policy, dict) and (
+        set(localization_policy) == {"sphenoid_seed_clearance_mm", "physical_ray_extent"}
+        and type(localization_policy["sphenoid_seed_clearance_mm"]) in (int, float)
+        and localization_policy["sphenoid_seed_clearance_mm"] == 1.0
+        and localization_policy["physical_ray_extent"] is True
+    )
+    v5_policy = isinstance(localization_policy, dict) and (
+        set(localization_policy) == {"sphenoid_seed_mode", "sphenoid_fallback_clearance_mm",
+                                    "fallback_requires_max_spacing_gt_mm", "physical_ray_extent"}
+        and localization_policy["sphenoid_seed_mode"] == "preserve_legacy_then_thick_empty_fallback"
+        and type(localization_policy["sphenoid_fallback_clearance_mm"]) in (int, float)
+        and localization_policy["sphenoid_fallback_clearance_mm"] == 1.0
+        and type(localization_policy["fallback_requires_max_spacing_gt_mm"]) in (int, float)
+        and localization_policy["fallback_requires_max_spacing_gt_mm"] == 1.0
+        and localization_policy["physical_ray_extent"] is True
+    )
+    if localization_policy is not None and not (v4_policy or v5_policy):
         raise CountingError("INVALID_CONFIG", "The research sphenoid localization policy is unsupported.")
     # The research setting affects a localization seed only. It does not alter
     # native cell enclosure, separator support, or accepted-count coverage.
-    clearance = 1.0 if localization_policy is not None else max(1.0, float(spacing.max()) * 2)
+    clearance = 1.0 if v4_policy else max(1.0, float(spacing.max()) * 2)
     diagnostic = {}
     if diagnostics is not None:
         diagnostics["sphenoid"] = diagnostic
         diagnostic.update(seed_clearance_mm=clearance, spacing_mm=spacing.tolist())
+        if v5_policy:
+            diagnostic.update(initial_seed_clearance_mm=clearance, chosen_seed_clearance_mm=clearance,
+                seed_spacing_reference="current_anatomical_localization_grid",
+                seed_fallback_used=False, seed_fallback_reason="legacy_seed_not_yet_evaluated")
     _, eye_hi = eye_bounds
     nerve_points = np.where(nerves)
     cutoff_y = int(np.median(nerve_points[1]))
@@ -481,6 +495,20 @@ def _sphenoid_boundary(hu: np.ndarray, bone: np.ndarray, enclosed: np.ndarray, n
     parent_seed = connected == label
     interior_distance = ndi.distance_transform_edt(parent_seed, sampling=spacing)
     interior_seed = parent_seed & (interior_distance >= clearance)
+    if v5_policy:
+        initial_size = int(interior_seed.sum())
+        if initial_size:
+            reason = "legacy_seed_supported"
+        elif float(spacing.max()) > 1.0:
+            clearance = 1.0
+            interior_seed = parent_seed & (interior_distance >= clearance)
+            reason = "legacy_seed_empty_thick_grid"
+        else:
+            reason = "legacy_seed_empty_thin_grid"
+        if diagnostics is not None:
+            diagnostic.update(initial_interior_seed_voxels=initial_size,
+                chosen_seed_clearance_mm=clearance, seed_clearance_mm=clearance,
+                seed_fallback_used=reason == "legacy_seed_empty_thick_grid", seed_fallback_reason=reason)
     if diagnostics is not None:
         diagnostic.update(parent_voxels=int(parent_seed.sum()), available_interior_radius_mm=float(interior_distance.max()),
                           interior_seed_voxels=int(interior_seed.sum()), seed_columns=int(interior_seed.any(axis=1).sum()))

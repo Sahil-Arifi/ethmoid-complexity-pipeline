@@ -1,0 +1,123 @@
+{
+  "schema_version": 1,
+  "protocol_version": "ethmoid-count-research-v5",
+  "status": "RESEARCH_EXPERIMENT_NOT_ACCURACY_VALIDATED",
+  "training_eligibility": "NOT_FOR_TRAINING",
+  "endpoint": "unique_anatomical_cell_instances_across_full_3d_volume",
+  "first_result": "automatic_experimental_geometric_localization_no_promoted_model",
+  "outputs": [
+    "left_count",
+    "right_count",
+    "total_count",
+    "cell_registry",
+    "cavity_instances",
+    "air_instances"
+  ],
+  "instance_dtype": "uint16",
+  "air_mask_required_for_each_cell": false,
+  "count_opacified_cells": true,
+  "included_variants": [
+    "agger_nasi",
+    "haller",
+    "onodi",
+    "frontal_region",
+    "supraorbital_ethmoid",
+    "concha_bullosa"
+  ],
+  "excluded_measurements": [
+    "2d_landmark_counts",
+    "anterior_posterior_counts",
+    "composite_complexity_score",
+    "cell_volume_distribution",
+    "surface_area_ratio"
+  ],
+  "maximum_slice_thickness_mm": 1.0,
+  "attempt_policy": "verified_3d_CT_including_thicker_series_as_out_of_protocol_experiments; no_guaranteed_count",
+  "thickness_policy": "source_DICOM_thickness_separate_from_IPP_interval; unknown_thickness_never_inferred_from_NIFTI_spacing",
+  "localization_grid": {
+    "axis_aligned": "native_with_bounded_anatomical_crop_when_oversized",
+    "oblique": "native_spacing_when_bounded_else_explicit_coarser_anatomy_only_proxy_with_native_final_counting",
+    "proxy_max_voxels": 128000000,
+    "hu_interpolation": "linear",
+    "mask_interpolation": "nearest",
+    "extent": "all_eight_source_half_voxel_corners",
+    "counting_grid": "original_native_no_instance_resampling",
+    "bone_support_max_mm": 1.01,
+    "research_anatomy_proxy": {
+      "maximum_voxels": 64000000,
+      "minimum_spacing_mm": 0.5,
+      "maximum_spacing_mm": 1.0,
+      "spacing_increment_mm": 0.125,
+      "extent": "complete_source_half_voxel_physical_extent"
+    }
+  },
+  "clinical_exclusions": [
+    "previous_sinus_surgery",
+    "severe_disease",
+    "distorted_anatomy",
+    "pediatric_anatomy",
+    "artifacts",
+    "incomplete_coverage"
+  ],
+  "unknown_eligibility": "exploratory_only_not_a_clinical_pass",
+  "reference_counts_required_for_inference": false,
+  "reference_counts_required_for_accuracy_claim": true,
+  "failure_policy": "no_numeric_count_on_failed_localization_or_geometry",
+  "algorithm": {
+    "air_hu": -500.0,
+    "bone_hu": 200.0,
+    "seed_prominence_mm": 0.8,
+    "plate_half_width_mm": 1.5,
+    "separator_support_mm": 1.5,
+    "separator_support_fraction": 0.6,
+    "minimum_enclosure_fraction": 0.55,
+    "maximum_roi_boundary_fraction": 0.25,
+    "minimum_air_coverage_fraction": 0.5,
+    "boundary_growth_mm": 3.0,
+    "minimum_voxels": 4,
+    "max_instances": 65535
+  },
+  "assumptions": {
+    "cell_separation": "supported_septum_overrides_air_connectivity; communication_without_supported_septum_is_one_cell",
+    "frontal": "frontal_region_cells_not_main_frontal_sinus",
+    "boundaries": "explicit_variant_inclusions_override_nominal_core_envelope",
+    "inferior_boundary": "bony_orbital_floor_not_eyeball_bottom",
+    "midline": "anatomical_laterality_with_crossing_candidates_flagged_for_review",
+    "opacity": "cavity_identity_separate_from_air_content; uncertain_bone_bounded_candidates_flagged"
+  },
+  "provenance": {
+    "latest_sources": [
+      "Ethmoid Protocol v2 1.docx.pdf",
+      "clinician_email_clarifying_full_volume_preliminary_counts"
+    ],
+    "earlier_workflow_source": "ML Component Questions.pdf",
+    "authority": "prototype_assumptions_authorized_by_project_owner; not_clinical_signoff"
+  },
+  "scan_adaptation": {
+    "profile_version": "scan-profile-1",
+    "plan_version": "research-localization-plan-2",
+    "policy": "legacy_seed_preserving_thick_empty_fallback_not_identity",
+    "counting_algorithm": "unchanged_v2",
+    "trained_direct_model": "not_used",
+    "localization_parameters": {
+      "sphenoid_seed_mode": "preserve_legacy_then_thick_empty_fallback",
+      "sphenoid_fallback_clearance_mm": 1.0,
+      "fallback_requires_max_spacing_gt_mm": 1.0,
+      "physical_ray_extent": true
+    },
+    "seed_spacing_reference": "current_anatomical_localization_grid_not_nominal_slice_thickness",
+    "supported_legacy_seed_policy": "preserve_exact_existing_voxels"
+  },
+  "assistance_policy": {
+    "supported": false,
+    "note": "Use unchanged v3 workflow for source-bound assisted review."
+  },
+  "research_constraints": {
+    "completion_is_not_accuracy": true,
+    "native_cavity_thresholds_unchanged": true,
+    "reference_annotations_available": false,
+    "no_expected_normal_count_tuning": true,
+    "automatic_completion_guaranteed": false,
+    "regression_control": "engineering_only_not_anatomical_validation"
+  }
+}

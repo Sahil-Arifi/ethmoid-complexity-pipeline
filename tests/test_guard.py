@@ -3,6 +3,8 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from ethmoid_pipeline.guard import _blocked_text_content, scan_staged
 
 from .synthetic import write_ct_series
@@ -24,9 +26,10 @@ def _dicom_blob() -> bytes:
     return b"\x00" * 128 + b"DICM" + b"synthetic-only"
 
 
-def test_research_protocol_path_still_checks_medical_content(tmp_path: Path) -> None:
+@pytest.mark.parametrize("generation", [4, 5])
+def test_research_protocol_path_still_checks_medical_content(tmp_path: Path, generation: int) -> None:
     repo = _repo(tmp_path)
-    path = repo / "src/ethmoid_pipeline/counting/protocol.research.v4.json"
+    path = repo / f"src/ethmoid_pipeline/counting/protocol.research.v{generation}.json"
     path.parent.mkdir(parents=True)
     path.write_text('{"protocol_version": "ethmoid-count-research-v4"}', encoding="utf-8")
     _git(repo, "add", ".")

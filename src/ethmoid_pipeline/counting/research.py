@@ -49,8 +49,11 @@ def research_anatomy_grid(shape, affine) -> dict:
     raise CountingError("RESOURCE_LIMIT", "The complete anatomy view exceeds the research budget at the maximum permitted spacing.")
 
 
-def research_localize(hu, affine, masks, cfg, plan, diagnostics) -> Localization:
+def research_localize(hu, affine, masks, cfg, plan, diagnostics, *, localization_policy=None) -> Localization:
     from .localization import localize_native
+    # The default remains the frozen v4 policy. Other research methods must
+    # supply their own explicitly versioned policy through their strategy.
+    policy = LOCALIZATION_POLICY if localization_policy is None else localization_policy
 
     def fits(grid):
         check_proxy_limit(grid)
@@ -59,7 +62,7 @@ def research_localize(hu, affine, masks, cfg, plan, diagnostics) -> Localization
 
     def infer(values, transform, landmarks, grid, record):
         return localize_native(values, transform, landmarks, cfg, grid,
-            localization_policy=LOCALIZATION_POLICY, diagnostics=record)
+            localization_policy=policy, diagnostics=record)
 
     full = localization_grid(hu.shape, affine)
     diagnostics.update(mode="full_anatomical_extent", geometry=full, localization={})
@@ -123,6 +126,11 @@ def research_localize(hu, affine, masks, cfg, plan, diagnostics) -> Localization
 
 
 class ResearchStrategy(AdaptiveStrategy):
+    localization_policy = LOCALIZATION_POLICY
+
+    def build_plan(self, profile):
+        return build_research_plan(profile)
+
     def finalize(self, result):
         super().finalize(result)
         if result.get("failure_code") in {"ORBIT_FLOOR_UNRESOLVED", "ORBIT_WALL_UNRESOLVED", "ROOF_UNRESOLVED"}:
@@ -140,7 +148,7 @@ class ResearchStrategy(AdaptiveStrategy):
         from .localization import load_landmarks, run_localizers, cache_producer_summary, cache_producer_warnings
         profile = build_scan_profile(source, self.acquisition)
         result["scan_profile"] = profile
-        plan = build_research_plan(profile)
+        plan = self.build_plan(profile)
         if self.processing_plan is not None and self.processing_plan != plan:
             raise CountingError("PROCESSING_PLAN_MISMATCH", "The research plan does not match its source-bound policy.")
         result["processing_plan"] = plan
@@ -156,7 +164,8 @@ class ResearchStrategy(AdaptiveStrategy):
                 masks = load_landmarks(directory, canonical, source_sha256=result["source_sha256"])
                 if (directory / "localizers.local.json").is_file():
                     result["localizer_provenance"] = cache_producer_summary(directory)
-                local = research_localize(hu, canonical.affine, masks, cfg, plan, result["localization_geometry"])
+                local = research_localize(hu, canonical.affine, masks, cfg, plan, result["localization_geometry"],
+                    localization_policy=self.localization_policy)
             except CountingError as error:
                 if not full_extent and error.code in {"TARGET_CLIPPED", "LANDMARK_EMPTY"}:
                     continue
