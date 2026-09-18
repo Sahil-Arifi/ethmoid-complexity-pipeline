@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 import sys
 import tempfile
@@ -99,11 +100,13 @@ def main() -> None:
 
     app = create_app(work_root=work)
     app.state.counting_service._executor = execute
+    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=8766))
 
     @app.post("/__e2e__/release-workers")
     def release_workers(root: str):
-        # Playwright runs global teardown before stopping its webServer. Release
-        # the production workers' OS locks before removing this synthetic root.
+        # Playwright runs global teardown before stopping its webServer. Close
+        # the workers, then exit Uvicorn so file responses and SQLite release all
+        # Windows handles before global teardown removes this synthetic root.
         # This endpoint exists only in this guarded, isolated test entrypoint.
         if root != work.name:
             from fastapi import HTTPException
@@ -112,7 +115,8 @@ def main() -> None:
             app.state.uploads.close()
         app.state.catalog_service.close()
         app.state.counting_service.close()
-        return {"work_root": work.name}
+        server.should_exit = True
+        return {"work_root": work.name, "process_id": os.getpid()}
 
     service = app.state.ethmoid_service
     ready_cases = [service.import_nifti(path, case_label=label) for path, label in zip(generated[1:], ("Case910", "Case911"))]
@@ -129,7 +133,7 @@ def main() -> None:
             connection.execute("INSERT INTO catalog_case_links(case_id,series_id,source_fingerprint,proof,acquisition_json) VALUES(?,?,?,?,?)", (case["case_id"], identity, fingerprint, "synthetic-browser-fixture", json.dumps(acquisition(metadata))))
         metadata = {"spacing_mm": None, "slice_thickness_mm": None, "image_count": 1, "kernel": None, "source_kind": "scout", "resolution_class": "unknown", "warnings": []}
         connection.execute("INSERT INTO catalog_series(id,study_id,series_uid,series_label,descriptor_json,files_json,inventory_signature,preparation_status,reason_code) VALUES(?,?,?,?,?,?,?,?,?)", ("synthetic-scout", "synthetic-study", "synthetic-scout", "Series009", json.dumps(metadata), "[]", "synthetic-scout", "unavailable", "SCOUT"))
-    uvicorn.run(app, host="127.0.0.1", port=8766)
+    server.run()
 
 
 if __name__ == "__main__":

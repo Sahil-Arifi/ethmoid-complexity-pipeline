@@ -21,7 +21,15 @@ Upload/conversion verification passed **139 targeted checks**, followed by **36 
 
 The final integrated application suite passed **365 tests**, with inference dependencies tested separately; all **19 local integration tests** passed, including the pinned converter and real assisted CPU worker. The first CI run exposed an omitted build dependency; a deterministic lock now includes pinned setuptools, and a fresh environment passed hashed installation, editable installation, dependency consistency and all **44 upload/codec tests**. Bootstrap and CI stop immediately on installation errors.
 
-The source manifest is frozen at 26 studies / 230 series / 98 prepared volumes and the v3 reevaluation is running against clean commit `a1e3ae4`. Pending: all-series evaluation, live migration verification and remote CI. Expert anatomy masks, independent individual-cell references and clinician acceptance thresholds remain external dependencies for supervised training and clinical validation.
+The live application was migrated to schema 4 after a fresh protected backup. An exact row comparison retained all 98 cases, 109 runs, 28 annotations, 2 imports, 98 case links, 230 series and 26 studies. Startup created no count jobs. The live browser showed the complete catalog, the resumable upload controls and the assisted-boundary path for an existing anatomical abstention. Both GitHub CI jobs passed at `960e14e`.
+
+Additional signed-pixel verification passed **62 codec tests**, including exact 12-bit and 16-bit signed extrema for seven encodings and 28 new classic/Enhanced CT converter combinations. Every tested conversion had zero HU error and unchanged originals. This establishes the tested synthetic paths, not universal vendor compatibility.
+
+Final workflow review added saved-boundary recovery before an assisted run, safe switching between retained upload sessions, a display-only overlay of cells flagged for review, and idempotent retry after a lost response. **58 frontend tests**, the build and **five expanded browser workflows** passed. The isolated browser server now exits before Windows cleanup begins. A clean `uv` environment also exposed an installer-provenance assumption: absence of `pip` is now explicitly recorded, while required processing/decoder versions remain mandatory. **22 provenance/catalog tests** passed, including real classic and Enhanced CT uploads with zero HU error and analysis scheduled only after verification.
+
+The complete application suite then passed **455 tests**, including the real converter/upload and assisted CPU subprocess integrations. Its 33 inference-dependency skips are covered by the separate **131-test CPU engine suite**. The new evaluation auditor passed 23 synthetic checks; staged code and documentation passed the complete-index medical-data guard. These overlapping test totals are not independent accuracy observations.
+
+The source manifest is frozen at 26 studies / 230 series / 98 prepared volumes and the v3 reevaluation is running against clean commit `a1e3ae4`. All-series evaluation and its independent final audit remain pending. Expert anatomy masks, independent individual-cell references and clinician acceptance thresholds remain external dependencies for supervised training and clinical validation.
 
 ## Earlier v2 catalog evidence
 

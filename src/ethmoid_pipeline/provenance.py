@@ -32,14 +32,24 @@ def current_code_provenance(*, require_clean: bool = True) -> dict[str, Any]:
             "fastapi",
             "nibabel",
             "numpy",
-            "pip",
             "pydicom",
+            "pylibjpeg",
+            "pylibjpeg-libjpeg",
+            "pylibjpeg-openjpeg",
+            "pyjpegls",
             "python-multipart",
             "pytest",
             "setuptools",
             "uvicorn",
         )
     }
+    # uv can install the locked environment without installing pip itself.
+    # Missing installer metadata must not block an otherwise verified converter;
+    # processing-library versions above remain mandatory and are never invented.
+    try:
+        dependencies["pip"] = importlib.metadata.version("pip")
+    except importlib.metadata.PackageNotFoundError:
+        dependencies["pip"] = None
     return {
         "git_commit": commit,
         "git_dirty": dirty,

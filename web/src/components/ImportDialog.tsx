@@ -4,9 +4,27 @@ import { transferUpload, uploadApi, type UploadSession } from "../api/uploads";
 
 type Props = { onClose: () => void; onImported: (caseId: string) => void; onCatalogUpdated?: () => void };
 const STORAGE_KEY = "ethmoid.pending-upload";
+const HISTORY_KEY = "ethmoid.upload-history";
 const friendly = (value: string) => value.toLowerCase().replaceAll("_", " ");
+const uploadKind = (value: UploadSession) => value.files.length === 1 && value.files[0].name.toLowerCase().endsWith(".zip") ? "zip" : "dicom";
 const pendingId = () => { try { return localStorage.getItem(STORAGE_KEY); } catch { return null; } };
-const remember = (id: string | null) => { try { if (id) localStorage.setItem(STORAGE_KEY, id); else localStorage.removeItem(STORAGE_KEY); } catch { /* Upload remains resumable in this tab. */ } };
+const savedIds = (): string[] => {
+  try {
+    const values: unknown = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? "[]");
+    const ids = Array.isArray(values) ? values.filter((value): value is string => typeof value === "string") : [];
+    const pending = pendingId();
+    return [...new Set(pending ? [...ids, pending] : ids)];
+  } catch { const pending = pendingId(); return pending ? [pending] : []; }
+};
+const remember = (id: string | null) => {
+  const ids = savedIds(); if (id && !ids.includes(id)) ids.push(id);
+  try {
+    // Retain opaque session IDs only; filenames and patient details stay on the server.
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(ids));
+    if (id) localStorage.setItem(STORAGE_KEY, id); else localStorage.removeItem(STORAGE_KEY);
+  } catch { /* Server originals and session records remain preserved. */ }
+  return ids;
+};
 
 export function ImportDialog({ onClose, onImported, onCatalogUpdated }: Props) {
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -18,6 +36,7 @@ export function ImportDialog({ onClose, onImported, onCatalogUpdated }: Props) {
   const [qcReport, setQcReport] = useState<File | null>(null);
   const [files, setFiles] = useState<File[]>([]);
   const [session, setSession] = useState<UploadSession | null>(null);
+  const [savedUploads, setSavedUploads] = useState(savedIds);
   const [resuming, setResuming] = useState(!!pendingId());
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<[number, number]>([0, 0]);
@@ -28,7 +47,7 @@ export function ImportDialog({ onClose, onImported, onCatalogUpdated }: Props) {
 
   useEffect(() => {
     if (kind === "dicom") { folderRef.current?.setAttribute("webkitdirectory", ""); folderRef.current?.setAttribute("directory", ""); }
-  }, [kind, resuming, session?.status]);
+  }, [kind, resuming, session?.status, session?.upload_id]);
   useEffect(() => {
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const frame = requestAnimationFrame(() => dialogRef.current?.focus());
@@ -36,8 +55,9 @@ export function ImportDialog({ onClose, onImported, onCatalogUpdated }: Props) {
   }, []);
   useEffect(() => {
     const id = pendingId(); if (!id) return;
+    setSavedUploads(remember(id));
     let stopped = false;
-    void uploadApi.get(id).then(value => { if (!stopped) { setSession(value); if (value.status === "completed") onCatalogUpdated?.(); } })
+    void uploadApi.get(id).then(value => { if (!stopped) { setSession(value); setKind(uploadKind(value)); if (value.status === "completed") onCatalogUpdated?.(); } })
       .catch(caught => { if (!stopped) setError(caught instanceof Error ? caught.message : "The previous upload could not be loaded."); })
       .finally(() => { if (!stopped) setResuming(false); });
     return () => { stopped = true; };
@@ -79,7 +99,7 @@ export function ImportDialog({ onClose, onImported, onCatalogUpdated }: Props) {
       }
       if (!files.length) throw new Error("Choose a DICOM folder or ZIP archive.");
       const current = session ?? await uploadApi.create(files);
-      setSession(current); remember(current.upload_id);
+      setSession(current); setSavedUploads(remember(current.upload_id));
       await transferUpload(current, files, (done, total) => setProgress([done, total]), controller.signal);
       setSession(await uploadApi.finalize(current.upload_id)); onCatalogUpdated?.();
     } catch (caught) {
@@ -94,14 +114,24 @@ export function ImportDialog({ onClose, onImported, onCatalogUpdated }: Props) {
     catch (caught) { setError(caught instanceof Error ? caught.message : "Preparation could not be retried."); }
     finally { setBusy(false); }
   };
-  const newUpload = () => { remember(null); setSession(null); setFiles([]); setProgress([0, 0]); setError(""); setPaused(false); };
+  const newUpload = () => { setSavedUploads(remember(null)); setSession(null); setFiles([]); setKind("dicom"); setProgress([0, 0]); setError(""); setPaused(false); };
+  const restoreUpload = async (id: string) => {
+    if (!id || busy) return;
+    setBusy(true); setError("");
+    try {
+      const value = await uploadApi.get(id);
+      setSession(value); setKind(uploadKind(value)); setSavedUploads(remember(id)); setFiles([]); setProgress([0, 0]); setPaused(false);
+      if (value.status === "completed") onCatalogUpdated?.();
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "The saved upload could not be loaded. Its files are retained."); }
+    finally { setBusy(false); }
+  };
   const transferForm = !session || session.status === "uploading";
   return <div className="modal-backdrop" role="presentation"><div className="modal" role="dialog" aria-modal="true" aria-labelledby="import-title" tabIndex={-1} ref={dialogRef}>
     <div className="modal-header"><div><span className="eyebrow">Local imaging workspace</span><h2 id="import-title">Import scan</h2></div><button className="icon-button" type="button" onClick={close} disabled={busy}><span aria-hidden="true">×</span><span className="sr-only">Close import dialog</span></button></div>
     {resuming ? <p role="status">Restoring the previous upload…</p> : transferForm ? <form onSubmit={event => void submit(event)}>
       <fieldset className="segmented-fieldset" disabled={busy}><legend>Input type</legend>{(["dicom", "zip", "nifti"] as const).filter(value => !session || value !== "nifti").map(value => <label key={value} className={kind === value ? "selected" : ""}><input type="radio" name="kind" checked={kind === value} onChange={() => { setKind(value); setFiles([]); }} />{value === "dicom" ? "DICOM folder" : value === "zip" ? "DICOM ZIP" : "NIfTI"}</label>)}</fieldset>
       {session && <p className="form-hint">Resume the saved upload by selecting the same files. Previously received bytes are checked before continuing.</p>}
-      {kind === "nifti" && !session ? <><label className="field"><span>Neutral case label</span><input value={caseLabel} onChange={event => setCaseLabel(event.target.value)} pattern="Case[0-9]{3}" placeholder="Leave blank to generate" disabled={busy} /></label><label className="field"><span>NIfTI volume</span><input type="file" accept=".nii,.nii.gz" disabled={busy} onChange={event => setNifti(event.target.files?.[0] ?? null)} /></label><label className="field"><span>Matching QC report <small>(optional)</small></span><input type="file" accept=".json,application/json" disabled={busy} onChange={event => setQcReport(event.target.files?.[0] ?? null)} /></label><p className="form-hint">Without a matching valid QC report, the scan opens as UNVERIFIED. Start its count manually after review.</p></> : <><label className="field"><span>{kind === "zip" ? "DICOM ZIP archive" : "DICOM folder"}</span><input aria-label={kind === "zip" ? "DICOM ZIP archive" : "DICOM folder"} key={kind} ref={folderRef} type="file" multiple={kind === "dicom"} accept={kind === "zip" ? ".zip,application/zip" : undefined} disabled={busy} onChange={event => setFiles(Array.from(event.target.files ?? []))} /><small>{files.length ? `${files.length} files selected` : "Select a complete sinus CT study. Mixed studies are grouped automatically."}</small></label><p className="form-hint">All series stay in the catalog. The recommended verified series in each uploaded study is counted automatically. Images remain on this workstation.</p></>}
+      {kind === "nifti" && !session ? <><label className="field"><span>Neutral case label</span><input value={caseLabel} onChange={event => setCaseLabel(event.target.value)} pattern="Case[0-9]{3}" placeholder="Leave blank to generate" disabled={busy} /></label><label className="field"><span>NIfTI volume</span><input type="file" accept=".nii,.nii.gz" disabled={busy} onChange={event => setNifti(event.target.files?.[0] ?? null)} /></label><label className="field"><span>Matching QC report <small>(optional)</small></span><input type="file" accept=".json,application/json" disabled={busy} onChange={event => setQcReport(event.target.files?.[0] ?? null)} /></label><p className="form-hint">Without a matching valid QC report, the scan opens as UNVERIFIED. Start its count manually after review.</p></> : <><label className="field"><span>{kind === "zip" ? "DICOM ZIP archive" : "DICOM folder"}</span><input aria-label={kind === "zip" ? "DICOM ZIP archive" : "DICOM folder"} key={`${kind}:${session?.upload_id ?? "new"}`} ref={folderRef} type="file" multiple={kind === "dicom"} accept={kind === "zip" ? ".zip,application/zip" : undefined} disabled={busy} onChange={event => setFiles(Array.from(event.target.files ?? []))} /><small>{files.length ? `${files.length} files selected` : "Select a complete sinus CT study. Mixed studies are grouped automatically."}</small></label><p className="form-hint">All series stay in the catalog. The recommended verified series in each uploaded study is counted automatically. Images remain on this workstation.</p></>}
       {busy && <div role="status"><progress aria-label="Upload progress" max={progress[1] || 1} value={progress[0]} /><p>{progress[1] ? `${Math.round(progress[0] / progress[1] * 100)}% transferred and checked` : "Preparing upload…"}</p></div>}
       {paused && <p role="status">Upload paused. Received files are retained locally.</p>}
       {error && <div className="alert alert-error" role="alert">{error}</div>}
@@ -111,7 +141,8 @@ export function ImportDialog({ onClose, onImported, onCatalogUpdated }: Props) {
       <div className="series-list">{session.studies.map(study => <div className="series-option" key={study.study_id}><span><strong>{study.study_label} · {study.series_count} series</strong><small>Preparation: {friendly(study.preparation_status ?? "pending")}</small><small>Analysis: {friendly(study.analysis_status ?? "waiting for verification")}</small>{study.reason_code && <small>{friendly(study.reason_code)}</small>}{study.case_id && <button className="button compact" type="button" onClick={() => onImported(study.case_id!)}>Open {study.study_label}</button>}</span></div>)}</div>
       {session.issues.length > 0 && <details><summary>File outcomes ({session.issues.length})</summary><ul>{session.issues.map((issue, index) => <li key={index}>Item {(issue.item_index ?? index) + 1}: {issue.message ?? friendly(issue.reason_code ?? issue.status ?? "needs review")}</li>)}</ul></details>}
       {error && <div className="alert alert-error" role="alert">{error}</div>}
-      <div className="modal-actions"><button className="button secondary" onClick={close} disabled={busy}>Return to cases</button>{session.status === "failed" && ["DISK_SPACE", "INDEXING_ERROR"].includes(session.reason_code ?? "") && <button className="button" onClick={() => void retryFinalize()} disabled={busy}>Retry preparation</button>}{["completed", "failed"].includes(session.status) && <button className="button" onClick={newUpload}>Import another study</button>}</div>
+      <div className="modal-actions"><button className="button secondary" onClick={close} disabled={busy}>Return to cases</button>{session.status === "failed" && ["DISK_SPACE", "INDEXING_ERROR"].includes(session.reason_code ?? "") && <button className="button" onClick={() => void retryFinalize()} disabled={busy}>Retry preparation</button>}</div>
     </section>}
+    {!resuming && savedUploads.length > 0 && <section aria-label="Saved upload sessions"><label className="field"><span>Saved uploads on this browser</span><select aria-label="Saved uploads" disabled={busy} value={session?.upload_id ?? ""} onChange={event => void restoreUpload(event.target.value)}><option value="" disabled>Select a saved upload</option>{savedUploads.map((id, index) => <option key={id} value={id}>Upload {index + 1}</option>)}</select></label><p className="form-hint">Starting another upload preserves received files and previous sessions. Select a saved upload to return to it.</p>{session && <button type="button" className="button" disabled={busy} onClick={newUpload}>Start a separate upload</button>}</section>}
   </div></div>;
 }

@@ -83,6 +83,10 @@ def counting_router(service: CountingService) -> APIRouter:
     def retry(case_id: str, run_id: str, payload: CreateCountRequest | None = None):
         return service.retry(case_id, run_id, payload.idempotency_key if payload else None)
 
+    @router.get("/{run_id}/boundaries")
+    def list_boundaries(case_id: str, run_id: str):
+        return service.list_boundaries(case_id, run_id)
+
     @router.post("/{run_id}/boundaries", status_code=201)
     async def save_boundary(case_id: str, run_id: str, request: Request):
         incoming = Path(tempfile.mkdtemp(prefix="boundary-", dir=service.root / "incoming"))

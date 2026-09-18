@@ -36,7 +36,10 @@ export const countingApi = {
     body: JSON.stringify({ idempotency_key: key }),
   }),
   get: (caseId: string, runId: string) => request<CountRun>(path(caseId, runId)),
-  retry: (caseId: string, runId: string) => request<CountRun>(`${path(caseId, runId)}/retry`, { method: "POST" }),
+  retry: (caseId: string, runId: string, key: string) => request<CountRun>(`${path(caseId, runId)}/retry`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ idempotency_key: key }),
+  }),
+  boundaries: (caseId: string, runId: string) => request<{ boundaries: BoundaryRevision[] }>(`${path(caseId, runId)}/boundaries`),
   cancel: (caseId: string, runId: string) => request<CountRun>(`${path(caseId, runId)}/cancel`, { method: "POST" }),
   saveBoundary: (caseId: string, runId: string, mask: Blob, note: string) => {
     const body = new FormData();

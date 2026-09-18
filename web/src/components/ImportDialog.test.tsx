@@ -84,4 +84,54 @@ describe("ImportDialog", () => {
     expect(screen.getByText("Analysis: unsupported input")).toBeVisible();
     expect(screen.queryByRole("button", { name: "Open Case001" })).not.toBeInTheDocument();
   });
+
+  it("starts a separate upload after a source mismatch and keeps both sessions recoverable after reload", async () => {
+    const user = userEvent.setup(); localStorage.setItem("ethmoid.pending-upload", "upload-1");
+    const second: UploadSession = { ...session, upload_id: "upload-2" };
+    vi.mocked(uploadApi.get).mockImplementation(async id => id === "upload-1" ? session : { ...second, status: "completed" });
+    vi.mocked(transferUpload).mockRejectedValueOnce(new Error("Source bytes do not match. Start a new upload."));
+    vi.mocked(uploadApi.create).mockResolvedValue(second);
+    vi.mocked(uploadApi.finalize).mockResolvedValue({ ...second, status: "completed" });
+    const first = render(<ImportDialog onClose={vi.fn()} onImported={vi.fn()} />);
+    await screen.findByRole("button", { name: "Resume upload" });
+    await user.upload(screen.getByLabelText("DICOM folder", { selector: "input[type=file]" }), new File(["b"], "1.dcm"));
+    await user.click(screen.getByRole("button", { name: "Resume upload" }));
+    await screen.findByText("Source bytes do not match. Start a new upload.");
+    await user.click(screen.getByRole("button", { name: "Start a separate upload" }));
+    expect(screen.getByRole("button", { name: "Import scan" })).toBeEnabled();
+    expect(localStorage.getItem("ethmoid.pending-upload")).toBeNull();
+    expect(JSON.parse(localStorage.getItem("ethmoid.upload-history")!)).toEqual(["upload-1"]);
+    await user.upload(screen.getByLabelText("DICOM folder", { selector: "input[type=file]" }), new File(["c"], "another.dcm"));
+    await user.click(screen.getByRole("button", { name: "Import scan" }));
+    await screen.findByText("Upload cataloged");
+    expect(JSON.parse(localStorage.getItem("ethmoid.upload-history")!)).toEqual(["upload-1", "upload-2"]);
+    first.unmount();
+    render(<ImportDialog onClose={vi.fn()} onImported={vi.fn()} />);
+    await screen.findByText("Upload cataloged");
+    await user.selectOptions(screen.getByLabelText("Saved uploads"), "upload-1");
+    expect(await screen.findByRole("button", { name: "Resume upload" })).toBeEnabled();
+    expect(localStorage.getItem("ethmoid.pending-upload")).toBe("upload-1");
+    expect(uploadApi.get).toHaveBeenLastCalledWith("upload-1");
+    expect(uploadApi.create).toHaveBeenCalledTimes(1);
+    expect(localStorage.getItem("ethmoid.upload-history")).not.toContain("dcm");
+  });
+
+  it("preserves folder selection when switching between incomplete saved uploads", async () => {
+    localStorage.setItem("ethmoid.pending-upload", "upload-1");
+    localStorage.setItem("ethmoid.upload-history", JSON.stringify(["upload-1", "upload-2"]));
+    vi.mocked(uploadApi.get).mockImplementation(async id => ({ ...session, upload_id: id }));
+    render(<ImportDialog onClose={vi.fn()} onImported={vi.fn()} />);
+    await screen.findByRole("button", { name: "Resume upload" });
+    const first = screen.getByLabelText("DICOM folder", { selector: "input[type=file]" });
+    await userEvent.selectOptions(screen.getByLabelText("Saved uploads"), "upload-2");
+    const second = screen.getByLabelText("DICOM folder", { selector: "input[type=file]" });
+    expect(second).not.toBe(first);
+    expect(second).toHaveAttribute("webkitdirectory");
+    expect(second).toHaveAttribute("directory");
+    await userEvent.click(screen.getByRole("button", { name: "Start a separate upload" }));
+    await userEvent.click(screen.getByRole("radio", { name: "NIfTI" }));
+    await userEvent.selectOptions(screen.getByLabelText("Saved uploads"), "upload-1");
+    expect(screen.getByRole("radio", { name: "DICOM folder" })).toBeChecked();
+    expect(screen.getByLabelText("DICOM folder", { selector: "input[type=file]" })).toHaveAttribute("webkitdirectory");
+  });
 });

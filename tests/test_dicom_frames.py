@@ -53,8 +53,8 @@ def enhanced_fixture(tmp_path, *, variable_calibration=True):
     return path,expected,order
 
 
-def jpeg_lossless(array):
-    """Small SOF3 predictor-1 encoder for a known 16-bit grayscale test matrix.
+def jpeg_lossless(array, *, precision=16):
+    """Small SOF3 predictor-1 encoder for a known grayscale test matrix.
 
     Uses canonical five-bit DC codes for categories 0..16 and no restart marker.
     It is a fixture generator, not a production codec.
@@ -64,13 +64,19 @@ def jpeg_lossless(array):
     height,width=array.shape
     counts=bytes([0,0,0,0,17]+[0]*11)
     header=b'\xff\xd8'+marker(0xc4,b'\0'+counts+bytes(range(17)))
-    header+=marker(0xc3,struct.pack('>BHHBBBB',16,height,width,1,1,0x11,0))
+    header+=marker(0xc3,struct.pack('>BHHBBBB',precision,height,width,1,1,0x11,0))
     header+=marker(0xda,bytes([1,1,0,1,0,0]))
     bits=[]
     for r in range(height):
         for c in range(width):
-            prediction=int(array[r,c-1]) if c else int(array[r-1,0]) if r else 32768
+            prediction=int(array[r,c-1]) if c else int(array[r-1,0]) if r else 1 << (precision-1)
             difference=int(array[r,c])-prediction
+            # Lossless JPEG's difference is a 16-bit two's-complement value.
+            # Category 16 represents the sole -32768 case without amplitude bits.
+            if difference > 32767:
+                difference -= 65536
+            elif difference < -32768:
+                difference += 65536
             category=abs(difference).bit_length()
             bits.append(f'{category:05b}')
             if category and category!=16:
@@ -184,4 +190,91 @@ def test_lossless_conversion_and_all_voxel_hu_match_source(tmp_path,syntax):
     report=verify_conversion(tmp_path/'source',tmp_path/'work',paths,'Case001','Series001',**options)
     assert report['status']=='AUTOMATED_PASS_PENDING_MANUAL'
     assert report['metrics']['max_absolute_hu_error']==0
+    assert [sha256_file(path) for path in paths]==hashes
+
+
+SIGNED_SYNTAXES = [
+    pytest.param(ExplicitVRLittleEndian,id='explicit'),
+    pytest.param(ImplicitVRLittleEndian,id='implicit'),
+    pytest.param(RLELossless,id='rle'),
+    pytest.param(JPEGLSLossless,id='jpeg_ls'),
+    pytest.param(JPEG2000Lossless,id='jpeg2000'),
+    pytest.param(JPEGLossless,id='jpeg14'),
+    pytest.param(JPEGLosslessSV1,id='jpeg_sv1'),
+]
+
+
+def signed_pixels(bits_stored, offset=0):
+    """Known signed extrema and transitions, independent of any decoder output."""
+    low,high=-(1 << (bits_stored-1)),(1 << (bits_stored-1))-1
+    pattern=np.asarray([low,high,low+1,high-1,-1024,1023,-1,0,1,-7,7],dtype=np.int16)
+    return np.roll(np.resize(pattern,32*32).reshape(32,32),offset,axis=1)
+
+
+def encode_signed(ds, expected, syntax, bits_stored):
+    ds.PixelRepresentation=1
+    ds.BitsAllocated=16
+    ds.BitsStored=bits_stored
+    ds.HighBit=bits_stored-1
+    ds.PixelData=np.asarray(expected,dtype='<i2').tobytes()
+    if syntax in {ExplicitVRLittleEndian,ImplicitVRLittleEndian}:
+        ds.file_meta.TransferSyntaxUID=syntax
+    elif syntax in {JPEGLossless,JPEGLosslessSV1}:
+        frames=[expected] if expected.ndim==2 else expected
+        mask=(1 << bits_stored)-1
+        encoded=[jpeg_lossless((frame.astype(np.int32)&mask).astype(np.uint16),precision=bits_stored) for frame in frames]
+        ds.PixelData=encapsulate(encoded)
+        ds['PixelData'].is_undefined_length=True
+        ds.file_meta.TransferSyntaxUID=syntax
+    else:
+        ds.compress(syntax,generate_instance_uid=False)
+
+
+@pytest.mark.parametrize('syntax',SIGNED_SYNTAXES)
+@pytest.mark.parametrize('bits_stored',[12,16])
+def test_signed_decoder_extrema_and_bits_stored(tmp_path,syntax,bits_stored):
+    path=write_ct_series(tmp_path,rows=32,columns=32)[0]
+    ds=pydicom.dcmread(path)
+    expected=signed_pixels(bits_stored)
+    encode_signed(ds,expected,syntax,bits_stored)
+    ds.save_as(path,enforce_file_format=True)
+    decoded=frame_pixels(path)
+    assert decoded.dtype.kind=='i'
+    assert int(decoded.min())==-(1 << (bits_stored-1))
+    assert int(decoded.max())==(1 << (bits_stored-1))-1
+    np.testing.assert_array_equal(decoded,expected)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize('enhanced',[False,True],ids=['classic','enhanced'])
+@pytest.mark.parametrize('syntax',SIGNED_SYNTAXES)
+@pytest.mark.parametrize('bits_stored',[12,16])
+def test_signed_conversion_hu(tmp_path,enhanced,syntax,bits_stored):
+    if not default_dcm2niix().is_file():
+        pytest.skip('pinned converter unavailable')
+    source=tmp_path/'source'; source.mkdir()
+    if enhanced:
+        path,_,order=enhanced_fixture(source)
+        ds=pydicom.dcmread(path)
+        known=np.stack([signed_pixels(bits_stored,index) for index in order])
+        encode_signed(ds,known,syntax,bits_stored)
+        ds.save_as(path,enforce_file_format=True)
+        paths=[path]
+        for index in range(len(known)):
+            np.testing.assert_array_equal(frame_pixels(path,index),known[index])
+    else:
+        paths=write_ct_series(source,rows=32,columns=32)
+        for index,path in enumerate(paths):
+            ds=pydicom.dcmread(path)
+            known=signed_pixels(bits_stored,index)
+            encode_signed(ds,known,syntax,bits_stored)
+            ds.save_as(path,enforce_file_format=True)
+            np.testing.assert_array_equal(frame_pixels(path),known)
+    hashes=[sha256_file(path) for path in paths]
+    options={'pipeline_provenance':{'kind':'synthetic-signed-lossless','git_dirty':True},'preflight_profile':'exploratory'}
+    result=convert_series(source,tmp_path/'work',paths,'Case001','Series001',default_dcm2niix(),**options)
+    report=verify_conversion(source,tmp_path/'work',paths,'Case001','Series001',**options)
+    assert report['status']=='AUTOMATED_PASS_PENDING_MANUAL'
+    assert report['metrics']['max_absolute_hu_error']==0
+    assert np.prod(nib.load(result['nifti']).shape)==32*32*6
     assert [sha256_file(path) for path in paths]==hashes

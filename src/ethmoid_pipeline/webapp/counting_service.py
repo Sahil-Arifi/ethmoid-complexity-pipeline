@@ -725,12 +725,31 @@ class CountingService:
                 identity, case_id, run_id, row['source_sha256'], self.app._relative(path), sha256_file(path), note, utc_now()))
         return self.get_boundary(case_id, identity)
 
+    @staticmethod
+    def _boundary_metadata(row) -> dict:
+        return {"boundary_id": row['id'], **{key: row[key] for key in ('case_id', 'parent_run_id', 'source_sha256', 'mask_sha256', 'note', 'created_at')}}
+
+    def list_boundaries(self, case_id: str, run_id: str) -> dict:
+        parent = self._run(case_id, run_id)
+        case, _ = self._source(case_id)
+        with self.store.connect() as db:
+            rows = db.execute("""SELECT * FROM boundary_revisions
+                WHERE case_id=? AND parent_run_id=? ORDER BY created_at DESC,rowid DESC""",
+                (case_id, run_id)).fetchall()
+        if parent['source_sha256'] != case['source_sha256'] or any(row['source_sha256'] != parent['source_sha256'] for row in rows):
+            raise _error("The saved boundary history does not match the current source.", 409)
+        return {"boundaries": [self._boundary_metadata(row) for row in rows]}
+
     def get_boundary(self, case_id: str, boundary_id: str) -> dict:
         with self.store.connect() as db:
             row = db.execute("SELECT * FROM boundary_revisions WHERE id=? AND case_id=?", (boundary_id, case_id)).fetchone()
         if row is None:
             raise _error("Anatomical boundary revision not found.", 404)
-        return {"boundary_id": row['id'], **{key: row[key] for key in ('case_id', 'parent_run_id', 'source_sha256', 'mask_sha256', 'note', 'created_at')}}
+        parent = self._run(case_id, row['parent_run_id'])
+        case, _ = self._source(case_id)
+        if row['source_sha256'] != parent['source_sha256'] or row['source_sha256'] != case['source_sha256']:
+            raise _error("The boundary revision does not match the current source and parent run.", 409)
+        return self._boundary_metadata(row)
 
     def boundary_path(self, case_id: str, boundary_id: str) -> Path:
         boundary = self.get_boundary(case_id, boundary_id)

@@ -9,6 +9,7 @@ import type { Niivue } from "@niivue/niivue";
 import { api } from "../api/client";
 import type { ViewerState } from "../api/types";
 import { annotationLabels, type ProtocolDefinition } from "../config/protocol";
+import { instanceRgba } from "./instanceOverlay";
 
 export type ViewerTool = "navigate" | "window" | "draw" | "erase" | "fill";
 export type ViewMode = "multiplanar" | "render";
@@ -56,6 +57,7 @@ type Props = {
   onLocationChange: (location: ViewerLocation) => void;
   onHistoryChange: (canUndo: boolean, canRedo: boolean) => void;
   instanceOverlayUrl?: string;
+  visibleCellIds?: number[];
 };
 
 type LocationPayload = {
@@ -119,6 +121,7 @@ export const NiiVueViewer = forwardRef<NiiVueViewerHandle, Props>(
       onLocationChange,
       onHistoryChange,
       instanceOverlayUrl,
+      visibleCellIds,
     },
     ref,
   ) {
@@ -148,6 +151,7 @@ export const NiiVueViewer = forwardRef<NiiVueViewerHandle, Props>(
       windowWidth,
     });
     const [loading, setLoading] = useState(true);
+    const cellFilterKey = visibleCellIds?.join(",");
 
     callbacksRef.current = {
       onReady,
@@ -521,22 +525,12 @@ export const NiiVueViewer = forwardRef<NiiVueViewerHandle, Props>(
           const volume = await NVImage.loadFromUrl({ url: instanceOverlayUrl, name: "cells.nii.gz" });
           if (cancelled || niivueRef.current !== nv) return;
           if (!volume.img || !volume.hdr) throw new Error("The cell overlay could not be opened.");
-          // Match the representative report palette; stable IDs carry identity
-          // when colors repeat across the registry.
-          const palette = [[48, 165, 219], [239, 177, 64], [103, 190, 130], [213, 125, 185], [161, 148, 220], [229, 119, 96]];
           // NiiVue 0.69's indexed shader clamps low values to 2/256, which
           // paints background label 0 when a LUT contains IDs above 255.
           // Render an RGBA copy; retain the unchanged native uint16 image for
           // cell picking and fetch that canonical image for binary corrections.
-          const rgba = new Uint8Array(volume.img.length * 4);
-          for (let index = 0; index < volume.img.length; index++) {
-            const id = volume.img[index];
-            if (id === 0) continue;
-            const color = palette[(id - 1) % palette.length];
-            const offset = index * 4;
-            rgba[offset] = color[0]; rgba[offset + 1] = color[1];
-            rgba[offset + 2] = color[2]; rgba[offset + 3] = 255;
-          }
+          const visibleIds = cellFilterKey === undefined ? undefined : new Set(cellFilterKey ? cellFilterKey.split(",").map(Number) : []);
+          const rgba = instanceRgba(volume.img, visibleIds);
           const display = volume.clone();
           display.img = rgba;
           display.hdr!.datatypeCode = 2304; // NIfTI RGBA32, display only.
@@ -564,7 +558,7 @@ export const NiiVueViewer = forwardRef<NiiVueViewerHandle, Props>(
       };
       // Visibility and opacity update without downloading the label volume again.
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [instanceOverlayUrl, loading]);
+    }, [instanceOverlayUrl, loading, cellFilterKey]);
 
     useEffect(() => {
       const nv = niivueRef.current;
