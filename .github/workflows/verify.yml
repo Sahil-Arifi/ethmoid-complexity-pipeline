@@ -57,7 +57,7 @@ jobs:
       - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
           version: '0.12.5'
-      - name: Real assisted counting worker integration
+      - name: Real counting worker integration
         shell: pwsh
         run: |
           uv venv --python 3.12.14 .engine-tests
@@ -66,6 +66,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $env:ETHMOID_ENGINE_TEST_PYTHON = (Resolve-Path ./.engine-tests/Scripts/python.exe).Path
           ./.venv/Scripts/python.exe -m pytest tests/test_assisted_integration.py -p no:cacheprovider -q
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./.venv/Scripts/python.exe -m pytest tests/test_research_v5_app.py -m integration -p no:cacheprovider -q
       - name: Install isolated Chromium for browser checks
         working-directory: web
         run: npm exec playwright install chromium

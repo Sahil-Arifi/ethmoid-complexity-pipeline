@@ -19,6 +19,9 @@ export type CountRun = {
   scan_profile?: Record<string, unknown> | null;
   processing_plan?: Record<string, unknown> | null;
   model_identity?: Record<string, unknown> | null;
+  research_status?: "NOT_ACCURACY_VALIDATED" | null;
+  protocol_sha256?: string | null;
+  protocol_snapshot_sha256?: string;
 };
 export type BoundaryRevision = { boundary_id: string; case_id?: string; parent_run_id?: string; created_at?: string; note?: string };
 export type Correction = {

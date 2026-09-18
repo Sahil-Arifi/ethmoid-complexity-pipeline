@@ -15,6 +15,7 @@ import traceback
 import uuid
 import zipfile
 from pathlib import Path
+from importlib.resources import files
 from typing import Any, Callable
 
 import nibabel as nib
@@ -24,7 +25,8 @@ from ..util import atomic_write_text, repo_root, sha256_canonical_json, sha256_f
 from .service import AppService, WebAppError, inspect_nifti, _atomic_save_nifti
 from .store import decode_json, encode_json
 from .counting_reports import build_count_reports, report_identity
-from ..counting.protocol import PROTOCOL_VERSION
+from ..counting.protocol import PROTOCOL_VERSION, ADAPTIVE_PROTOCOL_VERSION
+from ..counting.research_v5_policy import PROTOCOL_VERSION as RESEARCH_PROTOCOL_VERSION, METHOD_VERSION as RESEARCH_METHOD_VERSION
 from ..counting.quality import acquisition_snapshot, resolution_quality
 from .count_queue import CountQueue
 from .owned_process import launch_owned_process
@@ -32,6 +34,8 @@ from .owned_process import launch_owned_process
 
 ARTIFACTS = {"cavities": "cavities.nii.gz", "air": "air.nii.gz", "region": "region.nii.gz"}
 ELIGIBILITY = "EXPLORATORY_UNVALIDATED_ELIGIBILITY_UNCONFIRMED"
+RESEARCH_STATUS = "NOT_ACCURACY_VALIDATED"
+PROFILE_PROTOCOLS = {ADAPTIVE_PROTOCOL_VERSION, RESEARCH_PROTOCOL_VERSION}
 ENGINE_FAILURE_CODES = {
     "INVALID_CONFIG", "INVALID_GEOMETRY", "INVALID_VOLUME", "EMPTY_REGION",
     "NO_COMPARTMENTS", "NO_SUPPORTED_CELLS", "INSTANCE_LIMIT", "OUTPUT_EXISTS",
@@ -67,6 +71,15 @@ def _error(message: str, code: int = 422) -> WebAppError:
     return WebAppError(message, status_code=code)
 
 
+def _research_protocol() -> dict[str, Any]:
+    content = files("ethmoid_pipeline.counting").joinpath("protocol.research.v5.json").read_bytes()
+    value = json.loads(content)
+    if (value.get("protocol_version") != RESEARCH_PROTOCOL_VERSION or
+        value.get("status") != "RESEARCH_EXPERIMENT_NOT_ACCURACY_VALIDATED"):
+        raise ValueError("The research protocol identity is invalid.")
+    return {**value, "sha256": hashlib.sha256(content).hexdigest()}
+
+
 class CountingService:
     def __init__(
         self, app_service: AppService, *, executor: Executor | None = None,
@@ -76,6 +89,8 @@ class CountingService:
         self.root = app_service.root
         self.store = app_service.store
         self._protocol = protocol
+        # Operator-only opt-in; API requests cannot choose or supply a method.
+        self._automatic_method = os.environ.get("ETHMOID_AUTOMATIC_COUNT_METHOD", "adaptive-v3")
         self._executor = executor or self._execute_local
         self._process: subprocess.Popen[bytes] | None = None
         self._active_run_id: str | None = None
@@ -93,16 +108,21 @@ class CountingService:
     def wait_for_idle(self, timeout: float = 30) -> None:
         self._queue.wait_idle(timeout)
 
-    def protocol(self) -> dict[str, Any]:
-        if self._protocol is not None:
+    def protocol(self, *, assisted: bool = False) -> dict[str, Any]:
+        if self._protocol is not None and not assisted:
             value = copy.deepcopy(self._protocol)
         else:
             try:
-                from ..counting.protocol import load_counting_protocol, ADAPTIVE_PROTOCOL_VERSION
-                value = load_counting_protocol(ADAPTIVE_PROTOCOL_VERSION)
+                from ..counting.protocol import load_counting_protocol
+                if assisted or self._automatic_method == "adaptive-v3":
+                    value = load_counting_protocol(ADAPTIVE_PROTOCOL_VERSION)
+                elif self._automatic_method == "research-v5":
+                    value = _research_protocol()
+                else:
+                    raise ValueError("Unsupported operator counting method.")
             except (ImportError, OSError, ValueError, RuntimeError) as exc:
                 raise _error("The experimental counting configuration is unavailable.", 503) from exc
-        if value.get("protocol_version") not in {PROTOCOL_VERSION, "ethmoid-count-prototype-v3"}:
+        if value.get("protocol_version") not in {PROTOCOL_VERSION, *PROFILE_PROTOCOLS}:
             raise _error("The experimental counting configuration is unsupported.", 503)
         encode_json(value)
         return value
@@ -134,19 +154,21 @@ class CountingService:
             checker(case_id)
 
     def _validate_automatic_retry_parent(self, case_id: str, parent_run_id: str,
-                                         source_sha256: str, connection: Any | None = None) -> None:
+                                         source_sha256: str, connection: Any | None = None,
+                                         protocol_version: str | None = None) -> None:
         if connection is None:
             with self.store.connect() as connection:
-                return self._validate_automatic_retry_parent(case_id, parent_run_id, source_sha256, connection)
+                return self._validate_automatic_retry_parent(case_id, parent_run_id, source_sha256, connection, protocol_version)
         parent = self._run(case_id, parent_run_id, connection)
         job = connection.execute("SELECT assistance_id FROM count_jobs WHERE run_id=?", (parent_run_id,)).fetchone()
         parent_protocol = decode_json(parent["protocol_json"], {})
         if (parent["status"] != "failed" or parent["source_sha256"] != source_sha256 or
+            (protocol_version is not None and parent["protocol_version"] != protocol_version) or
             (job is not None and job["assistance_id"] is not None) or parent_protocol.get("assistance") is not None):
             raise _error("An automatic retry requires a failed automatic parent from the same source.", 409)
 
     def create_run(self, case_id: str, idempotency_key: str | None = None, *, boundary_id: str | None = None,
-                   parent_run_id: str | None = None) -> dict[str, Any]:
+                   parent_run_id: str | None = None, _retry_protocol: dict | None = None) -> dict[str, Any]:
         if self._closed.is_set():
             raise _error("The counting worker is stopping.", 503)
         if idempotency_key is not None and (
@@ -161,19 +183,28 @@ class CountingService:
         info = inspect_nifti(source)
         if info.warnings:
             raise _error("Resolve source orientation metadata before counting.", 409)
-        protocol = self.protocol()
+        protocol = copy.deepcopy(_retry_protocol) if _retry_protocol is not None else self.protocol(assisted=boundary_id is not None)
+        if protocol.get("protocol_version") not in {PROTOCOL_VERSION, *PROFILE_PROTOCOLS}:
+            raise _error("This historical counting method cannot be rerun by the current worker.", 409)
         context_reader = getattr(self.app, "catalog_context", None)
         context = context_reader(case_id) if context_reader is not None else None
-        try:
-            protocol["acquisition"] = acquisition_snapshot(context, case["source_sha256"])
-        except ValueError as exc:
-            raise _error("The trusted acquisition metadata is invalid.", 409) from exc
-        protocol["source_quality"] = resolution_quality(protocol["acquisition"], np.asarray(info.affine))
-        if protocol["protocol_version"] == "ethmoid-count-prototype-v3":
-            from ..counting.profiles import build_scan_profile, build_processing_plan
-            protocol["profile_characteristics"] = {key: (context or {}).get(key, "unknown") for key in ("reconstruction_kind", "kernel_class")}
-            protocol["scan_profile"] = build_scan_profile(source, {**protocol["acquisition"], **protocol["profile_characteristics"]})
-            protocol["processing_plan"] = build_processing_plan(protocol["scan_profile"])
+        if _retry_protocol is None:
+            try:
+                protocol["acquisition"] = acquisition_snapshot(context, case["source_sha256"])
+            except ValueError as exc:
+                raise _error("The trusted acquisition metadata is invalid.", 409) from exc
+            protocol["source_quality"] = resolution_quality(protocol["acquisition"], np.asarray(info.affine))
+            if protocol["protocol_version"] in PROFILE_PROTOCOLS:
+                from ..counting.profiles import build_scan_profile, build_processing_plan
+                protocol["profile_characteristics"] = {key: (context or {}).get(key, "unknown") for key in ("reconstruction_kind", "kernel_class")}
+                protocol["scan_profile"] = build_scan_profile(source, {**protocol["acquisition"], **protocol["profile_characteristics"]})
+                if protocol["protocol_version"] == RESEARCH_PROTOCOL_VERSION:
+                    from ..counting.research_v5_policy import build_research_plan
+                    protocol["processing_plan"] = build_research_plan(protocol["scan_profile"])
+                else:
+                    protocol["processing_plan"] = build_processing_plan(protocol["scan_profile"])
+        elif protocol.get("acquisition", {}).get("source_sha256") != case["source_sha256"]:
+            raise _error("The retry snapshot belongs to a different source.", 409)
         if boundary_id is not None:
             boundary = self.get_boundary(case_id, boundary_id)
             if boundary["parent_run_id"] != parent_run_id:
@@ -186,7 +217,10 @@ class CountingService:
             }
             if protocol['protocol_version'] != 'ethmoid-count-prototype-v3':
                 raise _error("Assisted boundaries require the adaptive v3 method.", 409)
+            from ..counting.profiles import build_processing_plan
             protocol['processing_plan'] = build_processing_plan(protocol['scan_profile'], assistance=protocol['assistance'])
+        if protocol["protocol_version"] == RESEARCH_PROTOCOL_VERSION:
+            self._validate_research_snapshot(protocol, source)
         now = utc_now()
         run_id = uuid.uuid4().hex
         relative = f"cases/{case_id}/count-runs/{run_id}"
@@ -196,24 +230,25 @@ class CountingService:
             if current_case["state"] == "APPROVED":
                 raise _error("Approved cases cannot start new count runs.", 409)
             if boundary_id is None and parent_run_id is not None:
-                self._validate_automatic_retry_parent(case_id, parent_run_id, case["source_sha256"], connection)
+                self._validate_automatic_retry_parent(case_id, parent_run_id, case["source_sha256"], connection, protocol["protocol_version"])
             existing = None
             if idempotency_key is not None:
                 existing = connection.execute(
-                    "SELECT id FROM count_runs WHERE case_id=? AND idempotency_key=?",
+                    "SELECT id,protocol_version FROM count_runs WHERE case_id=? AND idempotency_key=?",
                     (case_id, idempotency_key),
                 ).fetchone()
             if existing is None:
                 existing = connection.execute(
-                    "SELECT id FROM count_runs WHERE case_id=? AND status IN ('queued','running')",
+                    "SELECT id,protocol_version FROM count_runs WHERE case_id=? AND status IN ('queued','running')",
                     (case_id,),
                 ).fetchone()
             if existing is not None:
                 run_id = existing["id"]
                 job = connection.execute("SELECT assistance_id,parent_run_id FROM count_jobs WHERE run_id=?", (run_id,)).fetchone()
                 if ((job["assistance_id"] if job else None) != boundary_id or
-                    (job["parent_run_id"] if job else None) != parent_run_id):
-                    raise _error("Another counting request with different assistance or parent is already present.", 409)
+                    (job["parent_run_id"] if job else None) != parent_run_id or
+                    existing["protocol_version"] != protocol["protocol_version"]):
+                    raise _error("Another counting request with a different method, assistance or parent is already present.", 409)
             else:
                 connection.execute(
                     "INSERT INTO count_runs(id,case_id,idempotency_key,status,source_sha256,"
@@ -255,8 +290,12 @@ class CountingService:
         acquisition_path = config.with_name("acquisition.json")
         atomic_write_text(acquisition_path, encode_json({**snapshot.get("acquisition", acquisition_snapshot(None, sha256_file(source))), **snapshot.get("profile_characteristics", {})}))
         command.extend(["--acquisition", str(acquisition_path)])
-        if snapshot["protocol_version"] == "ethmoid-count-prototype-v3":
-            command.extend(["--method", "adaptive-v3", "--progress", str(config.with_name("progress.json"))])
+        methods = {PROTOCOL_VERSION: "v2", ADAPTIVE_PROTOCOL_VERSION: "adaptive-v3", RESEARCH_PROTOCOL_VERSION: "research-v5"}
+        if snapshot.get("protocol_version") not in methods:
+            raise _error("The queued counting method is unsupported.", 409)
+        command.extend(["--method", methods[snapshot["protocol_version"]]])
+        if snapshot["protocol_version"] in PROFILE_PROTOCOLS:
+            command.extend(["--progress", str(config.with_name("progress.json"))])
             plan_path = config.with_name("processing-plan.json")
             atomic_write_text(plan_path, encode_json(snapshot["processing_plan"]))
             command.extend(["--processing-plan", str(plan_path)])
@@ -317,8 +356,8 @@ class CountingService:
         with self.store.connect() as db:
             db.execute("UPDATE count_jobs SET stage=?,updated_at=? WHERE run_id=?", (stage, utc_now(), run_id))
 
-    def _fail(self, run_id: str, code: str) -> None:
-        outcome = "needs_review" if code in REVIEW_CODES else "cancelled" if code == "CANCELLED" else "unsupported_input" if code in {"RESOLUTION_INELIGIBLE", "INVALID_ACQUISITION", "OBLIQUE_GRID_UNSUPPORTED"} else "technical_error"
+    def _fail(self, run_id: str, code: str, *, outcome: str | None = None) -> None:
+        outcome = outcome or ("needs_review" if code in REVIEW_CODES else "cancelled" if code == "CANCELLED" else "unsupported_input" if code in {"RESOLUTION_INELIGIBLE", "INVALID_ACQUISITION", "OBLIQUE_GRID_UNSUPPORTED"} else "technical_error")
         with self.store.connect() as connection:
             connection.execute(
                 "UPDATE count_runs SET status='failed',failure_code=?,updated_at=? "
@@ -388,6 +427,8 @@ class CountingService:
             directory = self.app._path(row["output_relpath"])
             directory.mkdir(parents=True, exist_ok=True)
             protocol = decode_json(row["protocol_json"], {})
+            if row["protocol_version"] == RESEARCH_PROTOCOL_VERSION:
+                self._validate_research_snapshot(protocol, source)
             output = self._resume_output(row, directory)
             attempt = directory / f"attempt-{uuid.uuid4().hex}"
             attempt.mkdir()
@@ -409,16 +450,19 @@ class CountingService:
             self._assert_current_catalog_source(case_id)
             result_path = self._safe_file(output, "result.json")
             result = json.loads(result_path.read_text(encoding="utf-8"))
+            if row["protocol_version"] == RESEARCH_PROTOCOL_VERSION:
+                self._validate_research_provenance(result, protocol, row, output)
             # Server-derived source facts remain available even when anatomical
             # localization abstains. Free-form worker text is never needed.
-            if row["protocol_version"] in {PROTOCOL_VERSION, "ethmoid-count-prototype-v3"}:
+            if row["protocol_version"] in {PROTOCOL_VERSION, *PROFILE_PROTOCOLS}:
                 for key, expected in (("acquisition", protocol["acquisition"]), ("quality", protocol["source_quality"])):
                     if key in result and result[key] != expected:
                         raise _error("The counting acquisition facts do not match the frozen source snapshot.")
                     result[key] = copy.deepcopy(expected)
             if result.get("status") == "failed":
                 code = result.get("failure_code")
-                self._fail(run_id, code if isinstance(code, str) and code in ENGINE_FAILURE_CODES else "INFERENCE_FAILED")
+                self._fail(run_id, code if isinstance(code, str) and code in ENGINE_FAILURE_CODES else "INFERENCE_FAILED",
+                           outcome=result["outcome"] if row["protocol_version"] == RESEARCH_PROTOCOL_VERSION else None)
                 return
             if row["protocol_version"] == "ethmoid-count-prototype-v3":
                 for key in ("scan_profile", "processing_plan"):
@@ -487,6 +531,62 @@ class CountingService:
             raise _error("A count artifact is unavailable or invalid.", 409)
         return path
 
+    def _validate_research_snapshot(self, protocol: dict, source: Path) -> None:
+        from ..counting.profiles import build_scan_profile
+        from ..counting.research_v5_policy import build_research_plan
+
+        dynamic = {"acquisition", "source_quality", "profile_characteristics", "scan_profile", "processing_plan"}
+        if {key: value for key, value in protocol.items() if key not in dynamic} != _research_protocol():
+            raise _error("The research run does not match its exact frozen protocol.", 409)
+        acquisition = protocol.get("acquisition", {})
+        if acquisition.get("source_sha256") != sha256_file(source):
+            raise _error("The research snapshot belongs to a different source.", 409)
+        characteristics = protocol.get("profile_characteristics", {})
+        if (set(characteristics) != {"reconstruction_kind", "kernel_class"} or
+            characteristics["reconstruction_kind"] not in {"native", "mpr", "unknown"} or
+            characteristics["kernel_class"] not in {"bone", "soft", "unknown"}):
+            raise _error("The research acquisition characteristics are invalid.", 409)
+        profile = build_scan_profile(source, {**acquisition, **characteristics})
+        if (protocol.get("scan_profile") != profile or protocol.get("processing_plan") != build_research_plan(profile) or
+            protocol.get("source_quality") != resolution_quality(acquisition, np.asarray(profile["affine"]))):
+            raise _error("The research profile or plan differs from its source-bound policy.", 409)
+
+    def _validate_research_provenance(self, result: dict, protocol: dict, row: Any, output: Path) -> None:
+        expected = {"schema_version": 1, "source_sha256": row["source_sha256"],
+            "protocol_version": RESEARCH_PROTOCOL_VERSION, "method_version": RESEARCH_METHOD_VERSION,
+            "analysis_mode": "automatic", "assistance": None, "research_status": RESEARCH_STATUS,
+            "model_identity": {"localization": "research_geometric_baseline", "direct_ethmoid_model": "not_used"},
+            "config": protocol["algorithm"], "acquisition": protocol["acquisition"], "quality": protocol["source_quality"],
+            "scan_profile": protocol["scan_profile"], "processing_plan": protocol["processing_plan"]}
+        # HU validation precedes strategy.localize(), which fills these fields.
+        # Only this proven early failure may leave them empty; the API retains
+        # its independently source-verified queued profile and plan.
+        if (isinstance(result, dict) and result.get("status") == "failed" and
+            result.get("failure_code") == "HU_RANGE_INVALID" and
+            result.get("scan_profile") == {} and result.get("processing_plan") == {}):
+            expected.update(scan_profile={}, processing_plan={})
+        if not isinstance(result, dict) or any(result.get(key) != value for key, value in expected.items()):
+            raise _error("The research result differs from its frozen source, method or processing authority.")
+        with self.store.connect() as db:
+            job = db.execute("SELECT assistance_id,parent_run_id FROM count_jobs WHERE run_id=?", (row["id"],)).fetchone()
+        if job is None or job["assistance_id"] is not None:
+            raise _error("A research run cannot acquire assisted membership.")
+        if job["parent_run_id"] is not None:
+            self._validate_automatic_retry_parent(row["case_id"], job["parent_run_id"], row["source_sha256"], protocol_version=row["protocol_version"])
+        if result.get("status") == "failed":
+            code = result.get("failure_code")
+            expected_outcome = "needs_review" if code in REVIEW_CODES - {"INSTANCE_LIMIT"} else "technical_error"
+            if (code not in ENGINE_FAILURE_CODES or result.get("outcome") != expected_outcome or
+                result.get("counts") != {"left": None, "right": None, "total": None} or
+                result.get("cells") != [] or result.get("artifacts") != {}):
+                raise _error("The unsuccessful research result must withhold every count and artifact.")
+            return
+        verification = {"status": "verified", "source_sha256": row["source_sha256"],
+            "sha256": {key: sha256_file(self._safe_file(output, name)) for key, name in ARTIFACTS.items()}}
+        if (result.get("status") != "completed" or result.get("outcome") != "automatic_candidate_count" or
+            "failure_code" in result or result.get("artifact_verification") != verification):
+            raise _error("The research result lacks verified native artifacts.")
+
     def _validate_adaptive_provenance(self, result: dict, protocol: dict, row: Any, output: Path) -> None:
         from ..counting.profiles import sealed
         assistance = protocol.get('assistance')
@@ -507,7 +607,7 @@ class CountingService:
                 raise _error('An automatic result cannot acquire assistance lineage.')
             # A failed automatic attempt is retry provenance, not assistance.
             if job['parent_run_id'] is not None:
-                self._validate_automatic_retry_parent(row['case_id'], job['parent_run_id'], row['source_sha256'])
+                self._validate_automatic_retry_parent(row['case_id'], job['parent_run_id'], row['source_sha256'], protocol_version=row['protocol_version'])
         else:
             fixed = {key: assistance[key] for key in ('schema_version', 'source_sha256', 'revision_id', 'parent_run_id', 'region_sha256')}
             fixed['exclusion_sha256'] = assistance.get('exclusion_sha256')
@@ -675,8 +775,11 @@ class CountingService:
             "lineage": result.get("lineage", []) if result else [],
             "failure_code": row["failure_code"],
             "message": "The count did not complete. No anatomical count is available." if row["status"] == "failed" else None,
-            "method_version": result.get("method_version") if result else None,
-            "protocol_version": row["protocol_version"], "training_eligibility": ELIGIBILITY,
+            "method_version": result.get("method_version") if result else RESEARCH_METHOD_VERSION if row["protocol_version"] == RESEARCH_PROTOCOL_VERSION else None,
+            "protocol_version": row["protocol_version"], "training_eligibility": "NOT_FOR_TRAINING" if row["protocol_version"] == RESEARCH_PROTOCOL_VERSION else ELIGIBILITY,
+            "protocol_sha256": original.get("protocol_sha256", protocol.get("sha256")),
+            "protocol_snapshot_sha256": sha256_canonical_json(protocol),
+            "research_status": RESEARCH_STATUS if row["protocol_version"] == RESEARCH_PROTOCOL_VERSION else None,
             "source_sha256": row["source_sha256"],
             "created_at": row["created_at"], "updated_at": row["updated_at"],
             "stage": job["stage"] if job else row["status"],
@@ -685,7 +788,7 @@ class CountingService:
             "retry_count": job["retry_count"] if job else 0,
             "assistance": {"boundary_id": job["assistance_id"], "parent_run_id": job["parent_run_id"]} if job and job["assistance_id"] else None,
             "scan_profile": protocol.get("scan_profile"), "processing_plan": protocol.get("processing_plan"),
-            "model_identity": result.get("model_identity") if result else None,
+            "model_identity": result.get("model_identity") if result else {"localization": "research_geometric_baseline", "direct_ethmoid_model": "not_used"} if row["protocol_version"] == RESEARCH_PROTOCOL_VERSION else None,
             "analysis_mode": "assisted" if job and job["assistance_id"] else "automatic",
         }
 
@@ -711,7 +814,8 @@ class CountingService:
         with self.store.connect() as db:
             job = db.execute("SELECT assistance_id,parent_run_id FROM count_jobs WHERE run_id=?", (run_id,)).fetchone()
         return self.create_run(case_id, idempotency_key, boundary_id=job['assistance_id'] if job else None,
-                               parent_run_id=job['parent_run_id'] if job and job['assistance_id'] else run_id)
+                               parent_run_id=job['parent_run_id'] if job and job['assistance_id'] else run_id,
+                               _retry_protocol=decode_json(row['protocol_json'], {}))
 
     def save_boundary(self, case_id: str, run_id: str, mask_path: Path, note: str = '') -> dict:
         row = self._run(case_id, run_id)
@@ -970,18 +1074,27 @@ class CountingService:
             source, corrected_dir / ARTIFACTS["cavities"], corrected_dir / ARTIFACTS["air"],
             {**corrected, "original_counts": original["counts"], "acquisition": original.get("acquisition"), "quality": original.get("quality")}, case["case_label"],
         )
+        exported_protocol = decode_json(row['protocol_json'], {})
+        if exported_protocol.get('assistance'):
+            exported_protocol['assistance'] = {key: value for key, value in exported_protocol['assistance'].items() if key not in {'region_path', 'exclusion_path'}}
+        exported_protocol_bytes = encode_json(exported_protocol).encode("utf-8")
         manifest = {
             "schema_version": 1, "case_label": case["case_label"], "run_id": run_id,
             "identity": identity,
             "source_sha256": row["source_sha256"], "protocol_version": row["protocol_version"],
             "protocol_sha256": original["protocol_sha256"], "method_version": original["method_version"],
+            "protocol_snapshot_sha256": original.get("protocol_snapshot_sha256", sha256_canonical_json(decode_json(row["protocol_json"], {}))),
+            "protocol_snapshot_hash_scope": "canonical_private_queued_snapshot_before_path_redaction",
+            "exported_protocol_sha256": hashlib.sha256(exported_protocol_bytes).hexdigest(),
+            "exported_protocol_hash_scope": "exact_protocol_json_bytes_in_archive",
             "original_counts": original["counts"], "corrected_counts": corrected["counts"],
             "revision": corrected["revision"], "original_artifact_sha256": original_hashes,
             "corrected_artifact_sha256": corrected_hashes, "training_eligibility": ELIGIBILITY,
             "clinical_accuracy": "UNMEASURED", "warnings": corrected.get("warnings", []),
             "quality": original.get("quality", {}), "acquisition": original.get("acquisition", {}),
             "config": original.get("config", {}),
-            **({key: original.get(key) for key in ("analysis_mode", "assistance", "scan_profile", "processing_plan", "model_identity")} if row['protocol_version'] == "ethmoid-count-prototype-v3" else {}),
+            **({key: original.get(key) for key in ("analysis_mode", "assistance", "scan_profile", "processing_plan", "model_identity")} if row['protocol_version'] in PROFILE_PROTOCOLS else {}),
+            **({"research_status": original["research_status"], "training_eligibility": "NOT_FOR_TRAINING"} if row['protocol_version'] == RESEARCH_PROTOCOL_VERSION else {}),
             "report_sha256": {name: hashlib.sha256(data).hexdigest() for name, data in reports.items()},
         }
         # A second request must never replace a ZIP that FileResponse is still
@@ -993,10 +1106,7 @@ class CountingService:
         try:
             with zipfile.ZipFile(temporary, "w", compression=zipfile.ZIP_DEFLATED) as archive:
                 archive.writestr("manifest.json", encode_json(manifest))
-                exported_protocol = decode_json(row['protocol_json'], {})
-                if exported_protocol.get('assistance'):
-                    exported_protocol['assistance'] = {key: value for key, value in exported_protocol['assistance'].items() if key not in {'region_path', 'exclusion_path'}}
-                archive.writestr("protocol.json", encode_json(exported_protocol))
+                archive.writestr("protocol.json", exported_protocol_bytes)
                 for name, data in reports.items():
                     archive.writestr(name, data)
                 count_stream = io.StringIO(newline="")
@@ -1004,7 +1114,7 @@ class CountingService:
                 count_writer.writerow(["result", "revision", "left", "right", "total", "resolution_class", "slice_thickness_mm", "slice_interval_mm", "quality_flags",
                                        "study_label", "series_label", "legacy_case_label", "source_sha256",
                                        "acquisition_spacing_x_mm", "acquisition_spacing_y_mm", "acquisition_spacing_z_mm",
-                                       "native_spacing_x_mm", "native_spacing_y_mm", "native_spacing_z_mm", "analysis_mode", "method_version", "model_identity", "processing_plan_sha256"])
+                                       "native_spacing_x_mm", "native_spacing_y_mm", "native_spacing_z_mm", "analysis_mode", "method_version", "model_identity", "processing_plan_sha256", "research_status"])
                 acquisition = original.get("acquisition") or {}
                 acquired_spacing = acquisition.get("spacing_mm") or [None, None, None]
                 for name, snapshot in (("original", original), ("reviewed", corrected)):
@@ -1013,7 +1123,7 @@ class CountingService:
                                            quality.get("resolution_class", "unknown"), acquisition.get("slice_thickness_mm"), acquired_spacing[2],
                                            " ".join(quality.get("flags", [])), identity["study_label"], identity["series_label"], identity["legacy_case_label"], row["source_sha256"],
                                            *acquired_spacing, *native_spacing, snapshot.get('analysis_mode', 'automatic'), snapshot.get('method_version'),
-                                           encode_json(snapshot.get('model_identity')), (snapshot.get('processing_plan') or {}).get('sha256')])
+                                           encode_json(snapshot.get('model_identity')), (snapshot.get('processing_plan') or {}).get('sha256'), snapshot.get('research_status', '')])
                 archive.writestr("counts.csv", count_stream.getvalue())
                 for prefix, result, directory in (("original", original, original_dir), ("reviewed", corrected, corrected_dir)):
                     for name in ["result.json", *ARTIFACTS.values()]:

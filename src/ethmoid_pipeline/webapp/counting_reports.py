@@ -90,7 +90,10 @@ def _presentation(result: dict, case: str, native_spacing) -> dict:
     if "oblique_localization_proxy" in flags:
         notes.append("Oblique localization uses a resampled proxy; cell labels remain on the native grid.")
     mode = "ASSISTED: reviewer-defined boundaries. " if result.get('analysis_mode') == 'assisted' else ''
+    research = result.get("protocol_version") == "ethmoid-count-research-v5"
     return {"identity": identity, "label": label, "quality": mode + quality_note(quality), "notes": notes,
+            "original_label": "Research v5 automatic candidate result" if research else "Original automatic result",
+            "reviewed_label": "Reviewed research v5 result" if research else "Reviewed result",
             "acquisition": f"Acquisition thickness: {thickness}{' mm' if thickness != 'unknown' else ''} | Slice interval: {interval}{' mm' if interval != 'unknown' else ''}",
             "spacing": f"Acquisition spacing: {acquired_text} | Native voxel spacing: {spacing(list(map(float, native_spacing)))}"}
 
@@ -319,7 +322,7 @@ def _png_document(views: Image.Image, presentation: dict, counts: dict, original
     document = Image.new("RGB", (2100, 1440), PAPER)
     draw = ImageDraw.Draw(document)
     draw.text((35, 25), "3D ETHMOID CELL COUNT", font=_font(52), fill=INK)
-    draw.text((35, 92), f"{presentation['label']} | Revision {revision} | " + ("Original automatic result" if revision == 0 else "Reviewed result"), font=_font(25), fill=MUTED)
+    draw.text((35, 92), f"{presentation['label']} | Revision {revision} | " + presentation["original_label" if revision == 0 else "reviewed_label"], font=_font(25), fill=MUTED)
     for index, key in enumerate(("left", "right", "total")):
         x = 35 + index * 690
         draw.rounded_rectangle((x, 145, x + 655, 280), radius=10, fill=(230, 237, 241))
@@ -360,7 +363,7 @@ def _pdf_document(views: Image.Image, presentation: dict, cells: list[dict], cou
         pdf.drawString(margin, height - 43, title)
         pdf.setFont("Helvetica", 9)
         pdf.setFillColor(colors.HexColor("#51636F"))
-        pdf.drawString(margin, height - 62, f"{presentation['label']} | Revision {revision} | " + ("Original automatic result" if revision == 0 else "Reviewed result"))
+        pdf.drawString(margin, height - 62, f"{presentation['label']} | Revision {revision} | " + presentation["original_label" if revision == 0 else "reviewed_label"])
         pdf.setFont("Helvetica", 8)
         pdf.drawRightString(width - margin, 23, f"Page {page}")
 
