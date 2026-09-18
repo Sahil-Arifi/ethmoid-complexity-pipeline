@@ -356,13 +356,26 @@ class AppService:
         with self.store.connect() as connection:
             row = connection.execute("""SELECT l.acquisition_json,l.source_fingerprint,
                 s.id AS series_id,s.series_label,s.case_id AS active_case_id,s.source_fingerprint AS current_fingerprint,
+                s.descriptor_json,s.preparation_status,s.present,
                 t.id AS study_id,t.study_label FROM catalog_case_links l
                 JOIN catalog_series s ON s.id=l.series_id JOIN catalog_studies t ON t.id=s.study_id
                 WHERE l.case_id=?""", (case_id,)).fetchone()
         if row is None:
             return None
         context = decode_json(row["acquisition_json"], {})
-        if row["current_fingerprint"] != row["source_fingerprint"] or row["active_case_id"] != case_id:
+        current_source = row["current_fingerprint"] == row["source_fingerprint"] and row["active_case_id"] == case_id
+        descriptor = decode_json(row["descriptor_json"], {})
+        categories = {}
+        if (current_source and row["source_fingerprint"] and row["preparation_status"] == "ready"
+                and row["present"] and descriptor.get("metadata_validated") is True):
+            from .catalog import acquisition
+
+            categories = acquisition(descriptor)
+        # Legacy acquisition snapshots predate these categories. Enrich only
+        # current reads from verified matching metadata, never stored evidence.
+        for key in ("reconstruction_kind", "kernel_class"):
+            context.setdefault(key, categories.get(key, "unknown"))
+        if not current_source:
             context["warnings"] = [*context.get("warnings", []), "This retained volume belongs to an earlier source version."]
         return {**context, **{key:row[key] for key in ("study_id", "study_label", "series_id", "series_label")}}
 

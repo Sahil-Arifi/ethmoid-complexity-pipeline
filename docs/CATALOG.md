@@ -3,17 +3,22 @@
 The Cases screen groups the configured local DICOM collection by study. Every
 series remains selectable, including scouts and sources that cannot form a valid
 3D volume. Supported series are prepared in the background, with the recommended
-series first. Preparation converts and verifies images; counting begins only
-after the user clicks Run.
+series first. For the configured existing collection, preparation converts and
+verifies images; counting begins only after the user clicks Run. The v3 upload
+workflow also uses this catalog and schedules one analysis on each newly uploaded
+study's recommended verified series. Startup and collection synchronization never
+start fresh counts. See [Scan-adaptive uploads and review](SCAN_ADAPTIVE.md).
 
 ## Storage and identity
 
-Schema 3 adds catalog sources, studies, series, immutable case links, and durable
+Schema 3 introduced catalog sources, studies, series, immutable case links, and durable
 preparation jobs. Existing case IDs, annotation revisions, count runs, cell
 corrections, reviewer notes, and saved viewer state are retained. Before migrating
 an existing schema 1 or 2 database, SQLite writes a consistent protected backup
 named `schema-v<version>-<random>.sqlite3` beside the original database. The backup
-is local medical application state and must never enter Git.
+is local medical application state and must never enter Git. Schema 4 extends
+these records with durable counting, source-bound anatomical revisions and upload
+sessions; its additive migration also creates a protected database backup.
 
 The protected inventory UID map identifies studies and series. Neutral labels
 remain stable after the initial assignment, even if subsequent inventory discovery
