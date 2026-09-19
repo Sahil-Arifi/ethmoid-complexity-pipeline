@@ -59,3 +59,51 @@ An anatomical study of 129 patients found that a 30-degree anteriorly tilted cor
 Graph surface optimization can combine observed image evidence with explicit smoothness constraints ([Li et al.](https://pmc.ncbi.nlm.nih.gov/articles/PMC2646122/)). Local image-guided surface refinement has also been studied for sinonasal anatomy ([atlas/snake study](https://pmc.ncbi.nlm.nih.gov/articles/PMC5725758/)). Neither method has been implemented or evaluated here. Any experiment must independently require observed supporting bone, bound unsupported interpolation, reject competing anatomical surfaces and preserve native final cell decisions. Optimization always finding a mathematical solution is not anatomical evidence.
 
 Useful additional tests would cover steep and asymmetric walls, internal septa before the true boundary, missing walls, competing compartments, opacity and thick-slice averaging. Additional diagnostics should separate missing bone, gradient-direction rejection and insufficient spatial support. These are proposed engineering experiments, not a reason to reduce the existing rejection thresholds or declare unresolved anatomy correct.
+
+## Additional geometry and training-method review
+
+The subsequent bounded search on 2026-09-18 found two additional geometry resources:
+
+- [MIDA](https://itis.swiss/virtual-population/regional-human-models/mida-model) is
+  a 0.5 mm MRI-derived digital head atlas. Its [official tissue list](https://itis.swiss/assets/Downloads/VirtualPopulation/MIDA1-0_tissue-list.txt)
+  explicitly separates ethmoidal and sphenoidal internal air. The original MRI
+  images are not released. Its [access form](https://itis.swiss/virtual-population/regional-human-models/mida-model/mida-v1-0)
+  requires name, email and affiliation; no model payload was downloaded or size
+  verified. The [current license](https://itis.swiss/assets/Downloads/VirtualPopulation/License_Agreements/LicenseAgreementMIDA_2024.pdf)
+  restricts redistribution of model data and derivatives. Access and permission
+  for the intended training/weight-distribution use remain unconfirmed. This is a
+  possible labeled-geometry lead, not an acquired conventional-CT reference set.
+- [NIH3D upper respiratory airways cast](https://3d.nih.gov/entries/3DPX-002305)
+  is MDCT-derived and explicitly CC BY 4.0. The [download page](https://3d.nih.gov/entries/download/2305/2)
+  exposes a 4,758,152-byte GLB and 9,920,484-byte STL. A bounded 1,344-byte GLB
+  header/JSON read verified one combined mesh without ethmoid/sphenoid part labels.
+  It may support auxiliary synthetic geometry; it cannot supply those region or
+  individual-cell labels. The full mesh was not downloaded.
+
+Additional [sphenoid code](https://github.com/Sallycube/BIKO-UA-Sphenoid-Sinus-Segmentation)
+explicitly withholds the CT data and exposes no verified checkpoint/license.
+[Another repository](https://github.com/astronomer2912/sphenoid_sinus_project)
+contains code without a verified dataset/model release or license.
+[SinusSegmentation](https://github.com/niyaziacer/SinusSegmentation) is an
+MIT-licensed manual-seed region-growing implementation, not a pretrained model.
+[BodyParts3D's v4 vocabulary](https://dbarchive.biosciencedbc.jp/data/bodyparts3d/LATEST/isa_parts_list_e.txt)
+contains ethmoid/sphenoid bones, not the required sinus compartments.
+[AutoSeg4SinonasalCT](https://github.com/YuliangXiaoYLX/AutoSeg4SinonasalCT) concerns
+septum, inferior turbinate, maxillary sinus and optic nerve; it does not provide
+the required ethmoid/sphenoid targets.
+
+[SynthSeg](https://github.com/BBillot/SynthSeg) demonstrates segmentation training
+using randomized synthetic images generated from anatomical segmentations. It
+still needs meaningful target segmentations. Its released brain model, fixed
+1 mm outputs and CT brain-intensity preprocessing are not an ethmoid-cell model.
+The [CVPR 2022 self-supervised Swin pretraining study](https://openaccess.thecvf.com/content/CVPR2022/papers/Tang_Self-Supervised_Pre-Training_of_Swin_Transformers_for_3D_Medical_Image_Analysis_CVPR_2022_paper.pdf)
+supports learning general image features before downstream supervised tasks;
+pretraining does not establish missing anatomical label semantics or count truth.
+Neither model's weights were adopted here.
+
+Following the surface-method review above, an isolated
+[procedurally supervised wall experiment](SYNTHETIC_WALL_TRAINING.md) is now
+implemented for testing. It does not change the existing anatomical methods or
+treat a graph solution as truth. No external data request, registration or author
+message was submitted. The lack of an acquired target-reference dataset remains
+a separate constraint on clinical accuracy evaluation.
