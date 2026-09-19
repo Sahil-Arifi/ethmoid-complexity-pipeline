@@ -34,9 +34,15 @@ checkout with zero difference across 782 compared floating values. A second
 version now addresses missed competing-wall searches and candidate-center
 features, adds an independently justified blur-target correction, and saves
 per-scene numerical evidence. Its foundation passed **423 CPU checks** and
-**24 real PyTorch integrations**. Full retraining/evaluation is pending at this
-checkpoint; the first experiment's failed result and all patient histories remain
-preserved. Both CI jobs passed for the first experiment and its report.
+**24 real PyTorch integrations**. The second training/evaluation is complete:
+22 observable scenes accepted, four ambiguous controls falsely accepted, and four
+accepted observable scenes below the fixed precision requirement. **It also
+failed the engineering gate and was not promoted.** Its 98.13% sampled synthetic
+candidate precision is not cell-count accuracy. An independent audit verified
+all 24,544 labels, 64 scene proofs and 3,072 test classifications; 1,262 remeasured
+scene values matched exactly. The [second experiment report](docs/SYNTHETIC_WALL_TRAINING.md#experiment-002-completed-not-promoted)
+retains its evidence and the remaining partial-wall-merging and point-confidence
+limitations. Both CI jobs passed for the first experiment and its report.
 
 **Latest verified result: frozen research v5 produced 15/98 automatic candidate counts (15.3%), with 83 anatomical review outcomes and zero technical errors. The requested 98/98 automatic-count target remains unmet.** All 12 v3 completions retained identical left/right/total counts, cell registries and saved native air/cavity/region artifacts; three previously resource-limited volumes newly completed. The 15 results contain 306 uncertain candidate entries across 11 studies, including repeated reconstructions. The remaining reasons are 44 unresolved sphenoid boundaries, 22 ambiguous boundaries, nine insufficient-coverage outcomes and eight unsupported-cell outcomes. Summed serial local attempt time was 3,635.101 seconds (60.6 minutes), including verified cache reuse and abstentions, not upload/preparation or uncached inference latency. The [final v4/v5 evaluation report](docs/RESEARCH_COMPLETION_EVALUATION.md) preserves both methods' evidence and distinguishes v4 regressions from v5 retention.
 

@@ -186,7 +186,7 @@ receive a new version and preserve this failed experiment. These inspected test
 scenes have now informed development and cannot become a new independent test
 set by rerunning them after a fix.
 
-## Experiment 002: revised components before training
+## Experiment 002: completed, not promoted
 
 The first experiment exposed two distinct limitations. Changing candidate depth
 order could hide a complete competing wall from approximate search. Separately,
@@ -238,5 +238,69 @@ The decoder must not invent a second observed face in the latter. If it accepts
 that apparent single wall, the independent benchmark still records a false
 acceptance and fails its gate. This limitation remains visible.
 
-Full training/evaluation of experiment 002 is pending at this source checkpoint.
-No patient model has been promoted and the audited patient result remains 15/98.
+Frozen source: [`d64111d`](https://github.com/Sahil-Arifi/ethmoid-complexity-pipeline/commit/d64111d47e0382532550071531d1cfe702b732c1).
+The completed run used 64 geometries, with disjoint 40/16/8 geometry and 5/2/1
+family splits. Smooth bowls formed the test family. Sampled candidates numbered
+15,328 training, 6,144 validation and 3,072 test. All targets remained procedural;
+no patient images or expert annotations entered this experiment.
+
+Fifteen epochs ran on the same local GPU. Validation binary cross-entropy
+decreased from 0.703422 to 0.035166; epoch 12 selected the checkpoint.
+Training/checkpointing took **16.172 seconds**, with peak PyTorch-allocated GPU
+memory **129,986,048 bytes**. Complete generation, training and evaluation took
+**47.797 seconds**. These timings describe this small synthetic experiment only.
+
+Class-capped test precision was **98.13%**, recall **95.83%** and binary
+cross-entropy **0.081597** (1,472 true positives, 28 false positives, 1,508 true
+negatives and 64 false negatives). These are candidate-classification results,
+not cell-count accuracy or calibrated clinical probabilities.
+
+All 64 scenes were retained: 26 observable and 38 unobservable, with no extraction
+failures. The engineering criteria remained unchanged.
+
+| Boundary method | Accepted / 64 | Abstained | Accepted observable scenes | False acceptances | Fixed engineering gate |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Image-only interval-domain decoder | 28 | 36 | 22 | 6 | Failed |
+| Learned scores with interval-domain decoder | 26 | 38 | 22 | 4 | Failed |
+| First-hit/gradient/quadratic boundary proxy | 64 | 0 | 26 | 38 | Failed |
+
+The learned decoder accepted four ambiguous controls. Four accepted observable
+scenes fell below the 0.98 observed-target precision requirement; the minimum
+was **0.961818**. Mean accepted-scene position error was 0.405746 mm. The proxy
+remains a boundary-only comparison, not the complete patient counter. Generator
+versioning changed the draws and test family, so these numbers are not a paired
+improvement estimate against experiment 001.
+
+Independent CPU audit verified all **24,544 sampled labels**, exact seeded
+sampling, geometry/family separation, all 15 epochs and validation-only checkpoint
+selection. It re-decoded all 64 saved proofs and independently remeasured 1,262
+floating values with maximum difference **0.0**. Reconstructing all 3,072 test
+probabilities from scene evidence reproduced the confusion counts exactly and
+loss/Brier metrics within 1e-9. This confirms the recorded failed result; it does
+not establish anatomical validity.
+
+Protected evidence SHA-256 values:
+
+- Checkpoint: `fcb7feb80a1ea9c39dd005ad6931d1f5feb19dd2da83c35e72f9126cb93149d4`
+- Evaluation file: `84812f0057600343cc1820627be5e7b2c343642cf807234bd9868759d18fb6fd`
+- Provenance file: `d51d66649fe8a1cd2d28c38429bf9b3c0578c6452d6c0f9b6113833bdc69e722`
+- Independent scene audit: `cf65f03c7415cfc4cc3ff944ba4e98d099c62d4134a457f7146a83512b76f30f`
+
+The four ambiguous controls are only partly merged: separate observed runs
+remain in 37–85% of their sampled columns. Transitions between merged and separate
+runs make each mapped rival surface violate the decoder's full-grid slope
+assumptions. The solver correctly certifies its declared geometry model, but
+that model cannot certify anatomical uniqueness. Its variable-column counts
+were 147, 2, 63 and 45 against required 149, 169, 136 and 143 respectively.
+Changing those cutoffs to fit these cases would not resolve the missing evidence.
+
+A separate acceptance weakness is that a mean confidence can conceal individual
+unsupported points. In the worst accepted thick scene, all 21 target-negative
+points scored below 0.0015; no target-positive alternative existed in their
+columns. The next bounded check requires support for each selected point and
+reports abstention when it is absent. It must not drop uncertain points and
+present the remainder as a complete wall. Reusing these inspected scenes is a
+development regression, not a fresh independent evaluation.
+
+**Neither trained experiment is promoted. No patient count or application setting
+changed. The audited patient result remains 15/98, and the 98/98 target is unmet.**
