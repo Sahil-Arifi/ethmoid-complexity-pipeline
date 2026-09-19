@@ -304,3 +304,31 @@ development regression, not a fresh independent evaluation.
 
 **Neither trained experiment is promoted. No patient count or application setting
 changed. The audited patient result remains 15/98, and the 98/98 target is unmet.**
+
+## Per-point support correction
+
+The separate `all_selected_points_at_least_0_5_v1` policy requires every selected
+native observed point to meet the existing fixed 0.5 classification threshold.
+The interval-domain geometry solver remains version 2. Geometry ambiguity checks
+still run before score acceptance. A failed point withholds the entire proposal
+as `WALL_POINT_UNSUPPORTED`, including selected/supported/unsupported counts and
+minimum/mean score. No point is deleted, replaced, filled or reclassified to pass.
+Lowering the optional historical mean threshold cannot bypass the point floor.
+
+Benchmark version 3 preserves these diagnostics in failures and completed
+proposals. Future training manifests separately record the support policy under
+experiment version 3; no third training run has occurred. Classifier weights,
+renderer and fixed benchmark precision/error/negative-control criteria remain
+unchanged. A classifier score is still not a calibrated clinical probability.
+
+**433 CPU checks passed**, comprising 213 synthetic research checks and 220
+existing counting regressions. New controls cover a high mean concealing one
+unsupported point, the exact threshold, immutable inputs, no partial output or
+substitution, and unchanged image-only/geometry behavior. One Windows
+directory-symlink-privilege test remains skipped; the unchanged real training
+implementation previously passed 24 CPU/GPU integration checks.
+
+The next execution reuses all 64 source-bound experiment-002 scene scores under
+this fixed policy, preserving previous artifacts. It is a development regression
+without new optimization or patient inference. Its results remain pending at
+this source freeze and will be recorded regardless of completion or abstention.

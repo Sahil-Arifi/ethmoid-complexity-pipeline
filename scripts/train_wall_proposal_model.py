@@ -31,11 +31,11 @@ from ethmoid_pipeline.counting.synthetic_walls import (
     make_geometry, render_scene, split_geometry_families,
 )
 from ethmoid_pipeline.counting.wall_proposals import (
-    SOLVER_VERSION, WallProposalError, candidate_patch, extract_candidates,
+    SOLVER_VERSION, SUPPORT_POLICY_VERSION, WallProposalError, candidate_patch, extract_candidates,
 )
 
 
-EXPERIMENT = "synthetic-observed-wall-learning-2"
+EXPERIMENT = "synthetic-observed-wall-learning-3"
 MAX_PATCHES_PER_SPLIT = 20_000
 MAX_PARTITION_BYTES = 768 * 1024**2
 
@@ -193,7 +193,8 @@ def run(args):
     provenance = {"schema_version": 1, "experiment": EXPERIMENT, **frozen,
         "supervision": SUPERVISION, "clinical_accuracy_measured": False,
         "patient_images_used": 0, "expert_masks_used": 0, "training_target": "noiseless_wall_attributed_observed_leading_face",
-        "generator": VERSION, "decoder": SOLVER_VERSION, "architecture": ARCHITECTURE,
+        "generator": VERSION, "decoder": SOLVER_VERSION, "support_policy": SUPPORT_POLICY_VERSION,
+        "architecture": ARCHITECTURE,
         "hu_normalization": HU_NORMALIZATION, "config": asdict(config),
         "geometry_split": {name: [asdict(g) for g in values] for name, values in split.items()},
         "split_families": {name: sorted({g.family for g in values}) for name, values in split.items()},

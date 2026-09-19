@@ -9,6 +9,7 @@ pytest.importorskip("scipy")
 from ethmoid_pipeline.counting.wall_proposals import (
     WallProposalError, extract_candidates, candidate_patch, decode_surface,
     _IntervalWorkBudget, _interval_domain_extreme, MAX_FEASIBILITY_WORK,
+    MINIMUM_POINT_SCORE, SUPPORT_POLICY_VERSION, SOLVER_VERSION,
 )
 
 
@@ -226,7 +227,7 @@ def test_bad_scores_low_confidence_and_candidate_complexity_are_explicit():
     found = extract(hu, seed, spacing)
     for scores in [np.ones(1), np.full(len(found.positions_ijk), np.nan), np.full(len(found.positions_ijk), 2)]:
         fails("WALL_INPUT_INVALID", decode_surface, found, scores)
-    fails("WALL_SCORE_UNSUPPORTED", decode_surface, found, np.full(len(found.positions_ijk), .1))
+    fails("WALL_POINT_UNSUPPORTED", decode_surface, found, np.full(len(found.positions_ijk), .1))
     hu[4:16, 23:25, 4:16] = 800
     found = extract(hu, seed, spacing)
     fails("WALL_RESOURCE_LIMIT", decode_surface, found, np.ones(len(found.positions_ijk)), max_candidates_per_column=1)
@@ -468,3 +469,104 @@ def test_interval_domain_extrema_match_exhaustive_independent_linear_programs(se
         for solution in (least, greatest):
             chosen = np.array([domain[index] for domain, index in zip(centers, solution.candidate_choices)])
             assert np.all(np.abs(solution.values_mm - chosen) <= half_width + 1e-7)
+
+
+def test_high_mean_cannot_hide_one_unsupported_point_or_return_a_partial_surface(monkeypatch):
+    from ethmoid_pipeline.counting import wall_proposals
+
+    hu, seed, spacing = scene()
+    found = extract(hu, seed, spacing)
+    scores = np.full(len(found.positions_ijk), .99)
+    scores[17] = .000001
+    assert scores.mean() > .98
+    before = found.positions_ijk.copy(), hu.copy(), scores.copy()
+    def forbidden_surface(*args, **kwargs):
+        pytest.fail("No complete or partial surface may be constructed after the support gate fails")
+    monkeypatch.setattr(wall_proposals, "WallSurface", forbidden_surface)
+    with pytest.raises(WallProposalError) as failure:
+        decode_surface(found, scores)
+    assert failure.value.code == "WALL_POINT_UNSUPPORTED"
+    details = failure.value.diagnostics
+    assert details["selected_support_points"] == 144
+    assert details["score_supported_points"] == 143
+    assert details["score_unsupported_points"] == 1
+    assert details["minimum_point_score"] == .5
+    assert details["minimum_selected_point_score"] == .000001
+    assert details["mean_selected_point_score"] == pytest.approx(scores.mean())
+    assert details["points_removed"] == details["interpolated_support_points"] == 0
+    assert details["whole_proposal_withheld"] is True
+    assert details["support_policy"] == SUPPORT_POLICY_VERSION
+    for actual, expected in zip((found.positions_ijk, hu, scores), before):
+        np.testing.assert_array_equal(actual, expected)
+
+
+@pytest.mark.parametrize("score", [.5, .8, 1.0])
+def test_every_supported_point_including_exact_threshold_retains_all_original_points(score):
+    hu, seed, spacing = scene()
+    found = extract(hu, seed, spacing)
+    wall = decode_surface(found, np.full(len(found.positions_ijk), score))
+    np.testing.assert_array_equal(wall.positions_ijk, found.positions_ijk)
+    assert wall.diagnostics["selected_support_points"] == wall.diagnostics["score_supported_points"] == 144
+    assert wall.diagnostics["score_unsupported_points"] == 0
+    assert wall.diagnostics["minimum_selected_point_score"] == score
+    assert wall.diagnostics["whole_proposal_withheld"] is False
+    assert wall.diagnostics["solver"] == SOLVER_VERSION
+    assert wall.diagnostics["support_policy"] == SUPPORT_POLICY_VERSION
+    assert np.all(wall.y_surface_mm[wall.supported_mask] == 8)
+
+
+def test_just_below_fixed_point_threshold_cannot_be_hidden_by_lowering_legacy_mean_threshold():
+    hu, seed, spacing = scene()
+    found = extract(hu, seed, spacing)
+    scores = np.ones(len(found.positions_ijk))
+    scores[0] = np.nextafter(MINIMUM_POINT_SCORE, 0.0)
+    with pytest.raises(WallProposalError) as failure:
+        decode_surface(found, scores, minimum_score=0.0)
+    assert failure.value.code == "WALL_POINT_UNSUPPORTED"
+    assert failure.value.diagnostics["score_unsupported_points"] == 1
+
+
+def test_point_policy_does_not_bypass_a_more_conservative_legacy_mean_requirement():
+    hu, seed, spacing = scene()
+    found = extract(hu, seed, spacing)
+    fails("WALL_SCORE_UNSUPPORTED", decode_surface, found, np.full(len(found.positions_ijk), .8), minimum_score=.9)
+
+
+def test_image_only_control_keeps_geometry_and_ambiguity_behavior():
+    hu, seed, spacing = scene()
+    found = extract(hu, seed, spacing)
+    wall = decode_surface(found, np.ones(len(found.positions_ijk)))
+    assert wall.diagnostics["mean_candidate_score"] == 1
+    assert wall.diagnostics["variable_feasible_columns"] == 0
+    assert np.all(wall.positions_ijk[:, 1] == 16)
+    assert np.all(hu[tuple(wall.positions_ijk.T)] >= 200)
+    hu[4:16, 23:25, 4:16] = 800
+    rivals = extract(hu, seed, spacing)
+    fails("WALL_AMBIGUOUS", decode_surface, rivals, np.ones(len(rivals.positions_ijk)))
+
+
+def test_geometry_veto_precedes_low_point_scores():
+    hu, seed, spacing = scene()
+    hu[4:16, 23:25, 4:16] = 800
+    found = extract(hu, seed, spacing)
+    fails("WALL_AMBIGUOUS", decode_surface, found, np.full(len(found.positions_ijk), .01))
+
+
+def test_failed_selected_surface_is_not_replaced_with_another_point_to_pass_support_gate():
+    hu, seed, _ = scene()
+    hu[10, 20:22, 10] = 800
+    found = extract(hu, seed, (1., .5, 1.))
+    scores = np.full(len(found.positions_ijk), .99)
+    flat_center = np.all(found.positions_ijk == (10, 16, 10), axis=1)
+    other_face = np.all(found.positions_ijk == (10, 20, 10), axis=1)
+    scores[flat_center], scores[other_face] = .49, .6
+    # The existing geometry/energy ranking selects the flatter surface. The
+    # support policy must withhold it, not substitute the other face afterward
+    # merely to obtain a passing score or delete the unsupported center point.
+    with pytest.raises(WallProposalError) as failure:
+        decode_surface(found, scores, smoothness=1.0)
+    assert failure.value.code == "WALL_POINT_UNSUPPORTED"
+    assert failure.value.diagnostics["selected_support_points"] == 144
+    assert failure.value.diagnostics["score_unsupported_points"] == 1
+    assert failure.value.diagnostics["minimum_selected_point_score"] == .49
+    assert failure.value.diagnostics["points_removed"] == 0

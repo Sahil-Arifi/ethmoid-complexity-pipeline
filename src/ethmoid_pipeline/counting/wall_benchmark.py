@@ -20,7 +20,7 @@ from .synthetic_walls import BONE_HU, SyntheticWallScene, candidate_targets
 from .wall_proposals import WallCandidates, WallProposalError, decode_surface
 
 
-BENCHMARK_VERSION = "procedural-observed-wall-benchmark-2"
+BENCHMARK_VERSION = "procedural-observed-wall-benchmark-3"
 METHODS = ("image_only", "learned", "first_hit_quadratic")
 CRITERIA = {
     "maximum_false_acceptances": 0,
@@ -162,11 +162,13 @@ def evaluate_scene(scene: SyntheticWallScene, candidates: WallCandidates, scores
             if not np.array_equal(decoded.positions_ijk, candidates.positions_ijk[decoded.selected_candidate_indices]):
                 raise ValueError("Decoder points are not its selected observed candidates")
             methods[name] = _measure(scene, decoded.positions_ijk)
+            methods[name]["support_diagnostics"] = dict(decoded.diagnostics)
             if evidence is not None:
                 evidence[name + "_selected_candidate_indices"] = decoded.selected_candidate_indices.copy()
                 evidence[name + "_observed_points_ijk"] = decoded.positions_ijk.copy()
         except WallProposalError as exc:
             methods[name] = _empty(exc.code)
+            methods[name]["support_diagnostics"] = dict(exc.diagnostics)
             if evidence is not None:
                 evidence[name + "_selected_candidate_indices"] = np.empty(0, dtype=np.int32)
                 evidence[name + "_observed_points_ijk"] = np.empty((0, 3), dtype=np.int32)

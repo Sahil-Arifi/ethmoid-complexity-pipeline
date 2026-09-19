@@ -44,6 +44,15 @@ scene values matched exactly. The [second experiment report](docs/SYNTHETIC_WALL
 retains its evidence and the remaining partial-wall-merging and point-confidence
 limitations. Both CI jobs passed for the first experiment and its report.
 
+The research decoder now requires every selected native support point to reach
+the existing 0.5 score threshold. It withholds the whole proposal with explicit
+point-support diagnostics when any selected point fails; it never deletes points
+or fills holes to obtain acceptance. This policy is versioned separately from the
+unchanged geometry solver. **433 CPU checks passed** (213 research checks and
+220 existing counting regressions); the one Windows symlink-privilege skip remains.
+Replaying all 64 stored scenes is pending at this source freeze. This correction
+does not retrain or promote a model, and it does not increase patient completion.
+
 **Latest verified result: frozen research v5 produced 15/98 automatic candidate counts (15.3%), with 83 anatomical review outcomes and zero technical errors. The requested 98/98 automatic-count target remains unmet.** All 12 v3 completions retained identical left/right/total counts, cell registries and saved native air/cavity/region artifacts; three previously resource-limited volumes newly completed. The 15 results contain 306 uncertain candidate entries across 11 studies, including repeated reconstructions. The remaining reasons are 44 unresolved sphenoid boundaries, 22 ambiguous boundaries, nine insufficient-coverage outcomes and eight unsupported-cell outcomes. Summed serial local attempt time was 3,635.101 seconds (60.6 minutes), including verified cache reuse and abstentions, not upload/preparation or uncached inference latency. The [final v4/v5 evaluation report](docs/RESEARCH_COMPLETION_EVALUATION.md) preserves both methods' evidence and distinguishes v4 regressions from v5 retention.
 
 The independent v5 audit verified all 98 unique source/result bindings and all 230 catalog series, including 132 unavailable series, and checked native geometry, IDs, measurements, HU-based air membership and explicit null counts on failure. These are software consistency checks on the existing 26-study development collection; **anatomical accuracy remains unmeasured**. No required expert target labels or new public target-label dataset were obtained, and no direct ethmoid model was trained or promoted. The application default remains v3; no opt-in setting change, production restart or research-result import into production occurred. All evaluated outputs remain protected locally, separate from production application histories.

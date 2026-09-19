@@ -237,3 +237,27 @@ def test_merged_wall_truth_is_not_invented_as_a_second_observed_face():
     summary = benchmark.summarize([row])
     assert not summary["methods"]["image_only"]["engineering_gate_passed"]
     assert summary["methods"]["image_only"]["false_acceptances"] == 1
+
+
+def test_point_abstention_retains_reason_without_publishing_partial_evidence():
+    scene, candidates, scores = control()
+    evidence = {}
+    original = benchmark.evaluate_scene(scene, candidates, scores, evidence=evidence)
+    assert original["methods"]["learned"]["accepted"]
+    selected = evidence["learned_selected_candidate_indices"]
+    scores = scores.copy()
+    scores[selected[len(selected) // 2]] = 0.000001
+    evidence = {}
+    changed = benchmark.evaluate_scene(scene, candidates, scores, evidence=evidence)
+    method = changed["methods"]["learned"]
+    assert not method["accepted"]
+    assert method["abstention_code"] == "WALL_POINT_UNSUPPORTED"
+    assert method["mean_physical_error_mm"] is None
+    assert method["observed_target_precision"] is None
+    assert method["support_diagnostics"]["score_unsupported_points"] == 1
+    assert method["support_diagnostics"]["points_removed"] == 0
+    assert method["support_diagnostics"]["whole_proposal_withheld"] is True
+    assert evidence["learned_selected_candidate_indices"].size == 0
+    assert evidence["learned_observed_points_ijk"].shape == (0, 3)
+    assert changed["methods"]["image_only"] == original["methods"]["image_only"]
+    json.dumps(changed, allow_nan=False)

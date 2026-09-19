@@ -25,17 +25,20 @@ MAX_CANDIDATES = 65_536
 MAX_PATCH_VOXELS = 64 ** 3
 MAX_FEASIBILITY_WORK = 2_000_000
 SOLVER_VERSION = "bounded_interval_domain_observed_wall_v2"
+SUPPORT_POLICY_VERSION = "all_selected_points_at_least_0_5_v1"
+MINIMUM_POINT_SCORE = 0.5
 _NUMERIC_TOLERANCE_MM = 1e-7
 
 
 class WallProposalError(ValueError):
-    def __init__(self, code: str, message: str):
+    def __init__(self, code: str, message: str, *, diagnostics: dict | None = None):
         self.code = code
+        self.diagnostics = dict(diagnostics or {})
         super().__init__(message)
 
 
-def _fail(code, message):
-    raise WallProposalError(code, message)
+def _fail(code, message, *, diagnostics=None):
+    raise WallProposalError(code, message, diagnostics=diagnostics)
 
 
 def _readonly(values, dtype=None):
@@ -328,6 +331,10 @@ def decode_surface(candidates: WallCandidates, scores, *, minimum_score=0.5,
     observed candidates, graph, slope, support and depth-interval assumptions.
     Both extremal surfaces enter the subsequent bounded multi-start ICM ranking;
     its energy optimum is not claimed to be global.
+    After selection, EVERY observed point must score >= the fixed 0.5 floor;
+    otherwise the whole proposal is withheld. Points are never dropped or
+    substituted to make this gate pass. minimum_score retains the additional
+    historical mean-score filter and cannot lower the fixed per-point floor.
     Depth observations occupy intervals of +/- half the native J spacing; a
     graph constraint checks whether those intervals admit consistent slopes.
     Interval feasibility does not supply interpolated or extra support points.
@@ -458,12 +465,31 @@ def decode_surface(candidates: WallCandidates, scores, *, minimum_score=0.5,
         retain(selected)
     ranked = sorted(solutions.values(), key=lambda selected: (energy(selected), tuple(selected)))
     chosen = ranked[0]
+    selected_scores = probability[chosen]
+    unsupported_points = int(np.count_nonzero(selected_scores < MINIMUM_POINT_SCORE))
+    support_diagnostics = {
+        "support_policy": SUPPORT_POLICY_VERSION,
+        "minimum_point_score": MINIMUM_POINT_SCORE,
+        "selected_support_points": len(chosen),
+        "score_supported_points": len(chosen) - unsupported_points,
+        "score_unsupported_points": unsupported_points,
+        "minimum_selected_point_score": float(selected_scores.min()),
+        "mean_selected_point_score": float(selected_scores.mean()),
+        "points_removed": 0,
+        "interpolated_support_points": 0,
+        "whole_proposal_withheld": bool(unsupported_points),
+    }
+    if unsupported_points:
+        _fail("WALL_POINT_UNSUPPORTED",
+              "At least one selected observed support point scores below 0.5; the entire proposal is withheld.",
+              diagnostics=support_diagnostics)
     if float(probability[chosen].mean()) < minimum_score:
         _fail("WALL_SCORE_UNSUPPORTED", "Model support for the observed sheet is below the research threshold.")
     output = np.full(supported.shape, np.nan, dtype=np.float64)
     output[tuple(points.T)] = depth[chosen]
     return WallSurface(_readonly(chosen, np.int32), _readonly(candidates.positions_ijk[chosen], np.int32),
                        _readonly(supported, bool), _readonly(output), {
+                           **support_diagnostics,
                            "solver": SOLVER_VERSION, "global_optimum_claim": False,
                            "complete_alternative_search_claim": False,
                            "interval_graph_ambiguity_certificate": "all_feasible_pairs_bounded_by_extremal_candidate_sheets",
