@@ -117,3 +117,66 @@ count-job recovery. No generated reference label is presented as an expert label
 
 The application default, previous protocols, original DICOMs, production database
 and all previous v3/v4/v5 evidence remain untouched by this training command.
+
+## Experiment 001: completed, not promoted
+
+Frozen source: [`1368662`](https://github.com/Sahil-Arifi/ethmoid-complexity-pipeline/commit/1368662e9ff7af7377e57edf6b06ccc8a3106282).
+The actual run used **eight geometries per family**, for 64 geometries total:
+40 training, 16 validation and eight test geometries. Families were disjoint
+(five/two/one). The test family was asymmetric walls. All 256 present-wall
+augmentations were inventoried; sampled candidates were 15,360 training, 6,144
+validation and 3,072 test. No patient images or expert masks were used.
+
+Fifteen epochs ran on the local RTX 5070 Ti. Validation loss decreased from
+0.694589 to a best 0.037030 at epoch 12, which selected the saved checkpoint.
+Optimization/checkpointing took **12.880 seconds**, with peak PyTorch-allocated
+GPU memory **129,949,184 bytes**. Complete generation, training and evaluation took
+**44.485 seconds**. These are measurements of this small synthetic model on this
+workstation, not clinical inference or nnU-Net training estimates.
+
+On the class-capped test patches, precision was **95.55%**, recall **99.28%** and
+binary cross-entropy **0.074373**. These are synthetic candidate-classification
+metrics, **not ethmoid-cell accuracy**.
+
+The full-scene benchmark retained 32 present-wall scenes and 32 negative controls
+from the eight test geometries. Of those 64 scenes, 26 met the independent
+observability definition and 38 did not.
+
+| Boundary method | Accepted / 64 | Abstained | Accepted observable scenes | False acceptances | Fixed engineering gate |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Image-only approximate decoder | 2 | 62 | 0 | 2 | Failed |
+| Learned scores with approximate decoder | 21 | 43 | 17 | 4 | Failed |
+| First-hit/gradient/quadratic boundary proxy | 64 | 0 | 26 | 38 | Failed |
+
+The learned decoder's four false acceptances were **four of eight competing-wall
+controls**. It abstained on every missing, averaged-away and cropped control.
+Three accepted observable scenes had observed-target precision below 0.98
+(minimum 0.973684). Mean accepted-scene position error was 0.310958 mm, which
+does not excuse accepting an ambiguous wall. The first-hit comparison is a
+boundary-only proxy; these results do not mean the full v5 patient counter would
+accept those 38 negative cases, because its preceding/following checks are absent.
+
+**No model promotion, new patient count, application setting change or production
+history import occurred. The requested patient completion remains 15/98.**
+
+An independent integrity audit checked the frozen source and imports, every
+geometry split, all NPZ file/array fingerprints, all 24,576 sampled target labels,
+all 15 epoch records, validation-only best-checkpoint selection and complete
+64-scene accounting. Reaggregation reproduced the failed engineering gate. The
+initial audit did not numerically remeasure unsaved inference score/point arrays;
+a separate frozen-checkout numerical rerun is pending at this report checkpoint.
+
+Protected evidence SHA-256 values:
+
+- Checkpoint: `c501d7291f81eb2a2d08e3bb750ba38b4fc14480d7dd464e55feb8b43228315c`
+- Evaluation file: `39606123338c54f0deffbf410f1741c923d5defd83bc7ffc17097665b3560617`
+- Provenance file: `4f233efb66ed38e6777cc050aff38de980e12cd1e070f8abafdfb34944f1c4f8`
+- Initial independent audit: `65995a9b2b9ed6466d6dc619e9442d20bf736c48933ea58191eeecd3623ba030`
+
+The next engineering investigation is a reproduced alternative-search gap:
+partial septa change candidate depth ordinals, so approximate multi-start search
+can miss a second complete observed wall. Separately, the generator's observed
+target definition is under review at blurred wall edges. Any correction must
+receive a new version and preserve this failed experiment. These inspected test
+scenes have now informed development and cannot become a new independent test
+set by rerunning them after a fix.

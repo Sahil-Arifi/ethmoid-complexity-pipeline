@@ -13,17 +13,21 @@ An isolated [synthetic wall-training experiment](docs/SYNTHETIC_WALL_TRAINING.md
 now targets one boundary-selection bottleneck. It uses equation-defined visible
 walls, varied acquisition properties, geometry-family holdouts and missing-wall
 controls. Its small 3D classifier, source-constrained decoder and protected
-training command are separate from all application counting methods. Real GPU
-optimization and hashed checkpoint reload have been exercised; the full training
-and held-out scene evaluation are pending at this engineering checkpoint. This
-is synthetic research supervision, not an expert-trained ethmoid model.
+training command are separate from all application counting methods. The first
+full experiment trained on 64 procedural geometries with disjoint family splits.
+Its learned decoder accepted 17 observable scenes but also four ambiguous
+controls, so **it failed the predefined engineering gate and was not promoted**.
+The [experiment report](docs/SYNTHETIC_WALL_TRAINING.md#experiment-001-completed-not-promoted)
+retains all successes and failures. This is synthetic research supervision, not
+an expert-trained ethmoid model or improved patient completion.
 
 The training-foundation checkpoint passed **391 CPU checks** (including the
 existing 220 counting regressions) and **eight real PyTorch integration checks**
 covering CPU/CUDA optimization, hashed reload, tampering, mutation and failed
 checkpoint publication. One local directory-symlink check requires unavailable
-Windows privileges and was skipped. Clinical accuracy and the full synthetic
-training outcome are separate pending evaluations at this checkpoint.
+Windows privileges and was skipped. An independent audit verified source/split
+and data/checkpoint identity, every sampled label, validation-only checkpoint
+selection and all 64 scene outcomes. Clinical accuracy remains unmeasured.
 
 **Latest verified result: frozen research v5 produced 15/98 automatic candidate counts (15.3%), with 83 anatomical review outcomes and zero technical errors. The requested 98/98 automatic-count target remains unmet.** All 12 v3 completions retained identical left/right/total counts, cell registries and saved native air/cavity/region artifacts; three previously resource-limited volumes newly completed. The 15 results contain 306 uncertain candidate entries across 11 studies, including repeated reconstructions. The remaining reasons are 44 unresolved sphenoid boundaries, 22 ambiguous boundaries, nine insufficient-coverage outcomes and eight unsupported-cell outcomes. Summed serial local attempt time was 3,635.101 seconds (60.6 minutes), including verified cache reuse and abstentions, not upload/preparation or uncached inference latency. The [final v4/v5 evaluation report](docs/RESEARCH_COMPLETION_EVALUATION.md) preserves both methods' evidence and distinguishes v4 regressions from v5 retention.
 
