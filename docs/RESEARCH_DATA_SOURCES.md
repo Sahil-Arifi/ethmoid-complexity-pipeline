@@ -190,3 +190,29 @@ withholds public CT images. The [orbital-apex study](https://www.frontiersin.org
 uses 200 selected enhanced-CT images for sphenoid/optic-canal/carotid segmentation;
 no downloadable complete CT/mask corpus or checkpoint was verified. Neither
 provides individual ethmoid-cell ground truth.
+
+## Concrete data-access request for the next supervised stage
+
+The following is a draft for the target-relevant authors listed above. It has
+**not been sent**, and makes no claim of institutional affiliation or clinical
+readiness.
+
+> Hello, we are developing a local research prototype for full-volume 3D
+> ethmoid-cell labeling and counting. Your CT sinus-segmentation study appears
+> relevant to our anatomical-localization work. Is a deidentified research
+> release available with calibrated CT volumes, expert-reviewed ethmoid and
+> sphenoid masks, the exact label definitions, and a subject-grouping manifest
+> that keeps repeat reconstructions together? Please include acquisition
+> spacing/orientation and any preprocessing or cropping history. If left/right
+> regions or individual-cell references are unavailable, please clarify what
+> the supplied labels represent. We would also appreciate any study checkpoint,
+> preprocessing configuration and evaluation split, together with explicit
+> terms governing local training, derived weights and redistribution. Images
+> and annotations would remain in protected local storage. We would preserve
+> provenance and report external-domain limitations rather than infer clinical
+> accuracy from automatic completion. Thank you.
+
+An acquired region-mask dataset would support localization training. Independent
+per-side/total cell counts and instance references serve the separate task of
+evaluating missed cells, false cells and split/merge errors. Neither the public
+source search nor successful software tests replaces those references.

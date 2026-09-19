@@ -354,3 +354,84 @@ The separate classification audit of experiment 002 has SHA-256
 The 15/98 patient result remains unchanged. Meeting a small synthetic gate with
 two accepted scenes does not demonstrate reliable patient boundaries, and it
 cannot supply missing expert region masks or individual-cell reference counts.
+
+## Native-boundary diagnostic pilot: six retained failures
+
+A bounded diagnostic used six preselected source-verified, native-axis-aligned
+inputs from distinct studies. Selection took the first three eligible studies
+per prior wall-support/curved-fit message in frozen manifest order, before
+scoring. It did not select new inputs after seeing results or attempt another
+98-volume count evaluation.
+
+Frozen v5 localization reproduced every original failure and diagnostic record
+exactly. Its exception frame supplied the actual HU array, interior seed,
+physical spacing and anatomical search limit. A synthetic control checked this
+capture mechanism. No seed, coordinate convention or boundary was guessed.
+Existing cached priors were hash-verified; no new localizer ran. Canonicalization
+used native axis permutations/flips only. Every observed candidate mapped back
+to an integer original voxel with exactly matching HU. This verifies current
+converted-volume bindings and candidate correspondence, not another raw-DICOM
+pixel-decode pass.
+
+The trained checkpoint scored **7,467 observed candidates** in serial batches of
+64 on the offline GPU. Both image-only and learned decoders withheld all six:
+
+| Outcome | Inputs |
+| --- | ---: |
+| Insufficient observed support | 1 |
+| Disconnected observed support | 4 |
+| Incoherent surface | 1 |
+| Accepted proposal | 0 |
+| Technical error | 0 |
+
+All model patches were within the acquired source extent. Some real patches
+contained no seed context; per-input seed-present patch fractions ranged from
+0 to 0.416. These are descriptive domain-transfer findings, not ground-truth
+anatomical measurements. The geometry vetoes precede neural score ranking, so
+changing a classification threshold cannot resolve these six outcomes.
+
+The initial pilot took **149.295 seconds**. Root review found that it scored
+normalized float32 patches directly, whereas frozen training/evaluation first
+stored them as float16 and then computed in float32. That initial release remains
+immutable and is explicitly recorded as having a preprocessing limitation.
+
+A separate corrected scoring replay used the exact frozen `patches_for` helper
+on the same six sources/seeds/candidates. Every patch matched an independently
+computed float16 round trip, and regenerating the original float32 patch hashes
+confirmed identical sampling. It made no new selection, localization attempt,
+optimization or parameter adjustment. Runtime was **16.716 seconds**. Of 7,467
+probabilities, 7,180 changed and 287 were identical; maximum absolute difference
+was 0.000208855 and mean difference 0.000001926. There were **zero 0.5-threshold
+crossings**; 807 scores reached that threshold in both runs. These scores are
+not calibrated clinical probabilities. All six geometry outcomes stayed the same.
+
+The initial independent CPU audit reconstructed all candidates and float32
+patches, re-decoded both methods for all six inputs, and verified all 104 bound
+original files and 20 production database tables unchanged. It explicitly did
+not independently reproduce neural inference or attest exact training
+preprocessing for that first pilot.
+
+An independent audit of the corrected release then reconstructed all 7,467
+float16 training tensors and their float32 computation inputs from source HU and
+saved seeds, checked the frozen helper against the original training code, and
+repeated 18 CPU decoder checks. All 123 bound input/runtime files and 20 database
+tables remained unchanged. It independently recomputed the score-comparison
+arithmetic, but did not rerun the neural network, anatomical localizer or raw
+DICOM decoder. These are integrity and reproducibility checks, not clinical
+validation.
+
+Protected evidence SHA-256 values:
+
+- Initial pilot: `9e1c9e02559f665e86ddb94309c5e5ff5c957c23a2bcb740394b35bfdb40c9f8`
+- Initial scoped audit: `02393c0bfe6ed304e136bfdddd33f9b1dd47a9c165ad316246a49298e96efde1`
+- Corrected scoring replay: `f5420870959837ec25e8a920ed3e0bd899fe02061d47af47be19dea360901c04`
+- Corrected replay audit: `eaf7aae8ab27c4e1e4573e98afcccf79cd36861316c58211ac847f5b79f81077`
+
+**No posterior surface, region mask or cell count was produced by the pilot.**
+There is no evidence here for integrating this component into patient counting
+or promoting it as an improved anatomical model. The current component returns
+only supported observed points; the existing localizer also needs a complete
+posterior boundary. Further extrapolation would introduce an unvalidated
+anatomical assumption. The bounded pilot is complete; it does not justify
+repeated threshold changes or a 98/98 claim. Verified target-region supervision
+and separate independent cell references remain the next substantive dependency.

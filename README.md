@@ -57,6 +57,17 @@ methods remained unchanged. This correction does not retrain or promote a model,
 and it does not increase patient completion. Both CI jobs passed for the second
 training-source commit `d64111d`.
 
+A subsequent [six-scan native-boundary diagnostic](docs/SYNTHETIC_WALL_TRAINING.md#native-boundary-diagnostic-pilot-six-retained-failures)
+scored 7,467 observed candidates with the actual trained checkpoint. Both
+image-only and learned methods withheld all six for insufficient, disconnected
+or incoherent support, with zero technical errors. A separate replay corrected
+a float32-versus-float16 input-preparation mismatch using the exact training
+helper; no threshold decisions or geometry outcomes changed. Original sources,
+cached priors and all 20 production database tables were preserved. No counts or
+full posterior boundaries were generated. **This component is not ready for
+counting integration, and patient completion remains unchanged.** Both CI jobs
+passed for the point-support code at `01f5e21`.
+
 **Latest verified result: frozen research v5 produced 15/98 automatic candidate counts (15.3%), with 83 anatomical review outcomes and zero technical errors. The requested 98/98 automatic-count target remains unmet.** All 12 v3 completions retained identical left/right/total counts, cell registries and saved native air/cavity/region artifacts; three previously resource-limited volumes newly completed. The 15 results contain 306 uncertain candidate entries across 11 studies, including repeated reconstructions. The remaining reasons are 44 unresolved sphenoid boundaries, 22 ambiguous boundaries, nine insufficient-coverage outcomes and eight unsupported-cell outcomes. Summed serial local attempt time was 3,635.101 seconds (60.6 minutes), including verified cache reuse and abstentions, not upload/preparation or uncached inference latency. The [final v4/v5 evaluation report](docs/RESEARCH_COMPLETION_EVALUATION.md) preserves both methods' evidence and distinguishes v4 regressions from v5 retention.
 
 The independent v5 audit verified all 98 unique source/result bindings and all 230 catalog series, including 132 unavailable series, and checked native geometry, IDs, measurements, HU-based air membership and explicit null counts on failure. These are software consistency checks on the existing 26-study development collection; **anatomical accuracy remains unmeasured**. No required expert target labels or new public target-label dataset were obtained, and no direct ethmoid model was trained or promoted. The application default remains v3; no opt-in setting change, production restart or research-result import into production occurred. All evaluated outputs remain protected locally, separate from production application histories.
