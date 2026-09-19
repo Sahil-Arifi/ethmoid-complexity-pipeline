@@ -18,7 +18,7 @@ from ethmoid_pipeline.counting.wall_proposals import extract_candidates
 
 def control(*, state="present", index=2, spacing=(0.8, 0.8, 0.8), distractors=False):
     geometry = replace(make_geometry(index, "plane"), tilt_x=0.0, tilt_z=0.0,
-                       distractor_thickness_mm=0.9 if distractors else 0.01)
+                       wall_thickness_mm=1.2, distractor_thickness_mm=0.9 if distractors else 0.01)
     scene = render_scene(geometry, SceneAugmentation(spacing_mm=spacing, wall_state=state))
     candidates = extract_candidates(scene.hu, scene.seed, scene.spacing_mm, scene.hu.shape[1] - 1)
     # Independent oracle scores are a unit-test control, never a trained result.
@@ -89,6 +89,10 @@ def test_absent_support_abstains_without_zero_error_or_vacuous_pass(state):
 @pytest.mark.parametrize("state", ["cropped", "ambiguous"])
 def test_actual_unobservable_control_counts_baseline_false_acceptance(state):
     scene, candidates, scores = control(state=state)
+    if state == "ambiguous":
+        # This control tests two separately observed walls, not details that
+        # disappeared into a single sampled bone run.
+        assert np.all(np.bincount(candidates.column_indices) >= 2)
     row = benchmark.evaluate_scene(scene, candidates, scores)
     assert not scene.observable
     for name in ("image_only", "learned"):
@@ -186,3 +190,50 @@ def test_summary_does_not_trust_a_false_acceptance_flag_or_changed_criteria():
     row["engineering_criteria"]["minimum_accepted_observed_target_precision"] = 0.2
     with pytest.raises(ValueError, match="predetermined"):
         benchmark.summarize([row])
+
+
+def test_retained_evidence_remeasures_metrics_without_model_inference():
+    scene, candidates, scores = control()
+    evidence = {}
+    result = benchmark.evaluate_scene(scene, candidates, scores, evidence=evidence)
+    np.testing.assert_array_equal(evidence["candidate_positions_ijk"], candidates.positions_ijk)
+    np.testing.assert_array_equal(evidence["candidate_scores"], scores)
+    for method in ("image_only", "learned"):
+        selected = evidence[method + "_selected_candidate_indices"]
+        points = evidence[method + "_observed_points_ijk"]
+        np.testing.assert_array_equal(points, candidates.positions_ijk[selected])
+        expected = candidate_targets(scene, points)
+        assert np.mean(expected == 1) == result["methods"][method]["observed_target_precision"]
+        measured = np.abs(scene.origin_mm[1] + points[:, 1] * scene.spacing_mm[1]
+            - scene.target_leading_surface_y_mm[points[:, 0], points[:, 2]])
+        assert measured.mean() == result["methods"][method]["mean_physical_error_mm"]
+    assert evidence["first_hit_quadratic_fitted_surface_ijk"].shape == scene.seed.any(axis=1).shape
+    assert not result["methods"]["first_hit_quadratic"]["fitted_points_are_observed"]
+    with pytest.raises(ValueError, match="empty evidence"):
+        benchmark.evaluate_scene(scene, candidates, scores, evidence=evidence)
+
+
+def test_abstention_evidence_has_empty_selected_points_without_fake_zero_error():
+    scene, candidates, scores = control(state="missing")
+    evidence = {}
+    row = benchmark.evaluate_scene(scene, candidates, scores, evidence=evidence)
+    for method in benchmark.METHODS:
+        assert not row["methods"][method]["accepted"]
+        assert row["methods"][method]["mean_physical_error_mm"] is None
+        assert evidence[method + "_observed_points_ijk"].shape == (0, 3)
+
+
+def test_merged_wall_truth_is_not_invented_as_a_second_observed_face():
+    geometry = replace(make_geometry(2, "plane"), tilt_x=0, tilt_z=0,
+                       wall_thickness_mm=1.9569, distractor_thickness_mm=0.01)
+    scene = render_scene(geometry, SceneAugmentation(wall_state="ambiguous"))
+    candidates = extract_candidates(scene.hu, scene.seed, scene.spacing_mm, scene.hu.shape[1] - 1)
+    assert np.all(np.bincount(candidates.column_indices) == 1)
+    row = benchmark.evaluate_scene(scene, candidates, np.ones(len(candidates.positions_ijk)))
+    # The geometric decoder sees only one run. The independent phantom knows
+    # it came from merged walls, and must record failure, never correct anatomy.
+    assert row["methods"]["image_only"]["accepted"]
+    assert row["methods"]["image_only"]["false_acceptance"]
+    summary = benchmark.summarize([row])
+    assert not summary["methods"]["image_only"]["engineering_gate_passed"]
+    assert summary["methods"]["image_only"]["false_acceptances"] == 1

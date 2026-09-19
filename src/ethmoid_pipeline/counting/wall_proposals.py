@@ -3,9 +3,10 @@
 This module does not localize a sphenoid, assign clinical labels, or count cells.
 Inputs must already be a verified axis-aligned anatomical view with +J anterior.
 The caller owns source/affine provenance. Patch interpolation is model input only.
-The decoder is bounded deterministic multi-start local optimization, NOT a global
-optimum. It may abstain despite a feasible surface. Scores cannot create bone or
-erase a second independently coherent sheet. Unsupported output stays NaN.
+The decoder checks interval-domain feasibility and competing sheets independently
+of model scores, then uses bounded local energy ranking, NOT a global optimum.
+Scores cannot create bone. Unsupported output stays NaN. These graph constraints
+are engineering assumptions, not proof of anatomical identity or correctness.
 """
 from __future__ import annotations
 
@@ -22,7 +23,9 @@ MAX_COLUMN_GRID = 4_000_000
 MAX_SEED_COLUMNS = 16_384
 MAX_CANDIDATES = 65_536
 MAX_PATCH_VOXELS = 64 ** 3
-SOLVER_VERSION = "bounded_multistart_icm_observed_wall_v1"
+MAX_FEASIBILITY_WORK = 2_000_000
+SOLVER_VERSION = "bounded_interval_domain_observed_wall_v2"
+_NUMERIC_TOLERANCE_MM = 1e-7
 
 
 class WallProposalError(ValueError):
@@ -236,17 +239,95 @@ def _validate_candidate_metadata(candidates):
         _fail("WALL_RESOURCE_LIMIT", "Candidate metadata exceeds the fixed decoder budget.")
 
 
+@dataclass
+class _IntervalWorkBudget:
+    limit: int
+    used: int = 0
+
+    def charge(self, amount=1):
+        self.used += amount
+        if self.used > self.limit:
+            _fail("WALL_RESOURCE_LIMIT", "The interval feasibility work budget was exhausted; ambiguity remains unresolved.")
+
+
+@dataclass(frozen=True)
+class _IntervalSolution:
+    values_mm: np.ndarray
+    candidate_choices: np.ndarray
+
+
+def _interval_domain_extreme(centers_by_column, neighbors, half_width_mm, maximum_slope,
+                             budget: _IntervalWorkBudget, *, greatest=False):
+    """Least/greatest feasible graph surface in unions of closed intervals.
+
+    Internal inputs are sorted, disjoint observed-face centers and the verified
+    four-neighbor graph. Initialize each domain at its least value; propagate
+    y[j] >= y[i] - slope*distance, rounding each increase upward into j's domain.
+    Every iterate is <= every feasible solution, so domain exhaustion proves
+    infeasibility and a fixed point is the least solution. Sign reversal gives
+    the greatest solution. A finite operation budget bounds propagation; its
+    exhaustion cannot be interpreted as infeasibility or successful uniqueness.
+
+    Returned continuous values certify interval constraints only. They are never
+    published as observed support; candidate_choices indexes the original faces.
+    """
+    budget.charge(sum(len(values) for values in centers_by_column))
+    domains = [(-np.asarray(values)[::-1] if greatest else np.asarray(values))
+               for values in centers_by_column]
+    low = [values - half_width_mm for values in domains]
+    high = [values + half_width_mm for values in domains]
+    values = np.array([bounds[0] for bounds in low], dtype=float)
+    choices = np.zeros(len(domains), np.int32)
+    pending = [(-float(value), i) for i, value in enumerate(values)]
+    heapq.heapify(pending)
+    while pending:
+        budget.charge()
+        negative, i = heapq.heappop(pending)
+        if -negative < values[i] - _NUMERIC_TOLERANCE_MM:
+            continue
+        for j, step in neighbors[i]:
+            budget.charge()
+            required = values[i] - maximum_slope * step
+            if required <= values[j] + _NUMERIC_TOLERANCE_MM:
+                continue
+            choice = int(np.searchsorted(high[j], required - _NUMERIC_TOLERANCE_MM))
+            if choice == len(high[j]):
+                return None
+            # Clip only floating point tolerance at an interval endpoint. This
+            # never bridges a genuine domain gap or invents another bone face.
+            raised = min(max(required, low[j][choice]), high[j][choice])
+            if raised > values[j] + _NUMERIC_TOLERANCE_MM:
+                values[j], choices[j] = raised, choice
+                heapq.heappush(pending, (-float(raised), j))
+    # Verify the fixed point independently of the queue's update decisions.
+    for i, edges in enumerate(neighbors):
+        budget.charge(1 + len(edges))
+        if not low[i][choices[i]] - _NUMERIC_TOLERANCE_MM <= values[i] <= high[i][choices[i]] + _NUMERIC_TOLERANCE_MM:
+            _fail("WALL_NUMERIC_UNRESOLVED", "An interval certificate failed its domain check.")
+        if any(abs(values[i] - values[j]) > maximum_slope * step + _NUMERIC_TOLERANCE_MM
+               for j, step in edges):
+            _fail("WALL_NUMERIC_UNRESOLVED", "An interval certificate failed its graph constraint check.")
+    if greatest:
+        values = -values
+        choices = np.array([len(domain) - 1 - choice for domain, choice in zip(domains, choices)], np.int32)
+    return _IntervalSolution(_readonly(values), _readonly(choices, np.int32))
+
+
 def decode_surface(candidates: WallCandidates, scores, *, minimum_score=0.5,
                    maximum_slope=2.0, smoothness=0.05, max_iterations=12,
-                   max_candidates_per_column=8) -> WallSurface:
-    """Approximate observed-candidate surface selection with independent vetoes.
+                   max_candidates_per_column=8,
+                   max_feasibility_work=MAX_FEASIBILITY_WORK) -> WallSurface:
+    """Certified competing-sheet check followed by approximate energy ranking.
 
     Scores must be probabilities in [0,1]; they rank candidates, not truth.
-    Multi-start ICM uses each depth ordinal and the score maximum. In addition,
-    every complete ordinal sheet is checked without considering its score, so a
-    model cannot hide a plausible parallel wall by scoring it poorly. Any found
-    coherent alternative differing on >= half of common columns is ambiguous.
-    This conservative check is NOT an exhaustive proof that no alternative exists.
+    The pointwise least and greatest feasible interval surfaces bound ALL other
+    feasible surfaces under this graph model. If they select different faces in
+    >= max(12, ceil(N/2)) columns, they witness competing sheets regardless of
+    candidate ranks or model scores. Otherwise fewer than this many columns can
+    change in any feasible pair. This certificate is limited to the declared
+    observed candidates, graph, slope, support and depth-interval assumptions.
+    Both extremal surfaces enter the subsequent bounded multi-start ICM ranking;
+    its energy optimum is not claimed to be global.
     Depth observations occupy intervals of +/- half the native J spacing; a
     graph constraint checks whether those intervals admit consistent slopes.
     Interval feasibility does not supply interpolated or extra support points.
@@ -258,6 +339,7 @@ def decode_surface(candidates: WallCandidates, scores, *, minimum_score=0.5,
             or np.any((probability < 0) | (probability > 1))
             or type(max_iterations) is not int or not 1 <= max_iterations <= 32
             or type(max_candidates_per_column) is not int or not 1 <= max_candidates_per_column <= 8
+            or type(max_feasibility_work) is not int or not 1 <= max_feasibility_work <= MAX_FEASIBILITY_WORK
             or type(minimum_score) not in (int, float) or not 0 <= minimum_score <= 1
             or type(maximum_slope) not in (int, float) or not 0 < maximum_slope <= 4
             or type(smoothness) not in (int, float) or not 0 <= smoothness <= 1):
@@ -302,6 +384,22 @@ def decode_surface(candidates: WallCandidates, scores, *, minimum_score=0.5,
                 neighbors[i].append((j, step)); neighbors[j].append((i, step))
                 edges.append((i, j, step))
     depth = candidates.positions_ijk[:, 1] * candidates.spacing_mm[1]
+    budget = _IntervalWorkBudget(max_feasibility_work)
+    centers = [depth[group] for group in groups]
+    least = _interval_domain_extreme(centers, neighbors, candidates.spacing_mm[1] * 0.5,
+                                    maximum_slope, budget)
+    if least is None:
+        _fail("WALL_INCOHERENT", "No observed candidate surface satisfies the interval graph constraints.")
+    greatest = _interval_domain_extreme(centers, neighbors, candidates.spacing_mm[1] * 0.5,
+                                       maximum_slope, budget, greatest=True)
+    if greatest is None or np.any(least.values_mm > greatest.values_mm + _NUMERIC_TOLERANCE_MM):
+        _fail("WALL_NUMERIC_UNRESOLVED", "The extremal interval certificates are inconsistent.")
+    minimum_faces = np.array([group[choice] for group, choice in zip(groups, least.candidate_choices)], np.int32)
+    maximum_faces = np.array([group[choice] for group, choice in zip(groups, greatest.candidate_choices)], np.int32)
+    variable_columns = int(np.count_nonzero(minimum_faces != maximum_faces))
+    ambiguity_required = max(12, math.ceil(len(groups) * 0.5))
+    if variable_columns >= ambiguity_required:
+        _fail("WALL_AMBIGUOUS", "Least and greatest feasible observed sheets witness a competing wall independently of model scores.")
     unary = -np.log(np.maximum(probability, 1e-8))
     # Coordinate updates optimize the same mean-unary/mean-edge objective used
     # to rank the found solutions. Multiplying the objective by N is constant.
@@ -314,45 +412,34 @@ def decode_surface(candidates: WallCandidates, scores, *, minimum_score=0.5,
         return np.maximum(0.0, np.abs(depth[a] - depth[b]) - candidates.spacing_mm[1]) / step
 
     def coherent(selected):
+        # A candidate outside these bounds cannot belong to any feasible sheet.
+        if np.any(depth[selected] < depth[minimum_faces]) or np.any(depth[selected] > depth[maximum_faces]):
+            return False
         if not all(required_slope(selected[a], selected[b], step) <= maximum_slope + 1e-7
                    for a, b, step in edges):
             return False
-        # Pairwise interval overlap alone is insufficient: a long, steep ramp
-        # could repeatedly spend the same half-voxel uncertainty. Propagate the
-        # tightest graph lower bounds to check simultaneous interval feasibility.
-        # These latent values are never returned as observed wall support.
-        lower = depth[selected].copy() - candidates.spacing_mm[1] * 0.5
-        upper = depth[selected] + candidates.spacing_mm[1] * 0.5
-        pending = [(-float(value), i) for i, value in enumerate(lower)]
-        heapq.heapify(pending)
-        while pending:
-            negative, i = heapq.heappop(pending)
-            value = -negative
-            if value < lower[i] - 1e-7:
-                continue
-            for j, step in neighbors[i]:
-                required = value - maximum_slope * step
-                if required > upper[j] + 1e-7:
-                    return False
-                if required > lower[j] + 1e-7:
-                    lower[j] = required
-                    heapq.heappush(pending, (-float(required), j))
-        return True
+        return _interval_domain_extreme([np.array([depth[index]]) for index in selected], neighbors,
+            candidates.spacing_mm[1] * 0.5, maximum_slope, budget) is not None
 
     def energy(selected):
         penalty = [required_slope(selected[a], selected[b], step) ** 2 for a, b, step in edges]
         return float(unary[selected].mean() + smoothness * (np.mean(penalty) if penalty else 0))
 
-    solutions = {}
+    # These candidates already have complete interval feasibility certificates;
+    # even if local ranking cannot escape a poor ordinal initialization they
+    # prevent a proven feasible observed sheet from being silently omitted.
+    solutions = {tuple(minimum_faces): minimum_faces.copy(), tuple(maximum_faces): maximum_faces.copy()}
     def retain(selected):
-        if coherent(selected):
-            solutions[tuple(int(v) for v in selected)] = selected.copy()
+        key = tuple(int(v) for v in selected)
+        if key not in solutions and coherent(selected):
+            solutions[key] = selected.copy()
 
     seeds = [np.array([g[min(rank, len(g) - 1)] for g in groups], dtype=np.int32)
              for rank in range(max(map(len, groups)))]
     seeds.append(np.array([g[np.argmax(probability[g])] for g in groups], dtype=np.int32))
+    seeds.extend((minimum_faces, maximum_faces))
     for initial in seeds:
-        retain(initial)  # A low model score cannot suppress a coherent alternative.
+        retain(initial)
         selected = initial.copy()
         for _ in range(max_iterations):
             changed = False
@@ -369,14 +456,8 @@ def decode_surface(candidates: WallCandidates, scores, *, minimum_score=0.5,
             if not changed:
                 break
         retain(selected)
-    if not solutions:
-        _fail("WALL_INCOHERENT", "No coherent observed sheet was found by bounded local search.")
     ranked = sorted(solutions.values(), key=lambda selected: (energy(selected), tuple(selected)))
     chosen = ranked[0]
-    for alternative in ranked[1:]:
-        separated = np.abs(depth[chosen] - depth[alternative]) > candidates.spacing_mm[1] * 0.5
-        if np.count_nonzero(separated) >= max(12, len(chosen) * 0.5):
-            _fail("WALL_AMBIGUOUS", "Multiple coherent observed sheets remain plausible regardless of model ranking.")
     if float(probability[chosen].mean()) < minimum_score:
         _fail("WALL_SCORE_UNSUPPORTED", "Model support for the observed sheet is below the research threshold.")
     output = np.full(supported.shape, np.nan, dtype=np.float64)
@@ -385,6 +466,12 @@ def decode_surface(candidates: WallCandidates, scores, *, minimum_score=0.5,
                        _readonly(supported, bool), _readonly(output), {
                            "solver": SOLVER_VERSION, "global_optimum_claim": False,
                            "complete_alternative_search_claim": False,
+                           "interval_graph_ambiguity_certificate": "all_feasible_pairs_bounded_by_extremal_candidate_sheets",
+                           "variable_feasible_columns": variable_columns,
+                           "competing_sheet_required_columns": ambiguity_required,
+                           "feasibility_work_units": budget.used,
+                           "feasibility_work_limit": budget.limit,
+                           "numerical_tolerance_mm": _NUMERIC_TOLERANCE_MM,
                            "seed_columns": len(candidates.columns_xz), "observed_support_columns": len(chosen),
                            "required_support_columns": max(12, len(candidates.columns_xz) * 0.5),
                            "cropped_candidates_excluded": cropped_count, "starts": len(seeds),

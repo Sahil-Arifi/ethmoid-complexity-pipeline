@@ -296,10 +296,11 @@ def test_checkpoint_digest_rejected_before_deserialization(tmp_path, monkeypatch
 
 
 @pytest.mark.integration
-def test_matching_hash_does_not_override_wrong_architecture(tmp_path):
+@pytest.mark.parametrize("architecture", ["another-model", "observed-wall-patch-cnn-1"])
+def test_matching_hash_does_not_override_wrong_architecture(tmp_path, architecture):
     torch = pytest.importorskip("torch")
     checkpoint = tmp_path / "wrong-model.pt"
-    torch.save({"architecture": "another-model", "supervision": learning.SUPERVISION}, checkpoint)
+    torch.save({"architecture": architecture, "supervision": learning.SUPERVISION}, checkpoint)
     with pytest.raises(ValueError, match="declared synthetic"):
         learning.load_research_ranker(checkpoint, learning.file_sha256(checkpoint))
 
@@ -356,3 +357,102 @@ def test_checkpoint_write_failure_never_publishes_a_completed_release(tmp_path, 
     assert not (output / "training-report.local.json").exists()
     assert not (output / "checkpoint-best.local.pt").exists()
     assert not (output / "checkpoint-last.local.pt").exists()
+
+
+def _center_task(prefix, count, *, seed):
+    """Equal HU histograms; only the location of each intensity carries labels."""
+    assert count % 2 == 0
+    rng = np.random.default_rng(seed)
+    patches = np.zeros((count, 3, 9, 9, 9), np.float32)
+    labels = (np.arange(count) % 2).astype(np.float32)
+    values = np.array([-0.8] * 364 + [0.8] * 364 + [0.0], np.float32)
+    center = np.ravel_multi_index((4, 4, 4), (9, 9, 9))
+    for index in range(0, count, 2):
+        arranged = rng.permutation(values)
+        other = int(rng.choice(np.flatnonzero(arranged == np.float32(-0.8))))
+        arranged[center], arranged[other] = arranged[other], arranged[center]
+        patches[index, 0] = arranged.reshape(9, 9, 9)
+        # Pair the negative with the same background and a positive center,
+        # compensating at a uniformly chosen remote voxel to preserve counts.
+        other = int(rng.choice(np.flatnonzero(arranged == np.float32(0.8))))
+        arranged[center], arranged[other] = arranged[other], arranged[center]
+        patches[index + 1, 0] = arranged.reshape(9, 9, 9)
+    patches[:, 1, 4, 0, 4] = 1
+    patches[:, 2] = 1
+    return patches, labels, [f"{prefix}-geometry-{index // 2}" for index in range(count)]
+
+
+def test_center_task_has_identical_global_histograms_without_mask_label_leakage():
+    patches, labels, _ = _center_task("synthetic", 12, seed=170)
+    histograms = np.sort(patches[:, 0].reshape(12, -1), axis=1)
+    np.testing.assert_array_equal(histograms, np.repeat(histograms[:1], 12, axis=0))
+    np.testing.assert_array_equal(patches[:, 1:], np.repeat(patches[:1, 1:], 12, axis=0))
+    np.testing.assert_array_equal(patches[:, 0, 4, 4, 4] > 0, labels.astype(bool))
+    assert len({p[0].tobytes() for p in patches}) == 12
+    assert np.all(np.count_nonzero(patches[::2, 0] != patches[1::2, 0], axis=(1, 2, 3)) == 2)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("size", range(9, 34, 2))
+def test_center_features_remain_source_aligned_for_every_supported_odd_size(size):
+    torch = pytest.importorskip("torch")
+    model = learning.build_ranker()
+
+    class CoordinateFeatures(torch.nn.Module):
+        def forward(self, inputs):
+            # The existing stride-4 stem's physical lattice, with a linear
+            # coordinate field whose value is independently known at center.
+            coordinates = torch.arange(0, size, 4, dtype=inputs.dtype)
+            x, y, z = torch.meshgrid(coordinates, coordinates, coordinates, indexing="ij")
+            field = x + 2 * y + 3 * z
+            return field[None, None].expand(len(inputs), 32, -1, -1, -1)
+
+    model.stem = CoordinateFeatures()
+    model.head = torch.nn.Identity()
+    inputs = torch.zeros((2, 3, size, size, size))
+    center = size // 2
+    inputs[0, 0, center, center, center] = -0.8
+    inputs[1, 0, center, center, center] = 0.9
+    with torch.inference_mode():
+        features = model(inputs)
+    assert features.shape == (2, 65)
+    np.testing.assert_array_equal(features[:, 32:64].numpy(), np.full((2, 32), 6 * center))
+    np.testing.assert_array_equal(features[:, -1].numpy(), np.array([-0.8, 0.9], np.float32))
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("device", ["cpu", "cuda"])
+def test_center_specific_task_learns_and_reloads_without_global_histogram_signal(tmp_path, device):
+    torch = pytest.importorskip("torch")
+    if device == "cuda" and not torch.cuda.is_available():
+        pytest.skip("CUDA unavailable; actual CPU optimization remains covered")
+    work, output = _new_release(tmp_path)
+    train = _center_task("train", 256, seed=1729)
+    validation = _center_task("validation", 64, seed=2718)
+    held_out = _center_task("test", 128, seed=3141)
+    learning.require_disjoint_geometries(train[2], validation[2], held_out[2])
+    config = learning.TrainingConfig(seed=1729, epochs=16, batch_size=32,
+        learning_rate=0.004, patch_size=9, cpu_threads=1)
+    report = learning.train_ranker(train, validation, output, work_root=work, config=config,
+        provenance={"supervision": learning.SUPERVISION, "clinical_accuracy_measured": False}, device=device)
+    assert report["architecture"] == "observed-wall-centered-cnn-2"
+    best = report["history"][report["best_epoch"] - 1]["validation"]
+    assert best["binary_cross_entropy"] < report["initial_validation"]["binary_cross_entropy"] * 0.25
+    checkpoint = output / "checkpoint-best.local.pt"
+    restored, restored_config = learning.load_research_ranker(checkpoint, report["checkpoint_sha256"], device=device)
+    assert restored_config == config
+    validation_scores = learning.predict_scores(restored, validation[0], device=device, batch_size=8)
+    assert learning.binary_metrics(validation[1], validation_scores)["binary_cross_entropy"] == pytest.approx(best["binary_cross_entropy"], abs=1e-6)
+    scores = learning.predict_scores(restored, held_out[0], device=device, batch_size=8)
+    # Every independent matched background must respond to the changed center.
+    # This verifies learned discrimination, without treating tiny-training
+    # scores as perfectly calibrated probabilities at an arbitrary threshold.
+    assert np.all(scores[1::2] > scores[::2])
+    assert np.mean(scores[1::2] - scores[::2]) > 0.75
+    assert learning.binary_metrics(held_out[1], scores)["binary_cross_entropy"] < 0.15
+    assert report["data_sha256"] == {"train": learning.patch_set_sha256(*train), "validation": learning.patch_set_sha256(*validation)}
+    with pytest.raises(ValueError, match="changed"):
+        learning.load_research_ranker(checkpoint, "0" * 64, device=device)
+    if device == "cuda":
+        del restored
+        torch.cuda.empty_cache()

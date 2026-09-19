@@ -260,3 +260,50 @@ def test_candidate_coordinates_must_be_on_the_native_grid(points):
 def test_empty_candidates_are_valid_and_do_not_fabricate_a_target():
     labels = candidate_targets(render_scene(make_geometry(0)), np.empty((0, 3), dtype=np.int64))
     assert labels.dtype == np.int8 and labels.shape == (0,)
+
+
+def test_noiseless_blur_support_can_extend_beyond_original_material():
+    geometry = replace(make_geometry(1, "plane"), wall_offset_mm=4.0,
+                       tilt_x=0, tilt_z=0, wall_thickness_mm=1.6,
+                       distractor_thickness_mm=0.01)
+    blurred = render_scene(geometry, SceneAugmentation(spacing_mm=(0.4,) * 3,
+        opacity="full", blur_sigma_mm=0.35))
+    sharp = render_scene(geometry, SceneAugmentation(spacing_mm=(0.4,) * 3, opacity="full"))
+    assert np.array_equal(blurred.outer_wall, sharp.outer_wall)
+    assert np.count_nonzero(blurred.wall_support & ~blurred.outer_wall) > 100
+    assert blurred.observable and sharp.observable
+    assert np.all(blurred.hu[blurred.wall_support] >= BONE_HU)
+    assert np.all(sharp.outer_wall[sharp.wall_support])
+
+
+def test_forward_attribution_requires_threshold_and_counterfactual_wall_support():
+    from ethmoid_pipeline.counting.synthetic_walls import _wall_signal_support
+    base = np.full(6, 40, dtype=np.float32)
+    wall = np.array([140, 180, 300, 0, 0.01, 70], dtype=np.float32)
+    other = np.array([0, 0, 280, 300, 0, 100], dtype=np.float32)
+    # A visible distractor, tiny blur tail or stronger other structure cannot
+    # become a wall target merely because measured total HU crosses the threshold.
+    np.testing.assert_array_equal(_wall_signal_support(base, wall, other),
+        [False, True, False, False, False, False])
+
+
+def test_noise_crossings_remain_negative_after_blur_attribution_fix(monkeypatch):
+    from ethmoid_pipeline.counting import synthetic_walls as generator
+    original = generator._wall_signal_support
+    before = []
+    def inspect(base, outer, other):
+        before.append((base + outer + other).copy())
+        return original(base, outer, other)
+    monkeypatch.setattr(generator, "_wall_signal_support", inspect)
+    # Preserve an older procedural draw as a development regression; the new
+    # support definition must not promote its noise-dependent threshold hits.
+    monkeypatch.setattr(generator, "VERSION", "procedural-wall-phantoms-1")
+    noise_hits = 0
+    for index in range(8):
+        scene = generator.render_scene(generator.make_geometry(index, "asymmetric", seed=20260918),
+            SceneAugmentation(opacity="partial", noise_std_hu=60, blur_sigma_mm=0.2, seed=20260919))
+        points = native_points(scene)
+        noisy = before[-1][tuple(points.T)] < BONE_HU
+        noise_hits += int(noisy.sum())
+        assert not generator.candidate_targets(scene, points)[noisy].any()
+    assert noise_hits >= 21

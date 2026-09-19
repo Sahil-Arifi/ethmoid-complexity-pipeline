@@ -163,8 +163,12 @@ An independent integrity audit checked the frozen source and imports, every
 geometry split, all NPZ file/array fingerprints, all 24,576 sampled target labels,
 all 15 epoch records, validation-only best-checkpoint selection and complete
 64-scene accounting. Reaggregation reproduced the failed engineering gate. The
-initial audit did not numerically remeasure unsaved inference score/point arrays;
-a separate frozen-checkout numerical rerun is pending at this report checkpoint.
+initial audit did not numerically remeasure unsaved inference score/point arrays.
+A second frozen-checkout audit subsequently reproduced validation/test inference
+and all 64 scene/control results exactly: 782 compared floating values, maximum
+difference 0.0. It saved 66 hash-bound evidence files and independently remeasured
+selected-point targets and physical errors. It took 24.797 seconds and preserved
+every original release file.
 
 Protected evidence SHA-256 values:
 
@@ -172,6 +176,7 @@ Protected evidence SHA-256 values:
 - Evaluation file: `39606123338c54f0deffbf410f1741c923d5defd83bc7ffc17097665b3560617`
 - Provenance file: `4f233efb66ed38e6777cc050aff38de980e12cd1e070f8abafdfb34944f1c4f8`
 - Initial independent audit: `65995a9b2b9ed6466d6dc619e9442d20bf736c48933ea58191eeecd3623ba030`
+- Numerical audit: `4424c3822a1c51f8967b7ffec1a1db9ef105b569d6092f6600732abf8ad5d314`
 
 The next engineering investigation is a reproduced alternative-search gap:
 partial septa change candidate depth ordinals, so approximate multi-start search
@@ -180,3 +185,58 @@ target definition is under review at blurred wall edges. Any correction must
 receive a new version and preserve this failed experiment. These inspected test
 scenes have now informed development and cannot become a new independent test
 set by rerunning them after a fix.
+
+## Experiment 002: revised components before training
+
+The first experiment exposed two distinct limitations. Changing candidate depth
+order could hide a complete competing wall from approximate search. Separately,
+21 selected voxels in three noisy scenes crossed the observed HU threshold only
+because of added noise. Those voxels remain negative examples; their labels were
+not changed to improve the first experiment's score.
+
+The second version makes the following bounded changes:
+
+- A score-independent interval-domain solver computes least and greatest
+  feasible candidate sheets. If enough columns differ, they witness a competing
+  sheet. If fewer differ, no pair of feasible sheets can differ on that many
+  columns under the declared slope/voxel-interval assumptions. A finite-work
+  exhaustion produces an explicit resource abstention. Neural energy ranking is
+  still approximate and does not certify anatomical identity.
+- The classifier now combines global context, features at the exact candidate
+  center and that source-center HU value. Training reserves part of its negative
+  sample budget for physical-wall candidates lacking the declared observable
+  support. Validation/test sampling stays uniformly capped within each class;
+  no targets are relabeled and no analytic mask enters the neural input.
+- A separately reproduced noise-free blur defect receives a generator-version
+  correction. A wall's measured signal may extend outside its original material
+  footprint. Targets now require threshold-level **noiseless** signal attributed
+  to that wall, dominance over other materials, and loss of threshold support
+  when its contribution is removed. Noise-only hits stay negative.
+- Every scene now retains hashed candidate scores, source coordinates, targets,
+  selected observed points and the baseline's separately identified fitted
+  surface. This enables numerical audits without relying only on summary rows.
+
+The renderer, architecture, solver, benchmark and experiment identity are
+versioned. Generator versioning creates new deterministic draws; the planned
+eight-geometries-per-family split is 40/16/8 with smooth bowls as the test family.
+These are **development experiments informed by earlier failures**, not a new
+independent clinical test or a directly paired comparison with experiment 001.
+Epochs, batch size, physical patch size and the original scene acceptance
+criteria remain fixed before this run.
+
+Verification before the second source freeze: **423 CPU checks passed**, including
+the existing 220 counting regressions and independent linear-programming oracles
+for the new feasibility solver. **24 real PyTorch integrations passed**, including
+CPU/CUDA optimization, exact center alignment for every supported odd patch size,
+checkpoint integrity and all 64 held-out equal-histogram pair rankings. That
+functional task's fixed-threshold classification was 126/128; it is not a perfect
+calibration or clinical result. One Windows symlink-privilege test was skipped.
+
+A dedicated negative control records the unavoidable distinction between two
+separately observed walls and two walls whose sampled HU joins into one bone run.
+The decoder must not invent a second observed face in the latter. If it accepts
+that apparent single wall, the independent benchmark still records a false
+acceptance and fails its gate. This limitation remains visible.
+
+Full training/evaluation of experiment 002 is pending at this source checkpoint.
+No patient model has been promoted and the audited patient result remains 15/98.

@@ -35,7 +35,7 @@ from ethmoid_pipeline.counting.wall_proposals import (
 )
 
 
-EXPERIMENT = "synthetic-observed-wall-learning-1"
+EXPERIMENT = "synthetic-observed-wall-learning-2"
 MAX_PATCHES_PER_SPLIT = 20_000
 MAX_PARTITION_BYTES = 768 * 1024**2
 
@@ -62,9 +62,11 @@ def patches_for(scene, candidates, indices, config):
     return result
 
 
-def prepare_partition(geometries, config, *, candidates_per_scene=96):
+def prepare_partition(geometries, config, *, candidates_per_scene=96, hard_negative_mining=False):
     if type(candidates_per_scene) is not int or not 8 <= candidates_per_scene <= 256:
         raise ValueError("Candidate sampling exceeds the bounded experiment configuration")
+    if type(hard_negative_mining) is not bool:
+        raise ValueError("Hard-negative sampling must be an explicit boolean policy")
     total = len(geometries) * len(augmentations(config.seed)) * candidates_per_scene
     config.validate()
     if total > MAX_PATCHES_PER_SPLIT or total * 3 * config.patch_size**3 * 2 > MAX_PARTITION_BYTES:
@@ -81,12 +83,20 @@ def prepare_partition(geometries, config, *, candidates_per_scene=96):
                 candidates = extract_candidates(scene.hu, scene.seed, scene.spacing_mm, scene.hu.shape[1] - 1)
                 targets = candidate_targets(scene, candidates.positions_ijk)
                 positive, negative = np.flatnonzero(targets == 1), np.flatnonzero(targets == 0)
+                material = scene.outer_wall[tuple(candidates.positions_ijk.T)]
+                hard_negative = np.flatnonzero((targets == 0) & material)
+                negative_budget = candidates_per_scene // 2
+                reserved = rng.permutation(hard_negative)[:negative_budget // 2] if hard_negative_mining else np.empty(0, np.int64)
+                remaining = np.setdiff1d(negative, reserved, assume_unique=True)
+                negative_selection = np.concatenate((reserved, rng.permutation(remaining)[:negative_budget - len(reserved)]))
                 # Equal per-class cap; never repeat a voxel or turn ignored targets positive.
                 selected = np.concatenate((rng.permutation(positive)[:candidates_per_scene // 2],
-                                           rng.permutation(negative)[:candidates_per_scene // 2]))
+                                           negative_selection))
                 selected = rng.permutation(selected)
                 record.update(status="sampled", candidates=len(targets),
                     positives_available=len(positive), negatives_available=len(negative),
+                    hard_negatives_available=len(hard_negative), hard_negative_mining=hard_negative_mining,
+                    hard_negatives_sampled=int(np.isin(selected, hard_negative).sum()),
                     selected_candidate_indices=selected.tolist(), sampled=len(selected))
                 if len(selected):
                     patches.append(patches_for(scene, candidates, selected, config))
@@ -123,7 +133,7 @@ def verify_sources(repo, frozen):
         raise RuntimeError("Source changed after the experiment was frozen")
 
 
-def evaluate_partition(geometries, model, config, device, *, controls=False):
+def evaluate_partition(geometries, model, config, device, *, controls=False, evidence_directory=None):
     from ethmoid_pipeline.counting.wall_benchmark import evaluate_scene, extraction_failure_row
 
     rows = []
@@ -134,6 +144,7 @@ def evaluate_partition(geometries, model, config, device, *, controls=False):
                 for state in ("missing", "averaged_away", "cropped", "ambiguous"))
         for augmentation in settings:
             scene = render_scene(geometry, augmentation)
+            evidence = {} if evidence_directory is not None else None
             try:
                 candidates = extract_candidates(scene.hu, scene.seed, scene.spacing_mm, scene.hu.shape[1] - 1)
                 scores = np.empty(len(candidates.positions_ijk), np.float32)
@@ -142,9 +153,16 @@ def evaluate_partition(geometries, model, config, device, *, controls=False):
                     patches = patches_for(scene, candidates, indices, config)
                     scores[start:start + len(indices)] = predict_scores(model, patches,
                         device=device, batch_size=config.batch_size)
-                row = evaluate_scene(scene, candidates, scores)
+                row = evaluate_scene(scene, candidates, scores, evidence=evidence)
             except WallProposalError as exc:
                 row = extraction_failure_row(scene, exc.code)
+            if evidence is not None:
+                evidence["source_hu_and_seed_sha256"] = np.asarray(patch_set_sha256(scene.hu, scene.seed, []))
+                evidence_name = f"{geometry.geometry_id}-{scene.augmentation_id}.local.npz"
+                evidence_path = evidence_directory / evidence_name
+                with evidence_path.open("xb") as handle:
+                    np.savez(handle, **evidence)
+                row["evidence"] = {"filename": evidence_name, "sha256": file_sha256(evidence_path)}
             rows.append(row)
             print(json.dumps({"stage": "negative_controls" if controls else "surface_evaluation",
                               "scenes_completed": len(rows), "family": geometry.family}), flush=True)
@@ -174,14 +192,17 @@ def run(args):
     require_disjoint_geometries(*[[g.family for g in values] for values in split.values()])
     provenance = {"schema_version": 1, "experiment": EXPERIMENT, **frozen,
         "supervision": SUPERVISION, "clinical_accuracy_measured": False,
-        "patient_images_used": 0, "expert_masks_used": 0, "training_target": "visible_analytic_wall_leading_face",
+        "patient_images_used": 0, "expert_masks_used": 0, "training_target": "noiseless_wall_attributed_observed_leading_face",
         "generator": VERSION, "decoder": SOLVER_VERSION, "architecture": ARCHITECTURE,
         "hu_normalization": HU_NORMALIZATION, "config": asdict(config),
         "geometry_split": {name: [asdict(g) for g in values] for name, values in split.items()},
         "split_families": {name: sorted({g.family for g in values}) for name, values in split.items()},
         "augmentations": [asdict(a) for a in augmentations(config.seed)],
         "candidates_per_scene": args.candidates_per_scene,
+        "training_sampling": "half_negative_budget_reserved_for_material_candidates_without_observable_target; no_target_relabeling",
+        "validation_test_sampling": "uniform_within_class_cap; no_hard_negative_reservation",
         "selection": "lowest_validation_binary_cross_entropy; fixed_threshold_0.5; test_not_used_for_selection",
+        "evaluation_scope": "procedural_development; prior_experiment_informed_engineering; not_independent_clinical_validation",
         "offline_guard_sha256": file_sha256(Path(sys.modules["sitecustomize"].__file__)),
         "runtime_versions": {name: importlib.metadata.version(name) for name in ("torch", "numpy", "scipy")},
         "gpu_name": torch.cuda.get_device_name(0), "gpu_total_bytes": torch.cuda.get_device_properties(0).total_memory,
@@ -192,7 +213,8 @@ def run(args):
         inventory = {}
         # Geometry and complete families were frozen before any image is rendered.
         for name in ("train", "validation", "test"):
-            datasets[name], rows = prepare_partition(split[name], config, candidates_per_scene=args.candidates_per_scene)
+            datasets[name], rows = prepare_partition(split[name], config, candidates_per_scene=args.candidates_per_scene,
+                                                    hard_negative_mining=name == "train")
             x, y, ids = datasets[name]
             np.savez(release / f"{name}-patches.local.npz", patches=x, targets=y, geometry_ids=np.asarray(ids))
             inventory[name] = {"scenes": rows, "samples": len(y), "class_counts": dict(Counter(map(int, y))),
@@ -214,8 +236,9 @@ def run(args):
         classification["sampling"] = "class_capped_observed_candidates_not_natural_prevalence"
         classification["calibrated_clinical_probabilities"] = False
         del datasets
-        rows = evaluate_partition(split["test"], model, config, "cuda")
-        rows += evaluate_partition(split["test"], model, config, "cuda", controls=True)
+        evidence_directory = protected_new_directory(release / "scene-evidence.local", args.work_root)
+        rows = evaluate_partition(split["test"], model, config, "cuda", evidence_directory=evidence_directory)
+        rows += evaluate_partition(split["test"], model, config, "cuda", controls=True, evidence_directory=evidence_directory)
         summary = summarize(rows)
         verify_sources(repo, frozen)
         report = {"schema_version": 1, "status": "research_evaluated", "experiment": EXPERIMENT,

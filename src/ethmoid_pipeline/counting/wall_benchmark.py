@@ -20,7 +20,7 @@ from .synthetic_walls import BONE_HU, SyntheticWallScene, candidate_targets
 from .wall_proposals import WallCandidates, WallProposalError, decode_surface
 
 
-BENCHMARK_VERSION = "procedural-observed-wall-benchmark-1"
+BENCHMARK_VERSION = "procedural-observed-wall-benchmark-2"
 METHODS = ("image_only", "learned", "first_hit_quadratic")
 CRITERIA = {
     "maximum_false_acceptances": 0,
@@ -145,9 +145,16 @@ def extraction_failure_row(scene: SyntheticWallScene, code: str) -> dict:
     return _scene_row(scene, methods, extraction_failed=True)
 
 
-def evaluate_scene(scene: SyntheticWallScene, candidates: WallCandidates, scores) -> dict:
+def evaluate_scene(scene: SyntheticWallScene, candidates: WallCandidates, scores, *, evidence: dict | None = None) -> dict:
     """Compare fixed methods without passing ground truth into either decoder."""
     _validate_scene_candidates(scene, candidates, scores)
+    if evidence is not None:
+        if not isinstance(evidence, dict) or evidence:
+            raise ValueError("An empty evidence dictionary is required")
+        evidence.update(candidate_positions_ijk=candidates.positions_ijk.copy(),
+            candidate_hu=candidates.candidate_hu.copy(), candidate_scores=np.asarray(scores).copy(),
+            candidate_targets=candidate_targets(scene, candidates.positions_ijk),
+            source_spacing_mm=np.asarray(scene.spacing_mm), source_origin_mm=np.asarray(scene.origin_mm))
     methods = {}
     for name, probabilities in (("image_only", np.ones(len(candidates.positions_ijk))), ("learned", scores)):
         try:
@@ -155,13 +162,25 @@ def evaluate_scene(scene: SyntheticWallScene, candidates: WallCandidates, scores
             if not np.array_equal(decoded.positions_ijk, candidates.positions_ijk[decoded.selected_candidate_indices]):
                 raise ValueError("Decoder points are not its selected observed candidates")
             methods[name] = _measure(scene, decoded.positions_ijk)
+            if evidence is not None:
+                evidence[name + "_selected_candidate_indices"] = decoded.selected_candidate_indices.copy()
+                evidence[name + "_observed_points_ijk"] = decoded.positions_ijk.copy()
         except WallProposalError as exc:
             methods[name] = _empty(exc.code)
+            if evidence is not None:
+                evidence[name + "_selected_candidate_indices"] = np.empty(0, dtype=np.int32)
+                evidence[name + "_observed_points_ijk"] = np.empty((0, 3), dtype=np.int32)
     try:
         observed, fitted = _first_hit_quadratic(scene, candidates.limit_y)
         methods["first_hit_quadratic"] = _measure(scene, observed, fitted=fitted)
+        if evidence is not None:
+            evidence["first_hit_quadratic_observed_points_ijk"] = observed.copy()
+            evidence["first_hit_quadratic_fitted_surface_ijk"] = fitted.copy()
     except CountingError as exc:
         methods["first_hit_quadratic"] = _empty(exc.code)
+        if evidence is not None:
+            evidence["first_hit_quadratic_observed_points_ijk"] = np.empty((0, 3), dtype=np.int32)
+            evidence["first_hit_quadratic_fitted_surface_ijk"] = np.empty((0, 0), dtype=np.int32)
     return _scene_row(scene, methods)
 
 

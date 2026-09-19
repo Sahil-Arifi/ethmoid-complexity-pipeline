@@ -64,6 +64,27 @@ def test_declared_experiment_families_are_disjoint_before_augmentation():
     assert all(split.values())
 
 
+def test_hard_negative_sampling_never_changes_observability_targets():
+    config = runner.TrainingConfig(seed=65)
+    geometry = runner.make_geometry(3, "smooth_bowl", seed=34)
+    values, rows = runner.prepare_partition([geometry], config, candidates_per_scene=32,
+                                           hard_negative_mining=True)
+    offset, available = 0, 0
+    for row, augmentation in zip(rows, runner.augmentations(config.seed)):
+        if row["status"] != "sampled":
+            continue
+        scene = runner.render_scene(geometry, augmentation)
+        candidates = runner.extract_candidates(scene.hu, scene.seed, scene.spacing_mm, scene.hu.shape[1] - 1)
+        targets = runner.candidate_targets(scene, candidates.positions_ijk)
+        selected = row["selected_candidate_indices"]
+        np.testing.assert_array_equal(values[1][offset:offset + len(selected)], targets[selected])
+        assert len(selected) == len(set(selected))
+        assert row["hard_negatives_sampled"] >= min(8, row["hard_negatives_available"])
+        available += row["hard_negatives_available"]
+        offset += len(selected)
+    assert available > 0
+
+
 def _stub_clean_git(monkeypatch):
     def git(command, **kwargs):
         if command[-2:] == ["status", "--porcelain"]:

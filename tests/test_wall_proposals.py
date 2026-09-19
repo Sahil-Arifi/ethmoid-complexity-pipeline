@@ -8,6 +8,7 @@ pytest.importorskip("scipy")
 
 from ethmoid_pipeline.counting.wall_proposals import (
     WallProposalError, extract_candidates, candidate_patch, decode_surface,
+    _IntervalWorkBudget, _interval_domain_extreme, MAX_FEASIBILITY_WORK,
 )
 
 
@@ -329,3 +330,141 @@ def test_observed_points_follow_surface_plane_coordinate_transforms(transform):
     observed = decode_surface(changed, np.ones(len(changed.positions_ijk)))
     assert set(map(tuple, observed.positions_ijk)) == set(map(tuple, expected))
     assert np.all(hu[tuple(observed.positions_ijk.T)] >= 200)
+
+
+@pytest.mark.parametrize("preference", ["lower", "upper", "equal"])
+def test_complete_rival_walls_with_variable_candidate_ordinals_cannot_hide_from_scores(preference):
+    # The two complete walls are at 16 and 26. Three unrelated partial plates
+    # change both walls' depth ordinals across columns. No single ordinal seed
+    # describes either wall, which defeated the original bounded ICM search.
+    hu = np.full((20, 42, 20), -900., np.float32)
+    seed = np.zeros_like(hu, bool)
+    seed[4:16, 4:8, 4:16] = True
+    hu[4:16, 16:18, 4:16] = 800
+    hu[4:16, 26:28, 4:16] = 800
+    hu[4:8, 10:12, 4:16] = 800
+    hu[8:12, 21:23, 4:16] = 800
+    hu[8:16, 32:34, 4:16] = 800
+    found = extract_candidates(hu, seed, (.8, .8, .8), 39)
+    scores = (np.ones(len(found.positions_ijk)) if preference == "equal" else
+              np.where(found.positions_ijk[:, 1] == (16 if preference == "lower" else 26), .99, .01))
+    fails("WALL_AMBIGUOUS", decode_surface, found, scores)
+
+
+def test_a_partial_rival_is_not_hidden_by_infeasible_irrelevant_alternatives_elsewhere():
+    # 12/16 columns can switch from J10 to J14 while the last row stays J10.
+    # That is a valid competing sheet. Forcing EVERY column off J10 would
+    # instead select an incompatible J30 plate on the last row and miss it.
+    hu = np.full((10, 36, 10), -900., np.float32)
+    seed = np.zeros_like(hu, bool)
+    seed[3:7, 3:6, 3:7] = True
+    hu[3:7, 10:12, 3:7] = 800
+    hu[3:6, 14:16, 3:7] = 800
+    hu[6, 30:32, 3:7] = 800
+    found = extract_candidates(hu, seed, (2., 1., 2.), 33)
+    scores = np.where(found.positions_ijk[:, 1] == 10, .99, .01)
+    fails("WALL_AMBIGUOUS", decode_surface, found, scores)
+
+
+def test_unique_feasible_sheet_enters_ranking_even_when_all_ordinal_initializations_are_bad():
+    hu = np.full((20, 42, 20), -900., np.float32)
+    seed = np.zeros_like(hu, bool)
+    seed[4:16, 4:8, 4:16] = True
+    hu[4:16, 16:18, 4:16] = 800
+    hu[4:8, 10:12, 4:16] = 800
+    hu[8:12, 21:23, 4:16] = 800
+    hu[12:16, 32:34, 4:16] = 800
+    found = extract_candidates(hu, seed, (.8, .8, .8), 39)
+    wall = decode_surface(found, np.ones(len(found.positions_ijk)), max_iterations=1)
+    assert np.all(wall.positions_ijk[:, 1] == 16)
+    assert wall.diagnostics["variable_feasible_columns"] == 0
+    assert wall.diagnostics["global_optimum_claim"] is False
+    assert wall.diagnostics["feasibility_work_units"] <= wall.diagnostics["feasibility_work_limit"]
+
+
+def test_scores_can_rank_small_certified_variation_but_cannot_change_observed_voxel_coordinates():
+    hu, seed, _ = scene()
+    hu[10, 20:22, 10] = 800
+    found = extract(hu, seed, (1., .5, 1.))
+    scores = np.where(found.positions_ijk[:, 1] == 20, .99, .8)
+    wall = decode_surface(found, scores, smoothness=0)
+    assert wall.diagnostics["variable_feasible_columns"] == 1
+    assert wall.diagnostics["variable_feasible_columns"] < wall.diagnostics["competing_sheet_required_columns"]
+    assert np.count_nonzero(wall.positions_ijk[:, 1] == 20) == 1
+    np.testing.assert_array_equal(wall.positions_ijk, found.positions_ijk[wall.selected_candidate_indices])
+    assert np.all(hu[tuple(wall.positions_ijk.T)] >= 200)
+
+
+def test_feasibility_work_exhaustion_is_an_abstention_not_infeasibility_or_unique_surface():
+    hu, seed, spacing = scene()
+    found = extract(hu, seed, spacing)
+    fails("WALL_RESOURCE_LIMIT", decode_surface, found, np.ones(len(found.positions_ijk)), max_feasibility_work=1)
+
+
+@pytest.mark.parametrize("budget", [0, -1, True, 1.5, MAX_FEASIBILITY_WORK + 1])
+def test_feasibility_budget_cannot_be_disabled_or_unbounded(budget):
+    hu, seed, spacing = scene()
+    found = extract(hu, seed, spacing)
+    fails("WALL_INPUT_INVALID", decode_surface, found, np.ones(len(found.positions_ijk)), max_feasibility_work=budget)
+
+
+def _enumerated_linear_program_extrema(centers, neighbors, half_width, slope):
+    """Independent small-domain oracle: enumerate bone choices, solve each LP.
+
+    The oracle knows no propagation, domain-ceiling or decoder implementation.
+    It checks continuous interval feasibility and independently minimizes and
+    maximizes every coordinate over every candidate combination.
+    """
+    from itertools import product
+    from scipy.optimize import linprog
+
+    n = len(centers)
+    rows, limits = [], []
+    for i, edges in enumerate(neighbors):
+        for j, spacing in edges:
+            row = np.zeros(n)
+            row[i], row[j] = 1, -1
+            rows.append(row)
+            limits.append(slope * spacing)
+    minimum, maximum = np.full(n, np.inf), np.full(n, -np.inf)
+    possible = False
+    for choices in product(*(range(len(domain)) for domain in centers)):
+        bounds = [(centers[i][choice] - half_width, centers[i][choice] + half_width)
+                  for i, choice in enumerate(choices)]
+        feasibility = linprog(np.zeros(n), A_ub=rows, b_ub=limits, bounds=bounds, method="highs")
+        assert feasibility.success or feasibility.status == 2
+        if not feasibility.success:
+            continue
+        possible = True
+        for i in range(n):
+            objective = np.zeros(n)
+            objective[i] = 1
+            low = linprog(objective, A_ub=rows, b_ub=limits, bounds=bounds, method="highs")
+            high = linprog(-objective, A_ub=rows, b_ub=limits, bounds=bounds, method="highs")
+            assert low.success and high.success
+            minimum[i] = min(minimum[i], low.fun)
+            maximum[i] = max(maximum[i], -high.fun)
+    return (minimum, maximum) if possible else None
+
+
+@pytest.mark.parametrize("seed", range(12))
+def test_interval_domain_extrema_match_exhaustive_independent_linear_programs(seed):
+    rng = np.random.default_rng(seed)
+    centers = [np.sort(rng.choice(np.arange(-4., 8., 2.), size=2, replace=False)) for _ in range(4)]
+    # A small rectangular cycle with anisotropic physical neighbor distances.
+    neighbors = [[(1, .75), (2, 1.25)], [(0, .75), (3, 1.25)],
+                 [(0, 1.25), (3, .75)], [(1, 1.25), (2, .75)]]
+    half_width, slope = .5, 1.3
+    oracle = _enumerated_linear_program_extrema(centers, neighbors, half_width, slope)
+    least = _interval_domain_extreme(centers, neighbors, half_width, slope, _IntervalWorkBudget(100_000))
+    greatest = _interval_domain_extreme(centers, neighbors, half_width, slope,
+                                       _IntervalWorkBudget(100_000), greatest=True)
+    if oracle is None:
+        assert least is None and greatest is None
+    else:
+        assert least is not None and greatest is not None
+        np.testing.assert_allclose(least.values_mm, oracle[0], atol=1e-7, rtol=0)
+        np.testing.assert_allclose(greatest.values_mm, oracle[1], atol=1e-7, rtol=0)
+        for solution in (least, greatest):
+            chosen = np.array([domain[index] for domain, index in zip(centers, solution.candidate_choices)])
+            assert np.all(np.abs(solution.values_mm - chosen) <= half_width + 1e-7)

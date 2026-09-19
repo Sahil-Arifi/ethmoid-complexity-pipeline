@@ -29,6 +29,15 @@ Windows privileges and was skipped. An independent audit verified source/split
 and data/checkpoint identity, every sampled label, validation-only checkpoint
 selection and all 64 scene outcomes. Clinical accuracy remains unmeasured.
 
+The first trained experiment was also reproduced numerically from its frozen
+checkout with zero difference across 782 compared floating values. A second
+version now addresses missed competing-wall searches and candidate-center
+features, adds an independently justified blur-target correction, and saves
+per-scene numerical evidence. Its foundation passed **423 CPU checks** and
+**24 real PyTorch integrations**. Full retraining/evaluation is pending at this
+checkpoint; the first experiment's failed result and all patient histories remain
+preserved. Both CI jobs passed for the first experiment and its report.
+
 **Latest verified result: frozen research v5 produced 15/98 automatic candidate counts (15.3%), with 83 anatomical review outcomes and zero technical errors. The requested 98/98 automatic-count target remains unmet.** All 12 v3 completions retained identical left/right/total counts, cell registries and saved native air/cavity/region artifacts; three previously resource-limited volumes newly completed. The 15 results contain 306 uncertain candidate entries across 11 studies, including repeated reconstructions. The remaining reasons are 44 unresolved sphenoid boundaries, 22 ambiguous boundaries, nine insufficient-coverage outcomes and eight unsupported-cell outcomes. Summed serial local attempt time was 3,635.101 seconds (60.6 minutes), including verified cache reuse and abstentions, not upload/preparation or uncached inference latency. The [final v4/v5 evaluation report](docs/RESEARCH_COMPLETION_EVALUATION.md) preserves both methods' evidence and distinguishes v4 regressions from v5 retention.
 
 The independent v5 audit verified all 98 unique source/result bindings and all 230 catalog series, including 132 unavailable series, and checked native geometry, IDs, measurements, HU-based air membership and explicit null counts on failure. These are software consistency checks on the existing 26-study development collection; **anatomical accuracy remains unmeasured**. No required expert target labels or new public target-label dataset were obtained, and no direct ethmoid model was trained or promoted. The application default remains v3; no opt-in setting change, production restart or research-result import into production occurred. All evaluated outputs remain protected locally, separate from production application histories.

@@ -20,7 +20,7 @@ from typing import Iterable
 import numpy as np
 
 
-VERSION = "procedural-wall-phantoms-1"
+VERSION = "procedural-wall-phantoms-2"
 GEOMETRY_FAMILIES = (
     "plane", "smooth_bowl", "tilted", "steep_ridge", "asymmetric",
     "saddle", "wavy", "offcenter_dome",
@@ -74,8 +74,8 @@ class SyntheticWallScene:
     origin_mm: tuple[float, float, float]
     seed: np.ndarray
     analytic_seed: np.ndarray
-    outer_wall: np.ndarray
-    wall_support: np.ndarray
+    outer_wall: np.ndarray  # Equation-defined material footprint, before blur.
+    wall_support: np.ndarray  # Observed leading faces causally supported after blur.
     target_surface_y_mm: np.ndarray
     target_leading_surface_y_mm: np.ndarray
     support_columns: np.ndarray
@@ -176,6 +176,21 @@ def _slab_fraction(distance: np.ndarray, thickness: float, footprint: np.ndarray
     return np.clip((high - low) / footprint, 0, 1).astype(np.float32)
 
 
+def _wall_signal_support(base: np.ndarray, outer_signal: np.ndarray,
+                         other_signal: np.ndarray) -> np.ndarray:
+    """Attribute noiseless threshold evidence to the independently rendered wall.
+
+    The point-spread function can move its signal beyond the material footprint.
+    A positive blur tail alone is insufficient: the wall must dominate the other
+    material contribution and its removal must remove threshold-level evidence.
+    No sampled noise, candidate rank, fitted surface, or learned score enters.
+    """
+    without_wall = base + other_signal
+    before_noise = base + outer_signal + other_signal
+    return ((outer_signal > 0) & (before_noise >= BONE_HU)
+            & (outer_signal >= other_signal) & (without_wall < BONE_HU))
+
+
 def render_scene(geometry: WallGeometry, augmentation: SceneAugmentation | None = None,
                  *, max_voxels: int = MAX_VOXELS) -> SyntheticWallScene:
     """Sample an owned, bounded CT-like phantom without any learned model.
@@ -188,6 +203,10 @@ def render_scene(geometry: WallGeometry, augmentation: SceneAugmentation | None 
     Each augmentation draws one Uniform(-20, 80) HU soft-tissue value for both
     opaque contents and surrounding tissue. Their class cannot be inferred from
     an artificial fixed inside/outside intensity difference.
+
+    Material occupancy remains separate from observed support. The latter uses
+    the blurred, noiseless signal attributable to that material and cannot label
+    a threshold crossing caused only by noise or an independently visible septum.
     """
     a = augmentation or SceneAugmentation()
     if not isinstance(geometry, WallGeometry) or not isinstance(a, SceneAugmentation):
@@ -278,7 +297,7 @@ def render_scene(geometry: WallGeometry, augmentation: SceneAugmentation | None 
     leading[:, 0, :] = False
     outer_wall = outer_fraction > 1e-6
     seed_columns = np.any(seed, axis=1)
-    wall_support = (outer_wall & leading & (before_noise >= BONE_HU) & (outer_signal >= other_signal)
+    wall_support = (leading & _wall_signal_support(base, outer_signal, other_signal)
                     & seed_columns[:, None, :] & (axes[1][None, :, None] > -6.0))
     # Rival sheets have no uniquely adjudicated target even though bone exists.
     if a.wall_state == "ambiguous":
@@ -307,7 +326,8 @@ def render_scene(geometry: WallGeometry, augmentation: SceneAugmentation | None 
 def candidate_targets(scene: SyntheticWallScene, positions_ijk: np.ndarray) -> np.ndarray:
     """Label supplied positions by generative provenance, never candidate rank.
 
-    1 = observed, equation-defined outer-wall leading face; 0 = other material;
+    1 = observed leading face supported by the noiseless outer-wall signal;
+    0 = not independently supported as the outer wall, including noise-only hits;
     -1 = ambiguous scene, excluded from forced-choice training/evaluation targets.
     Coordinates alone are accepted so no extractor or decoder is imported here.
     """

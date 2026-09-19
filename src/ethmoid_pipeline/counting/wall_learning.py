@@ -18,7 +18,7 @@ import time
 import numpy as np
 
 
-ARCHITECTURE = "observed-wall-patch-cnn-1"
+ARCHITECTURE = "observed-wall-centered-cnn-2"
 SUPERVISION = "procedural_synthetic_visible_outer_wall"
 INPUT_CHANNELS = ("normalized_hu", "posterior_seed", "valid_source_extent")
 HU_NORMALIZATION = {"clip_hu": [-1000, 2000], "divisor": 1000.0}
@@ -107,14 +107,45 @@ def write_new_json(path: Path, value: dict) -> None:
 
 def build_ranker():
     """A small 3D context classifier; its scores are not calibrated clinical risk."""
+    import torch
     from torch import nn
 
-    return nn.Sequential(
-        nn.Conv3d(3, 8, 3, padding=1), nn.GroupNorm(2, 8), nn.SiLU(),
-        nn.Conv3d(8, 16, 3, stride=2, padding=1), nn.GroupNorm(4, 16), nn.SiLU(),
-        nn.Conv3d(16, 32, 3, stride=2, padding=1), nn.GroupNorm(8, 32), nn.SiLU(),
-        nn.AdaptiveAvgPool3d(1), nn.Flatten(), nn.Linear(32, 1),
-    )
+    class CenteredWallRanker(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.stem = nn.Sequential(
+                nn.Conv3d(3, 8, 3, padding=1), nn.GroupNorm(2, 8), nn.SiLU(),
+                nn.Conv3d(8, 16, 3, stride=2, padding=1), nn.GroupNorm(4, 16), nn.SiLU(),
+                nn.Conv3d(16, 32, 3, stride=2, padding=1), nn.GroupNorm(8, 32), nn.SiLU(),
+            )
+            self.head = nn.Sequential(nn.Linear(65, 32), nn.SiLU(), nn.Linear(32, 1))
+
+        def forward(self, inputs):
+            if (inputs.ndim != 5 or inputs.shape[1] != 3 or len(set(inputs.shape[2:])) != 1
+                    or not 9 <= inputs.shape[2] <= 33 or inputs.shape[2] % 2 != 1):
+                raise ValueError("The centered ranker requires odd cubic three-channel patches of size 9 through 33")
+            features = self.stem(inputs)
+            center_index = inputs.shape[2] // 2
+            # Two padded stride-2 layers place feature samples at input indices
+            # 0, 4, 8, ... . The grid midpoint is not the candidate center for
+            # every supported odd patch size, so sample the exact center in it.
+            position = center_index / 4.0
+            lower = math.floor(position)
+            fraction = position - lower
+            centered = torch.zeros_like(features[:, :, 0, 0, 0])
+            for dx in (0, 1):
+                for dy in (0, 1):
+                    for dz in (0, 1):
+                        weight = ((fraction if dx else 1 - fraction)
+                                  * (fraction if dy else 1 - fraction)
+                                  * (fraction if dz else 1 - fraction))
+                        if weight:
+                            centered = centered + weight * features[:, :, lower + dx, lower + dy, lower + dz]
+            center_hu = inputs[:, 0, center_index, center_index, center_index].unsqueeze(1)
+            combined = torch.cat((features.mean(dim=(2, 3, 4)), centered, center_hu), dim=1)
+            return self.head(combined)
+
+    return CenteredWallRanker()
 
 
 def normalize_patch(raw: np.ndarray) -> np.ndarray:
