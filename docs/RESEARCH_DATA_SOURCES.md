@@ -1,6 +1,12 @@
 # Public data and model source review
 
-Checked **2026-09-18**. Scope: author publications, author repositories and data-repository records for conventional CT with separate ethmoid and sphenoid region labels, preferably individual ethmoid-cell instances or independent 3D counts. This review used public text, source code and repository metadata; it did not download image datasets or weights, train a model, contact authors or measure local accuracy.
+Initially checked **2026-09-18**, with data-quality and source follow-up on
+**2026-09-19**. Scope: author publications, author repositories and data-repository
+records for conventional CT with separate ethmoid and sphenoid region labels,
+preferably individual ethmoid-cell instances or independent 3D counts. The
+follow-up downloaded NasalSeg v2 locally for the quality checks below. No external
+weights were adopted, authors contacted or patient data uploaded. Separate
+procedural training experiments do not measure clinical accuracy.
 
 **No immediately usable, publicly downloadable conventional-CT dataset with both required sinus labels was verified in this search. No public individual ethmoid-cell instance/count reference set was verified.** This is a bounded search result, not proof that no such resource exists. Regional sinus segmentation also does not establish correct individual-cell separation or counting.
 
@@ -107,3 +113,80 @@ implemented for testing. It does not change the existing anatomical methods or
 treat a graph solution as truth. No external data request, registration or author
 message was submitted. The lack of an acquired target-reference dataset remains
 a separate constraint on clinical accuracy evaluation.
+
+## NasalSeg v2: downloaded quality review, 2026-09-19
+
+The [official record](https://zenodo.org/records/13893419) provides an open
+CC BY 4.0 archive. Downloaded size **224,005,800 bytes** and MD5
+`ba83df47974d907798542101fa43ac7d` matched the official metadata. SHA-256 is
+`60c6facf843685802c39e4adff4a05c081c1c4b6175c9cb573745c55abb0fa6a`.
+The original ZIP and all extracted files stay outside Git.
+
+The [dataset paper](https://www.nature.com/articles/s41597-024-04176-1) describes
+human annotation, model-assisted refinement and expert review. Its exact targets
+are right/left maxillary sinus, right/left nasal cavity and nasopharynx, numbered
+1–5; zero is background. There are **no ethmoid, sphenoid, wall or individual-cell
+reference labels**. The author repository contains no verified trained checkpoint.
+
+Full local inspection decoded 130 image/label NRRD pairs. Files contain cropped
+volumes rather than verified original full-head DICOMs. All masks contain labels
+0–5 and CT values range from -1024 to 3071, but this range does not prove preserved
+HU calibration or correspondence to original acquisition coordinates.
+
+Measured findings:
+
+- **12 pairs have substantive physical geometry disagreement.** Nine label
+  headers reverse the Z direction and differ by 220.5 mm in origin; three use
+  1 mm label spacing against 1.5 mm image spacing, producing 25.5–26.5 mm corner
+  displacement. Matching array dimensions do not resolve these mismatches.
+- **107 distinct decoded image/label contents exist among 130 records.** Nineteen
+  repeated-content groups account for 42 records, or 23 redundant copies. Distinct
+  contents are not proof of independent patients; differently reconstructed
+  images from one patient could still have different arrays.
+- The 118 geometry-matched records contain 97 distinct contents. Three additional
+  nasal-centroid ordering flags are copies of one content, separate from the
+  geometry failures. Such centroid ordering requires review; it is not proof that
+  labels should be swapped. Removing that flagged content leaves 96 distinct
+  geometry-matched contents without this particular flag.
+
+No original was modified, reoriented or relabeled. These checks do not grant
+clinical annotation validity. A future auxiliary experiment must freeze source
+hashes, exclude unresolved geometry, group repeated content before splitting,
+establish patient grouping, and verify crop/calibration and label semantics.
+No training or inference on this dataset has occurred.
+
+An independent standard-library NRRD header/gzip parser plus NumPy reproduced
+all 130 pair checks without relying on the initial imaging library. It verified
+archive hashes, ZIP CRCs, all extracted bytes, voxel-content groups and physical
+extent disagreements. Audit SHA-256:
+`d7e36295a00267b162806b9a53b36f17ab0f108482fc5c2d748ad7bd6ad77299`.
+The immutable initial file-byte uniqueness report is superseded, for duplication
+conclusions, by the decoded-voxel identity report and independent audit.
+
+A bounded [v1 release](https://zenodo.org/records/12177181) comparison fetched
+only one same-named full-head image/label pair and archive metadata (about
+32.7 MB), not the full 4.4 GB release. Its opposite Z storage directions describe
+the same physical extent through a lossless index reversal. The current v2
+arrays retain those respective full-head headers after changing array size,
+so their physical extents no longer match. The v2 image was not an exact direct
+subvolume of that same-named v1 image. Filename correspondence therefore cannot
+establish source identity, explain preprocessing or justify a geometry repair.
+Original files from both releases remain unchanged.
+
+Its relevance was checked against the actual v5 failures. Of the 66 sphenoid
+outcomes, eight lack an eligible posterior compartment, four have competing
+compartments, 28 lack enough oriented wall rays, 18 have incoherent wall fits,
+six have spatially narrow support and two have degenerate fits. Thus **54/66
+already reach wall analysis with a parent and interior seed**. Nasal anchors may
+help investigate the first 12, but no current reference comparison establishes
+nasal-mask error. The dataset's maxillary labels serve a later stage, and
+nasopharynx is not currently a localizer input. Training these auxiliary labels
+would not directly supervise the demonstrated sphenoid-wall problem.
+
+Two additional primary-source leads do not resolve the target-data gap. The
+[postmortem fluid study](https://www.nature.com/articles/s41598-026-44094-3)
+segments sphenoid fluid rather than the complete compartment and explicitly
+withholds public CT images. The [orbital-apex study](https://www.frontiersin.org/journals/cell-and-developmental-biology/articles/10.3389/fcell.2025.1609028/full)
+uses 200 selected enhanced-CT images for sphenoid/optic-canal/carotid segmentation;
+no downloadable complete CT/mask corpus or checkpoint was verified. Neither
+provides individual ethmoid-cell ground truth.

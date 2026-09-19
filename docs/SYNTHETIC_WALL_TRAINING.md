@@ -328,7 +328,29 @@ substitution, and unchanged image-only/geometry behavior. One Windows
 directory-symlink-privilege test remains skipped; the unchanged real training
 implementation previously passed 24 CPU/GPU integration checks.
 
-The next execution reuses all 64 source-bound experiment-002 scene scores under
-this fixed policy, preserving previous artifacts. It is a development regression
-without new optimization or patient inference. Its results remain pending at
-this source freeze and will be recorded regardless of completion or abstention.
+The completed replay at frozen source
+[`01f5e21`](https://github.com/Sahil-Arifi/ethmoid-complexity-pipeline/commit/01f5e21822542da0042f85089c59fe6d93e076d4)
+reused all 64 source-bound experiment-002 scene scores. The learned decoder
+accepted **2/64 scenes**, abstained on 62, and accepted **zero negative controls**.
+Both accepted scenes had identical points to their previous acceptances. Minimum
+observed-target precision was 0.996667 and mean position error 0.267494 mm.
+The fixed engineering gate passes on these reused scenes, but the very low
+coverage and development reuse prevent treating this as independent accuracy
+evidence or a model-promotion result.
+
+Twenty-four previous acceptances became abstentions; no new scene was accepted.
+Reasons were 26 point-support failures, 29 incoherent surfaces, four ambiguous
+surfaces, two insufficient-support outcomes and one unsupported hole. Every
+image-only and boundary-proxy outcome and point artifact remained unchanged.
+All 91 original release files were rehashed unchanged, and 128 new scene proof
+files retain the replay evidence. Runtime was 9.922 seconds on CPU, with no model
+inference, optimization or patient processing.
+
+Replay evaluation SHA-256:
+`6e4e72685b2433136479da656d6f44df70aa788fa1f4c2e2f02484389c7255a5`.
+The separate classification audit of experiment 002 has SHA-256
+`211ae18f443c89817a01ce40860c338867c994fc0cb4abc3897ffb2849554188`.
+
+The 15/98 patient result remains unchanged. Meeting a small synthetic gate with
+two accepted scenes does not demonstrate reliable patient boundaries, and it
+cannot supply missing expert region masks or individual-cell reference counts.

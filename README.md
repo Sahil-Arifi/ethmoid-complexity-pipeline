@@ -50,14 +50,27 @@ point-support diagnostics when any selected point fails; it never deletes points
 or fills holes to obtain acceptance. This policy is versioned separately from the
 unchanged geometry solver. **433 CPU checks passed** (213 research checks and
 220 existing counting regressions); the one Windows symlink-privilege skip remains.
-Replaying all 64 stored scenes is pending at this source freeze. This correction
-does not retrain or promote a model, and it does not increase patient completion.
+Replaying all 64 stored scenes retained only **two acceptances**, with zero false
+acceptances. It passed the fixed gate on reused development scenes, but its low
+coverage does not support promotion. All previous files and both comparison
+methods remained unchanged. This correction does not retrain or promote a model,
+and it does not increase patient completion. Both CI jobs passed for the second
+training-source commit `d64111d`.
 
 **Latest verified result: frozen research v5 produced 15/98 automatic candidate counts (15.3%), with 83 anatomical review outcomes and zero technical errors. The requested 98/98 automatic-count target remains unmet.** All 12 v3 completions retained identical left/right/total counts, cell registries and saved native air/cavity/region artifacts; three previously resource-limited volumes newly completed. The 15 results contain 306 uncertain candidate entries across 11 studies, including repeated reconstructions. The remaining reasons are 44 unresolved sphenoid boundaries, 22 ambiguous boundaries, nine insufficient-coverage outcomes and eight unsupported-cell outcomes. Summed serial local attempt time was 3,635.101 seconds (60.6 minutes), including verified cache reuse and abstentions, not upload/preparation or uncached inference latency. The [final v4/v5 evaluation report](docs/RESEARCH_COMPLETION_EVALUATION.md) preserves both methods' evidence and distinguishes v4 regressions from v5 retention.
 
 The independent v5 audit verified all 98 unique source/result bindings and all 230 catalog series, including 132 unavailable series, and checked native geometry, IDs, measurements, HU-based air membership and explicit null counts on failure. These are software consistency checks on the existing 26-study development collection; **anatomical accuracy remains unmeasured**. No required expert target labels or new public target-label dataset were obtained, and no direct ethmoid model was trained or promoted. The application default remains v3; no opt-in setting change, production restart or research-result import into production occurred. All evaluated outputs remain protected locally, separate from production application histories.
 
 The new `feature/research-completion` work investigates the remaining automatic abstentions using public research and source-derived engineering diagnostics. The [public data/model review](docs/RESEARCH_DATA_SOURCES.md) found no verified immediately downloadable conventional-CT resource with both required sinus-region labels, and no individual ethmoid-cell reference dataset. Promising author-request leads are recorded; MRI models, combined sinus masks and auxiliary bone annotations are not treated as ethmoid-cell ground truth. No patient images were uploaded and no external weights were adopted.
+
+Follow-up downloaded the public NasalSeg dataset for local quality checks.
+All 130 image/label pairs decode, but 12 have substantive geometry disagreement
+and decoded arrays contain 107 distinct pairs rather than 130 independent
+contents. A limited older-release comparison did not establish a valid repair.
+The dataset labels nasal/maxillary structures, with no ethmoid, sphenoid or cell
+references. Its [quality review](docs/RESEARCH_DATA_SOURCES.md#nasalseg-v2-downloaded-quality-review-2026-09-19)
+records duplicate grouping, geometry exclusions and remaining provenance limits;
+it has not been used to train or validate the cell counter.
 
 The frozen v3 failure messages identify 29 thick scans rejected by an interior-seed rule that scales to a 5 mm radius at 2.5 mm spacing. This is a localization heuristic, separate from the final cell acceptance criteria. The opt-in `research-v4` worker tests a physical 1 mm seed clearance, a physical-unit correction to the wall search and a bounded anatomy-only memory fallback while preserving native cell separation and recorded uncertainty. The fallback records its complete-extent 0.5-1 mm anatomy grid, uses at most 64 million voxels and never resamples final instances. Anatomical uncertainty does not trigger progressively coarser retries. The full audited v4 pass produced 15 candidate counts, 83 anatomical review outcomes and no technical errors across all 98 prepared volumes. Clinical accuracy remains unmeasured; the existing application remains on v3 and earlier protocols/results remain intact.
 
