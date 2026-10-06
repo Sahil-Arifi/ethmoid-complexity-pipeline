@@ -26,6 +26,13 @@ chamber missed beside an incomplete septum; simpler seed-recovery alternatives
 also created extra cells in single-chamber controls. Those alternatives remain
 outside the application. No improvement in clinical counting accuracy is claimed.
 
+An approved diagnostic replay reproduced its frozen output byte for byte. It
+identified broad basins before merging and eligible geometry rejected after
+outside-region merges. Two proposed preservation rules failed shared-stage
+synthetic controls; their clinical benefit remains unvalidated. The
+[diagnostic notes](docs/COUNTING_STAGE_DIAGNOSTICS.md) record why these rules were
+rejected; private stage evidence and clinical inputs remain outside Git.
+
 An isolated [synthetic wall-training experiment](docs/SYNTHETIC_WALL_TRAINING.md)
 now targets one boundary-selection bottleneck. It uses equation-defined visible
 walls, varied acquisition properties, geometry-family holdouts and missing-wall

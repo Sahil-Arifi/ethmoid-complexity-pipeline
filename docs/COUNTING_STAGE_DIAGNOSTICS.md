@@ -43,3 +43,25 @@ and cached anatomical masks. Write a new directory, compare its ordinary outputs
 with the baseline, and inspect stage evidence at disputed locations. Freeze any
 subsequent algorithm change before evaluating additional scans. Keep development
 results separate from independent clinical validation.
+
+An approved replay reproduced its frozen ordinary outputs byte for byte and
+showed two distinct mechanisms: broad single-seed basins before merging, and
+otherwise eligible basins rejected after merging with mostly outside-region
+geometry. Eligibility under these gates does not establish a true clinical cell.
+
+A synthetic outside-region merge veto recovered an interior target, but split
+one communicating cavity into two candidates. Checking final merged membership
+before preserving basins moved the error to a larger communicating cavity.
+The veto also changed counts when a narrow connection became opaque with bone
+geometry held constant. Neither rule was promoted. A justified change needs
+bone or anatomical evidence that distinguishes a cell wall from communication,
+with opaque-cavity and single-cavity controls; matching a reference total is
+insufficient.
+
+These controls use full reconstruction boxes to isolate the shared stage. With
+the same phantom ROIs and production's exact 3 mm growth policy, the outside
+connections disappear and neither guard fires. The baseline itself splits the
+U-shaped control after search clipping. Those experiments establish shared-stage
+limitations, not guard-induced failures in the complete production path. A
+reachable target/control pair is still needed. Private replay arrays, coordinates
+and reports remain outside Git.
