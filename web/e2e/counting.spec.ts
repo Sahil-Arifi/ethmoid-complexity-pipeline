@@ -72,6 +72,30 @@ print(json.dumps({'visible_pixels':int((image.max(axis=2)>40).sum()),'std':float
   await expect(page.getByTestId("total-count")).toHaveText("2");
   expect(browserErrors).toEqual([]);
 
+  // Diagnostic review must persist evidence without revising the prediction.
+  await page.getByLabel("Observation type").selectOption("merged");
+  await page.getByLabel("Observation note").fill("Synthetic review: two points may belong to separate compartments.");
+  await page.getByRole("button", { name: "Use crosshair location" }).click();
+  await page.getByRole("button", { name: "Save observation" }).click();
+  await expect(page.getByText("Observation saved. Counts and cell masks are unchanged.")).toBeVisible();
+  await expect(page.getByTestId("total-count")).toHaveText("2");
+  await expect(page.getByRole("link", { name: "Export revision 0" })).toBeVisible();
+  const observationLink = page.getByRole("link", { name: "Export observations JSON" });
+  const exportResponse = await page.request.get((await observationLink.getAttribute("href"))!);
+  expect(exportResponse.ok()).toBe(true);
+  const evidence = (await exportResponse.json()).observations[0];
+  expect(evidence.kind).toBe("merged");
+  expect(evidence.candidate_ids).toEqual([300]);
+  expect(evidence.revision).toBe(0);
+  expect(evidence.source_sha256).toMatch(/^[a-f0-9]{64}$/);
+  expect(evidence.point_ras_mm).toHaveLength(3);
+  await page.reload();
+  await expect(page.getByText(evidence.note)).toBeVisible();
+  await expect(page.getByTestId("total-count")).toHaveText("2");
+  await page.getByRole("button", { name: "Locate observation" }).click();
+  await expect(page.locator(".count-coordinates")).toContainText("Cell #300");
+  await page.getByRole("button", { name: /#300 · right/ }).click();
+
   // Load and serialize the canonical uint16 cell as an oriented binary drawing.
   await page.getByRole("button", { name: "Edit boundary" }).click();
   await expect(page.getByRole("heading", { name: "Edit cell #300 boundary" })).toBeVisible();

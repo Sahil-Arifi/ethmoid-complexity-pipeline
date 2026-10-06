@@ -9,6 +9,15 @@ The experimental 3D cell-counting prototype is implemented. The original v1 meth
 
 ## Research toward broader automatic completion
 
+The saved-count workspace now supports [diagnostic observations](docs/DIAGNOSTIC_OBSERVATIONS.md).
+Selecting a candidate highlights its compartment and shows a matching color
+swatch. Suspected misses, merges, extras, and side questions can be recorded at
+selected IDs or a CT crosshair location. Notes are tied to the exact source,
+run, revision, and artifact hashes and exported separately as JSON. This adds
+review evidence without changing automatic counts, masks, or clinical inference.
+The next step is expert comparison on the matching reconstruction; these notes
+do not establish independent reference counts or improved accuracy.
+
 An isolated [synthetic wall-training experiment](docs/SYNTHETIC_WALL_TRAINING.md)
 now targets one boundary-selection bottleneck. It uses equation-defined visible
 walls, varied acquisition properties, geometry-family holdouts and missing-wall

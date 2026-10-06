@@ -58,6 +58,7 @@ type Props = {
   onHistoryChange: (canUndo: boolean, canRedo: boolean) => void;
   instanceOverlayUrl?: string;
   visibleCellIds?: number[];
+  focusedCellId?: number;
 };
 
 type LocationPayload = {
@@ -122,12 +123,14 @@ export const NiiVueViewer = forwardRef<NiiVueViewerHandle, Props>(
       onHistoryChange,
       instanceOverlayUrl,
       visibleCellIds,
+      focusedCellId,
     },
     ref,
   ) {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const niivueRef = useRef<Niivue | null>(null);
     const instanceLabelsRef = useRef<import("@niivue/niivue").NVImage | null>(null);
+    const instanceDisplayRef = useRef<import("@niivue/niivue").NVImage | null>(null);
     const historyRef = useRef<DrawingHistory>(emptyHistory());
     const initialStateRef = useRef(initialState);
     const initialHasAnnotationRef = useRef(hasAnnotation);
@@ -152,6 +155,8 @@ export const NiiVueViewer = forwardRef<NiiVueViewerHandle, Props>(
     });
     const [loading, setLoading] = useState(true);
     const cellFilterKey = visibleCellIds?.join(",");
+    const overlayControlsRef = useRef({ cellFilterKey, focusedCellId });
+    overlayControlsRef.current = { cellFilterKey, focusedCellId };
 
     callbacksRef.current = {
       onReady,
@@ -509,7 +514,11 @@ export const NiiVueViewer = forwardRef<NiiVueViewerHandle, Props>(
         canvas.removeEventListener("pointerup", notifyViewStateAfterInteraction);
         canvas.removeEventListener("wheel", notifyViewStateAfterInteraction);
         instance?.cleanup();
-        if (niivueRef.current === instance) niivueRef.current = null;
+        if (niivueRef.current === instance) {
+          niivueRef.current = null;
+          instanceLabelsRef.current = null;
+          instanceDisplayRef.current = null;
+        }
       };
     }, [caseId, protocol, volumeFileType]);
 
@@ -529,8 +538,9 @@ export const NiiVueViewer = forwardRef<NiiVueViewerHandle, Props>(
           // paints background label 0 when a LUT contains IDs above 255.
           // Render an RGBA copy; retain the unchanged native uint16 image for
           // cell picking and fetch that canonical image for binary corrections.
-          const visibleIds = cellFilterKey === undefined ? undefined : new Set(cellFilterKey ? cellFilterKey.split(",").map(Number) : []);
-          const rgba = instanceRgba(volume.img, visibleIds);
+          const { cellFilterKey: filter, focusedCellId: focused } = overlayControlsRef.current;
+          const visibleIds = filter === undefined ? undefined : new Set(filter ? filter.split(",").map(Number) : []);
+          const rgba = instanceRgba(volume.img, visibleIds, focused);
           const display = volume.clone();
           display.img = rgba;
           display.hdr!.datatypeCode = 2304; // NIfTI RGBA32, display only.
@@ -540,6 +550,7 @@ export const NiiVueViewer = forwardRef<NiiVueViewerHandle, Props>(
           const controls = controlStateRef.current;
           display.opacity = controls.overlayVisible ? controls.overlayOpacity : 0;
           instanceLabelsRef.current = volume;
+          instanceDisplayRef.current = display;
           overlay = display;
           nv.addVolume(display);
           nv.createOnLocationChange();
@@ -552,13 +563,22 @@ export const NiiVueViewer = forwardRef<NiiVueViewerHandle, Props>(
         cancelled = true;
         if (overlay && niivueRef.current === nv) {
           instanceLabelsRef.current = null;
+          instanceDisplayRef.current = null;
           nv.removeVolume(overlay);
           nv.createOnLocationChange();
         }
       };
-      // Visibility and opacity update without downloading the label volume again.
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [instanceOverlayUrl, loading, cellFilterKey]);
+    }, [instanceOverlayUrl, loading]);
+
+    useEffect(() => {
+      const nv = niivueRef.current;
+      const labels = instanceLabelsRef.current;
+      const display = instanceDisplayRef.current;
+      if (!nv || !labels?.img || !display || loading) return;
+      const visibleIds = cellFilterKey === undefined ? undefined : new Set(cellFilterKey ? cellFilterKey.split(",").map(Number) : []);
+      display.img = instanceRgba(labels.img, visibleIds, focusedCellId);
+      nv.updateGLVolume();
+    }, [cellFilterKey, focusedCellId, loading]);
 
     useEffect(() => {
       const nv = niivueRef.current;

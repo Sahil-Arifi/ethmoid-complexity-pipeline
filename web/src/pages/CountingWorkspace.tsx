@@ -9,7 +9,9 @@ import { qualityNotes } from "../components/catalog";
 import { countFailureMessage } from "../components/countFailure";
 import { countOutcome, countStage } from "../components/countProgress";
 import { ScanProcessingDetails } from "../components/ScanProcessingDetails";
+import { CountObservations } from "../components/CountObservations";
 import { NiiVueViewer, type NiiVueViewerHandle, type ViewerLocation, type ViewerTool, type ViewMode } from "../viewer/NiiVueViewer";
+import { instanceColor } from "../viewer/instanceOverlay";
 import "./counting.css";
 
 type Props = { caseId: string; onBack: () => void; onOpenCase?: (caseId: string) => void; registerNavigationGuard: (guard: (() => Promise<boolean>) | null) => void };
@@ -37,10 +39,14 @@ function CountReview({ caseId, onBack, onOpenCase, registerNavigationGuard, onPr
   const [runs, setRuns] = useState<CountRun[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [actionBusy, setBusy] = useState(false);
+  const [observationSaving, setObservationSaving] = useState(false);
+  const busy = actionBusy || observationSaving;
   const [switchingSeries, setSwitchingSeries] = useState(false);
   const [ready, setReady] = useState(false);
   const [selected, setSelected] = useState<number[]>([]);
+  const [highlight, setHighlight] = useState(true);
+  const [observationDirty, setObservationDirty] = useState(false);
   const [tool, setTool] = useState<ViewerTool>("navigate");
   const [viewMode, setViewMode] = useState<ViewMode>("multiplanar");
   const [center, setCenter] = useState(300);
@@ -76,7 +82,8 @@ function CountReview({ caseId, onBack, onOpenCase, registerNavigationGuard, onPr
   const staleEdit = !!edit && edit.parentRevision !== run?.latest_revision;
 
   const guard = useCallback(async () => {
-    if (switchingSeries) return false;
+    if (switchingSeries || observationSaving) return false;
+    if (observationDirty && !window.confirm("Discard the unsaved diagnostic observation?")) return false;
     if (edit && !window.confirm("Discard the pending cell correction?")) return false;
     if (boundaryEdit && dirty && !window.confirm("Leave anatomical boundary review? Unsaved boundary changes will be discarded.")) return false;
     if (ready && viewer.current && !readOnly) {
@@ -84,13 +91,13 @@ function CountReview({ caseId, onBack, onOpenCase, registerNavigationGuard, onPr
       catch (e) { setError(message(e)); return false; }
     }
     return true;
-  }, [caseId, edit, boundaryEdit, dirty, readOnly, ready, switchingSeries]);
+  }, [caseId, edit, boundaryEdit, dirty, observationDirty, observationSaving, readOnly, ready, switchingSeries]);
   useEffect(() => {
     registerNavigationGuard(guard);
-    const unload = (event: BeforeUnloadEvent) => { if (edit || (boundaryEdit && dirty)) { event.preventDefault(); event.returnValue = ""; } };
+    const unload = (event: BeforeUnloadEvent) => { if (edit || (boundaryEdit && dirty) || observationDirty) { event.preventDefault(); event.returnValue = ""; } };
     window.addEventListener("beforeunload", unload);
     return () => { registerNavigationGuard(null); window.removeEventListener("beforeunload", unload); };
-  }, [edit, boundaryEdit, dirty, guard, registerNavigationGuard]);
+  }, [edit, boundaryEdit, dirty, observationDirty, guard, registerNavigationGuard]);
 
   useEffect(() => {
     let cancelled = false;
@@ -161,6 +168,7 @@ function CountReview({ caseId, onBack, onOpenCase, registerNavigationGuard, onPr
   });
   const save = (operation: Correction, mask?: Blob) => execute(async () => {
     if (!run || run.latest_revision === null) return;
+    if (observationDirty) { setNotice("Save or discard the diagnostic observation before correcting this revision."); return; }
     try {
       const value = await countingApi.correct(caseId, run.run_id, edit?.parentRevision ?? run.latest_revision, operation, mask);
       setRun(value); clearEdit(); setSelected([]); setNotice(`Correction saved as revision ${value.latest_revision}. The original prediction is preserved.`);
@@ -249,7 +257,12 @@ function CountReview({ caseId, onBack, onOpenCase, registerNavigationGuard, onPr
     acceptRun(await countingApi.assisted(caseId, run.run_id, boundaryId, assistedKey.current));
   });
   const focus = (cell: Cell) => {
+    setVisible(true); setOverlayKind("cavities"); setViewMode("multiplanar");
     setSelected([cell.id]); viewer.current?.focusWorld(cell.centroid_ras_mm);
+  };
+  const focusObservation = (point: [number, number, number]) => {
+    setVisible(true); setOverlayKind("cavities"); setViewMode("multiplanar"); setSelected([]);
+    viewer.current?.focusWorld(point);
   };
   const download = () => execute(async () => {
     if (!run) return;
@@ -265,6 +278,8 @@ function CountReview({ caseId, onBack, onOpenCase, registerNavigationGuard, onPr
   if (!detail || !protocol) return <main className="center-state"><p role="alert">{error || "The case could not be loaded."}</p><button className="button" onClick={onBack}>Back to cases</button></main>;
   const overlay = completed && run && !boundaryEdit ? countingApi.artifact(caseId, run.run_id, overlayKind === "uncertain" ? "cavities" : overlayKind, revision) : undefined;
   const visibleCellIds = overlayKind === "uncertain" && !showOriginal ? cells.filter(cell => cell.uncertain).map(cell => cell.id) : undefined;
+  const focusedCellId = highlight && !showOriginal && !boundaryEdit && !edit && selected.length === 1 &&
+    (visibleCellIds === undefined || visibleCellIds.includes(selected[0])) ? selected[0] : undefined;
   const counts = completed ? (showOriginal ? run?.original_counts : run?.counts) : null;
   const scanNotes = detail.catalog ? qualityNotes(detail.catalog) : [...detail.warnings, "Original acquisition thickness is unconfirmed for this imported volume; voxel spacing alone does not establish the source resolution."];
   return <main className="count-workspace" inert={switchingSeries || undefined}>
@@ -290,6 +305,7 @@ function CountReview({ caseId, onBack, onOpenCase, registerNavigationGuard, onPr
         <NiiVueViewer ref={viewer} caseId={caseId} volumeFileType={detail.volume_file_type} protocol={protocol} hasAnnotation={false} initialState={detail.viewer_state}
           tool={busy ? "navigate" : tool} selectedLabel={boundaryEdit ? boundarySide : 1} brushSize={brush} overlayOpacity={opacity} overlayVisible={visible} viewMode={viewMode}
           windowCenter={center} windowWidth={width} instanceOverlayUrl={overlay} visibleCellIds={visibleCellIds}
+          focusedCellId={focusedCellId}
           onReady={() => setReady(true)} onError={setError} onDirty={() => { setDirty(true); if (boundaryEdit) setBoundaryId(null); }} onViewStateChange={() => setViewChange(value => value + 1)}
           onWindowChange={(c, w) => { setCenter(c); setWidth(w); }} onLocationChange={setLocation} onHistoryChange={(u, r) => setHistory([u, r])} />
         <div className="count-coordinates"><span>Voxel {location.voxel}</span><span>RAS mm {location.millimeters}</span><strong>{location.cellId ? `Cell #${location.cellId}` : "No cell at crosshair"}</strong></div>
@@ -305,7 +321,7 @@ function CountReview({ caseId, onBack, onOpenCase, registerNavigationGuard, onPr
           {!run && <p className="muted">Run once to identify cells throughout the volume. No outline or seed points are required.</p>}
           {active && <p className="muted">The job continues locally if you leave this page. Return to see its result.</p>}
           {completed && <p className="muted">Each candidate ID is counted once across the 3D volume. Review possible missed or merged cells before presenting the result.</p>}
-          {!!run?.latest_revision && <label><input type="checkbox" checked={showOriginal} disabled={busy || !!edit || boundaryEdit} onChange={e => { setShowOriginal(e.target.checked); setSelected([]); if (e.target.checked && overlayKind === "uncertain") setOverlayKind("cavities"); }} /> Show original prediction</label>}
+          {!!run?.latest_revision && <label><input type="checkbox" checked={showOriginal} disabled={busy || !!edit || boundaryEdit || observationDirty} onChange={e => { setShowOriginal(e.target.checked); setSelected([]); if (e.target.checked && overlayKind === "uncertain") setOverlayKind("cavities"); }} /> Show original prediction</label>}
           {runs.length > 1 && <label className="count-field">Run history<select aria-label="Run history" disabled={busy} value={run?.run_id} onChange={e => void selectRun(e.target.value)}>{runs.map((r, index) => <option key={r.run_id} value={r.run_id}>Run {runs.length - index} · {new Date(r.created_at).toLocaleString()}</option>)}</select></label>}
         </section>
         {!!run?.warnings.length && <details><summary>Analysis notes ({run.warnings.length})</summary><ul>{run.warnings.map((text, i) => <li key={i}>{text}</li>)}</ul></details>}
@@ -314,12 +330,17 @@ function CountReview({ caseId, onBack, onOpenCase, registerNavigationGuard, onPr
         {run && !active && !readOnly && !showOriginal && detail.validation_status !== "FAILED" && <section className={boundaryEdit ? "count-edit" : undefined}><h2>Anatomical boundary review</h2>{!boundaryEdit ? <><p className="muted">Define the left and right ethmoid regions for a separately labeled assisted count, including when automatic localization could not finish.</p><button className="button" disabled={busy || !ready} onClick={() => void beginBoundary()}>Review anatomical boundaries</button></> : <>{savedBoundaries.length > 0 && <label className="count-field">Saved anatomical boundaries<select aria-label="Saved anatomical boundaries" value={boundaryId ?? ""} disabled={busy} onChange={event => void restoreBoundary(event.target.value)}><option value="" disabled>Unsaved boundary changes</option>{savedBoundaries.map((saved, index) => <option key={saved.boundary_id} value={saved.boundary_id}>Saved boundary {savedBoundaries.length - index}{saved.created_at ? ` · ${new Date(saved.created_at).toLocaleString()}` : ""}</option>)}</select></label>}<p>Paint the full left and right ethmoid regions across slices. These labels define anatomy, not individual cells. Both sides are required.</p><label className="count-field">Region<select aria-label="Anatomical region" value={boundarySide} disabled={busy} onChange={event => setBoundarySide(Number(event.target.value) as 1 | 2)}><option value={1}>Left ethmoid · label 1</option><option value={2}>Right ethmoid · label 2</option></select></label><div className="count-actions">{(["draw", "erase", "fill"] as ViewerTool[]).map(value => <button className="tool-button" key={value} aria-pressed={tool === value} disabled={busy} onClick={() => setTool(value)}>{value[0].toUpperCase() + value.slice(1)}</button>)}<button className="tool-button" disabled={busy || !history[0]} onClick={() => viewer.current?.undo()}>Undo</button><button className="tool-button" disabled={busy || !history[1]} onClick={() => viewer.current?.redo()}>Redo</button></div><label className="count-field">Brush size<input aria-label="Boundary brush size" type="range" min="1" max="15" value={brush} disabled={busy} onChange={event => setBrush(Number(event.target.value))} /></label><label className="count-field">Review note<textarea aria-label="Boundary review note" value={boundaryNote} disabled={busy} onChange={event => { setBoundaryNote(event.target.value); setDirty(true); setBoundaryId(null); }} /></label><label className="count-field">Import source-aligned regions<input aria-label="Import anatomical boundary mask" type="file" accept=".nii,.nii.gz" disabled={busy} onChange={event => { const file = event.target.files?.[0]; if (file) void saveBoundary(file); event.target.value = ""; }} /></label><small>The mask must match this CT's original geometry: 0 background, 1 left, 2 right.</small><div className="count-actions"><button className="button" disabled={busy || !dirty} onClick={() => void saveBoundary()}>Save anatomical boundaries</button><button className="button primary" disabled={busy || !boundaryId || dirty} onClick={() => void runAssisted()}>Run assisted count</button><button className="button tertiary" disabled={busy} onClick={() => void guard().then(ok => { if (ok) clearEdit(); })}>Leave boundary review</button></div></>}</section>}
         {completed && !showOriginal && !boundaryEdit && <>
           <section><h2>Review cells</h2><p className="muted">Click a cell to locate it. Check two or more cells to merge them.</p>
+            <p className="muted">Colors distinguish candidate IDs and may repeat. They do not indicate confidence or correctness. Side labels refer to the patient.</p>
+            <label><input type="checkbox" checked={highlight} onChange={event => setHighlight(event.target.checked)} /> Highlight one selected cell</label>
+            {visible && focusedCellId !== undefined && <p className="muted" role="status">Yellow marks selected cell #{focusedCellId} where its mask is visible; other candidates are dimmed.</p>}
             <div className="count-cells">{cells.map(cell => <div key={cell.id} className={selected.includes(cell.id) ? "count-cell selected" : "count-cell"}>
               <input type="checkbox" aria-label={`Select cell ${cell.id}`} disabled={!!edit || busy} checked={selected.includes(cell.id)} onChange={e => setSelected(ids => e.target.checked ? [...ids, cell.id] : ids.filter(id => id !== cell.id))} />
-              <button disabled={!ready || !!edit} onClick={() => focus(cell)}><strong>#{cell.id} · {cell.side}</strong><span>{cell.uncertain ? "Needs review" : "Candidate"}{cell.origin === "manual" ? " · Manual" : ""}{cell.air_voxel_count === 0 ? " · No visible air" : ""}</span></button>
+              <button disabled={!ready || !!edit} onClick={() => focus(cell)}><strong><i className="count-cell-swatch" aria-hidden="true" style={{ backgroundColor: instanceColor(cell.id, focusedCellId === cell.id) }} />#{cell.id} · {cell.side}</strong><span>{cell.uncertain ? "Needs review" : "Candidate"}{cell.origin === "manual" ? " · Manual" : ""}{cell.air_voxel_count === 0 ? " · No visible air" : ""}</span></button>
             </div>)}</div>
             {selected.length === 1 && selectedCell && <div className="count-cell-detail"><strong>Cell #{selectedCell.id}</strong>{selectedCell.reasons.map((r, i) => <p key={i}>{r.replaceAll("_", " ")}</p>)}<small>{selectedCell.voxel_count} compartment voxels · {selectedCell.air_voxel_count} air voxels</small></div>}
           </section>
+          {!edit && run && <CountObservations key={`${run.run_id}:${revision}`} caseId={caseId} runId={run.run_id} revision={revision} selectedIds={selected}
+            disabled={busy || !!readOnly || !ready} getPoint={() => viewer.current?.getWorldPosition()} focusPoint={focusObservation} onDraftChange={setObservationDirty} onSavingChange={setObservationSaving} />}
           {!edit ? <section><h2>Correct the result</h2><div className="count-actions">
             <button className="button" disabled={!canEdit} onClick={() => void prepare("add")}>Add cell</button>
             <button className="button" disabled={!canEdit || selected.length !== 1} onClick={() => void save({ type: "remove", id: selected[0] })}>Remove cell</button>

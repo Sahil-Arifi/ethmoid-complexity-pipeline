@@ -24,6 +24,11 @@ export type CountRun = {
   protocol_snapshot_sha256?: string;
 };
 export type BoundaryRevision = { boundary_id: string; case_id?: string; parent_run_id?: string; created_at?: string; note?: string };
+export type ObservationInput = {
+  revision: number; kind: "missed" | "merged" | "extra" | "side" | "other";
+  candidate_ids: number[]; point_ras_mm: [number, number, number] | null; note: string;
+};
+export type CountObservation = ObservationInput & { id: string; created_at: string };
 export type Correction = {
   type: "add" | "remove" | "merge" | "split" | "update";
   id?: number; ids?: number[]; side?: "left" | "right";
@@ -39,6 +44,11 @@ export const countingApi = {
     body: JSON.stringify({ idempotency_key: key }),
   }),
   get: (caseId: string, runId: string) => request<CountRun>(path(caseId, runId)),
+  observations: (caseId: string, runId: string) => request<{ observations: CountObservation[] }>(`${path(caseId, runId)}/observations`),
+  observe: (caseId: string, runId: string, value: ObservationInput) => request<CountObservation>(`${path(caseId, runId)}/observations`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(value),
+  }),
+  observationsExportUrl: (caseId: string, runId: string) => `/api${path(caseId, runId)}/observations/export`,
   retry: (caseId: string, runId: string, key: string) => request<CountRun>(`${path(caseId, runId)}/retry`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ idempotency_key: key }),
   }),

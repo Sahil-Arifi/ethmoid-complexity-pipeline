@@ -8,14 +8,16 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, ValidationError
 from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import UploadFile
 
 from .counting_service import CountingService
+from .counting_observations import ObservationRequest, list_observations, save_observation
 from .service import WebAppError
+from .store import encode_json
 
 
 MAX_MASK_BYTES = 512 * 1024 * 1024
@@ -74,6 +76,24 @@ def counting_router(service: CountingService) -> APIRouter:
     @router.get("/{run_id}/revisions/latest")
     def latest_revision(case_id: str, run_id: str) -> dict[str, Any]:
         return service.get_run(case_id, run_id)
+
+    @router.get("/{run_id}/observations")
+    def observations(case_id: str, run_id: str) -> dict[str, Any]:
+        return list_observations(service, case_id, run_id)
+
+    @router.post("/{run_id}/observations", status_code=201)
+    async def observe(case_id: str, run_id: str, request: Request) -> dict[str, Any]:
+        try:
+            payload = ObservationRequest.model_validate(await request.json())
+        except (ValueError, TypeError, ValidationError) as exc:
+            # Keep malformed numbers/notes out of validation-error responses.
+            raise WebAppError("The diagnostic observation request is invalid.", status_code=422) from exc
+        return await run_in_threadpool(save_observation, service, case_id, run_id, payload)
+
+    @router.get("/{run_id}/observations/export")
+    def export_observations(case_id: str, run_id: str) -> Response:
+        return Response(encode_json(list_observations(service, case_id, run_id)), media_type="application/json",
+                        headers={"Content-Disposition": 'attachment; filename="count-observations.json"'})
 
     @router.post("/{run_id}/cancel")
     def cancel(case_id: str, run_id: str):

@@ -25,6 +25,12 @@
 .count-cell button span { font-size: .7rem; color: var(--muted); }
 .count-cell-detail { margin-top: .8rem; padding: .7rem; border-left: 2px solid var(--accent); }
 .count-cell-detail p { margin: .4rem 0; font-size: .76rem; }
+.count-cell-swatch { display: inline-block; width: .75rem; height: .75rem; margin-right: .45rem; border: 1px solid currentColor; border-radius: 2px; }
+.count-observations textarea { width: 100%; box-sizing: border-box; background: var(--surface-soft); color: var(--text); border: 1px solid var(--line-strong); border-radius: 5px; padding: .5rem; resize: vertical; }
+.count-observation-list { padding-left: 1.2rem; }
+.count-observation-list li { margin: .8rem 0; overflow-wrap: anywhere; }
+.count-observation-list p { white-space: pre-wrap; }
+.count-observation-list .text-button { display: block; }
 .count-field { display: grid; gap: .4rem; margin: .8rem 0; }
 .count-panel select, .count-number { background: var(--surface-soft); color: var(--text); border: 1px solid var(--line-strong); border-radius: 5px; padding: .4rem; }
 .count-number { width: 5.4rem; }

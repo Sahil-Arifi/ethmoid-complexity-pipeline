@@ -12,15 +12,15 @@ const handles = vi.hoisted(() => ({ focus: vi.fn(), clear: vi.fn(), prepare: vi.
 vi.mock("../api/client", async importOriginal => ({ ...(await importOriginal<object>()), api: { getCase: vi.fn(), getProtocol: vi.fn(), saveViewerState: vi.fn(), listStudySeries: vi.fn(), selectStudySeries: vi.fn(), prepareStudySeries: vi.fn() } }));
 vi.mock("../api/counting", async importOriginal => ({ ...(await importOriginal<object>()), countingApi: {
   ...(await importOriginal<{ countingApi: object }>()).countingApi,
-  list: vi.fn(), get: vi.fn(), start: vi.fn(), correct: vi.fn(), retry: vi.fn(), cancel: vi.fn(), boundaries: vi.fn(), saveBoundary: vi.fn(), assisted: vi.fn(),
+  list: vi.fn(), get: vi.fn(), start: vi.fn(), correct: vi.fn(), retry: vi.fn(), cancel: vi.fn(), boundaries: vi.fn(), saveBoundary: vi.fn(), assisted: vi.fn(), observations: vi.fn(), observe: vi.fn(),
 } }));
-vi.mock("../viewer/NiiVueViewer", () => ({ NiiVueViewer: forwardRef(function Mock(props: { onReady: () => void; onDirty: () => void; instanceOverlayUrl?: string; visibleCellIds?: number[] }, ref) {
+vi.mock("../viewer/NiiVueViewer", () => ({ NiiVueViewer: forwardRef(function Mock(props: { onReady: () => void; onDirty: () => void; instanceOverlayUrl?: string; visibleCellIds?: number[]; focusedCellId?: number }, ref) {
   useEffect(() => props.onReady(), []);
   useImperativeHandle(ref, () => ({ focusWorld: handles.focus, clearSelectionMask: handles.clear,
     prepareCellMask: handles.prepare, prepareRegionMask: handles.region, getWorldPosition: () => [-12, 5, 7], getViewerState: () => ({ window_center: 300, window_width: 3000 }),
     exportMask: async () => new Blob(["synthetic mask"]),
   }));
-  return <div><output data-testid="overlay-url">{props.instanceOverlayUrl}</output><output data-testid="overlay-filter">{props.visibleCellIds?.join(",") ?? "all"}</output><button onClick={props.onDirty}>Paint fixture</button></div>;
+  return <div><output data-testid="overlay-url">{props.instanceOverlayUrl}</output><output data-testid="overlay-filter">{props.visibleCellIds?.join(",") ?? "all"}</output><output data-testid="focused-cell">{props.focusedCellId}</output><button onClick={props.onDirty}>Paint fixture</button></div>;
 }) }));
 
 const detail: CaseDetail = { case_id: "case-1", case_label: "Case901", source_type: "NIFTI", state: "READY", validation_status: "UNVERIFIED", review_status: "Draft", updated_at: "2026-09-01", warnings: [], shape: [10, 10, 10], voxel_spacing_mm: [1, 1, 1], orientation_codes: ["R", "A", "S"], volume_file_type: "nii", qc_checklist: { coverage: false, orientation: false, image_quality: false, slice_continuity: false }, reviewer_notes: "", metrics: [] };
@@ -39,8 +39,53 @@ describe("3D counting workspace", () => {
     vi.mocked(countingApi.get).mockResolvedValue(result);
     vi.mocked(countingApi.correct).mockResolvedValue({ ...result, latest_revision: 1, revision: 1 });
     vi.mocked(countingApi.boundaries).mockResolvedValue({ boundaries: [] });
+    vi.mocked(countingApi.observations).mockResolvedValue({ observations: [] });
   });
   function mount() { const register = vi.fn(); const back = vi.fn(); render(<CountingWorkspace caseId="case-1" onBack={back} registerNavigationGuard={register} />); return { register, back }; }
+
+  it("highlights a focused compartment and guards a diagnostic draft without changing the count", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const { back } = mount();
+    await userEvent.click(await screen.findByRole("button", { name: /#300 · left/ }));
+    expect(handles.focus).toHaveBeenCalledWith([-12, 5, 7]);
+    expect(screen.getByLabelText("Overlay content")).toHaveValue("cavities");
+    expect(screen.getByTestId("focused-cell")).toHaveTextContent("300");
+    await userEvent.click(screen.getByLabelText("Highlight one selected cell"));
+    expect(screen.getByTestId("focused-cell")).toBeEmptyDOMElement();
+    await userEvent.type(screen.getByLabelText("Observation note"), "Possible merged cells at this location");
+    await userEvent.click(screen.getByRole("button", { name: "Cases" }));
+    expect(confirm).toHaveBeenCalled(); expect(back).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "Remove cell" }));
+    expect(countingApi.correct).not.toHaveBeenCalled();
+    expect(screen.getByTestId("total-count")).toHaveTextContent("2");
+    expect(screen.getByLabelText("Observation note")).toHaveValue("Possible merged cells at this location");
+    confirm.mockRestore();
+  });
+
+  it("does not claim a candidate hidden by the review filter is highlighted", async () => {
+    mount(); await screen.findByTestId("total-count");
+    await userEvent.selectOptions(screen.getByLabelText("Overlay content"), "uncertain");
+    await userEvent.click(screen.getByLabelText("Select cell 301"));
+    expect(screen.getByTestId("focused-cell")).toBeEmptyDOMElement();
+    expect(screen.queryByText(/Yellow marks selected cell/)).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /#301 · right/ }));
+    expect(screen.getByLabelText("Overlay content")).toHaveValue("cavities");
+    expect(screen.getByTestId("focused-cell")).toHaveTextContent("301");
+  });
+
+  it("locates a saved observation in slice views with the compartment overlay", async () => {
+    vi.mocked(countingApi.observations).mockResolvedValue({ observations: [{ id: "point-1", revision: 0, kind: "missed",
+      candidate_ids: [], point_ras_mm: [-8, 3, 6], note: "Synthetic review point", created_at: "2026-10-05" }] });
+    mount(); await userEvent.click(await screen.findByRole("button", { name: /#300 · left/ }));
+    await userEvent.click(screen.getByRole("button", { name: "3D" }));
+    await userEvent.click(screen.getByLabelText("Overlay", { exact: true }));
+    await userEvent.click(screen.getByRole("button", { name: "Locate observation" }));
+    expect(handles.focus).toHaveBeenLastCalledWith([-8, 3, 6]);
+    expect(screen.getByRole("button", { name: "Axial · Coronal · Sagittal" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByLabelText("Overlay content")).toHaveValue("cavities");
+    expect(screen.getByLabelText("Overlay", { exact: true })).toBeChecked();
+    expect(screen.getByTestId("focused-cell")).toBeEmptyDOMElement();
+  });
 
   it("runs without outlines or seeds and prevents duplicate in-flight starts", async () => {
     vi.mocked(countingApi.list).mockResolvedValue({ runs: [] });
