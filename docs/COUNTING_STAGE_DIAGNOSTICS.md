@@ -1,0 +1,45 @@
+# Counting-stage diagnostics
+
+Use stage evidence to distinguish a missing starting point from a later merge,
+ROI exclusion, or rejected proposal. Final cavity masks alone cannot show which
+decision caused a count discrepancy.
+
+`analyze_volume(..., diagnostic_stages=True)` writes two protected sidecars in
+its fresh output directory. The application and workers do not enable this
+option. A clinical replay still requires the operator's approval; synthetic
+fixtures are used for implementation checks.
+
+- `diagnostic-stages.local.npz`: original membership, exclusion and reconstruction
+  masks; seed markers; watershed basins before merging; labels after merging;
+  the crop's physical RAS affine.
+- `diagnostic-stages.local.json`: source and engine hashes, method/protocol and
+  parameters, crop bounds, estimated midline, seed counts, dominant interface
+  direction and bone support, merge decisions and constraints, rejected proposals
+  with the check that rejected them, and accepted proposal-to-cell ID mappings.
+
+The arrays use the cropped canonical grid. They must be placed using the saved
+affine or crop bounds, never treated as native scan indices. Basin and merged
+labels are intermediate IDs; only `cell_id` identifies a final candidate. A
+rejected proposal or disconnected air component is not an expert-defined cell.
+Trace files are excluded from public result links and exports. Keep them beside
+the other medical outputs outside Git. Do not upload them externally.
+
+Synthetic tests compare ordinary and traced results and native output bytes,
+including a flipped input grid and rejected thin pore. The algorithm's thresholds,
+side assignment and acceptance rules are unchanged.
+
+A failed run may leave a partial trace, such as markers and initial basins without
+merged labels. Check the adjacent `result.json` and available arrays before
+interpreting it. These files do not make a withheld clinical count available.
+
+The current investigation reproduced a narrow chamber losing its seed beside an
+incomplete wall. More permissive seed selection recovered it, but caused extra
+splits when isolated bone inclusions were added to a single chamber. Connected
+bone size alone also failed those controls. These alternatives are diagnostic
+experiments, with no justification for deployment or a clinical accuracy claim.
+
+For an approved replay, preserve the selected reconstruction, frozen parameters
+and cached anatomical masks. Write a new directory, compare its ordinary outputs
+with the baseline, and inspect stage evidence at disputed locations. Freeze any
+subsequent algorithm change before evaluating additional scans. Keep development
+results separate from independent clinical validation.

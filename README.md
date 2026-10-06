@@ -18,6 +18,14 @@ review evidence without changing automatic counts, masks, or clinical inference.
 The next step is expert comparison on the matching reconstruction; these notes
 do not establish independent reference counts or improved accuracy.
 
+The [counting-stage diagnostic](docs/COUNTING_STAGE_DIAGNOSTICS.md) now records
+where a proposed cell disappears: seeding, separator merging, anatomical
+membership, or acceptance checks. It is an explicit Python opt-in and preserves
+the ordinary result and native masks. Synthetic probes reproduced a narrow
+chamber missed beside an incomplete septum; simpler seed-recovery alternatives
+also created extra cells in single-chamber controls. Those alternatives remain
+outside the application. No improvement in clinical counting accuracy is claimed.
+
 An isolated [synthetic wall-training experiment](docs/SYNTHETIC_WALL_TRAINING.md)
 now targets one boundary-selection bottleneck. It uses equation-defined visible
 walls, varied acquisition properties, geometry-family holdouts and missing-wall

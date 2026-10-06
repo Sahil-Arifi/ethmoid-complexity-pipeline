@@ -107,7 +107,7 @@ def _shift(mask: np.ndarray, axis: int, offset: int) -> np.ndarray:
     return out
 
 
-def _merge_unsupported_separators(labels: np.ndarray, free: np.ndarray, bone: np.ndarray, spacing: np.ndarray, config: CountingConfig) -> tuple[np.ndarray, set[int]]:
+def _merge_unsupported_separators(labels: np.ndarray, free: np.ndarray, bone: np.ndarray, spacing: np.ndarray, config: CountingConfig, *, trace: dict | None = None) -> tuple[np.ndarray, set[int]]:
     """Retain watershed splits only near a thin bone plate with lumen on both sides.
 
     A distance saddle alone is insufficient evidence for two cells. A plate may
@@ -145,24 +145,36 @@ def _merge_unsupported_separators(labels: np.ndarray, free: np.ndarray, bone: np
             # Use the dominant interface normal. Stair-step side faces around
             # an aperture are not independent evidence against its septum.
             if key not in evidence or total > evidence[key][0]:
-                evidence[key] = [int(total), int(count)]
-    preserved = {pair for pair, (total, support) in evidence.items() if support / total >= config.separator_support_fraction}
+                evidence[key] = [int(total), int(count), axis]
+    preserved = {pair for pair, (total, support, _) in evidence.items() if support / total >= config.separator_support_fraction}
     # A communication around a third basin must not undo an already supported
     # septum. Preserve these cannot-merge constraints during graph contraction.
-    unsupported = [(support / total, a, b) for (a, b), (total, support) in evidence.items() if (a, b) not in preserved]
+    unsupported = [(support / total, a, b) for (a, b), (total, support, _) in evidence.items() if (a, b) not in preserved]
+    merge_decisions = [] if trace is not None else None
     for _, a, b in sorted(unsupported):
         left, right = root(a), root(b)
         if left == right:
             continue
         if any({root(u), root(v)} == {left, right} for u, v in preserved):
+            if merge_decisions is not None:
+                merge_decisions.append({"basins": [a, b], "merged": False, "reason": "supported_septum_constraint"})
             continue
         parent[max(left, right)] = min(left, right)
+        if merge_decisions is not None:
+            merge_decisions.append({"basins": [a, b], "merged": True, "reason": "insufficient_separator_support"})
     mapping = np.array([root(i) for i in range(n + 1)], dtype=np.int32)
     uncertain = {int(mapping[i]) for pair in preserved for i in pair if mapping[pair[0]] != mapping[pair[1]]}
+    if trace is not None:
+        trace["interfaces"] = [{"basins": list(pair), "dominant_axis": axis,
+            "interface_faces": total, "supported_faces": support,
+            "support_fraction": support / total, "preserved": pair in preserved}
+            for pair, (total, support, axis) in sorted(evidence.items())]
+        trace["merge_decisions"] = merge_decisions
+        trace["basin_to_merged_label"] = mapping.tolist()
     return mapping[labels], uncertain
 
 
-def compartment_stage(hu: np.ndarray, roi: np.ndarray, affine: np.ndarray, config: dict[str, Any] | CountingConfig | None = None, *, midline_ras_x: float = 0.0, variant_regions: dict[str, np.ndarray] | None = None, excluded: np.ndarray | None = None, reconstruction_region: np.ndarray | None = None) -> tuple[np.ndarray, np.ndarray, list[dict[str, Any]], list[str]]:
+def compartment_stage(hu: np.ndarray, roi: np.ndarray, affine: np.ndarray, config: dict[str, Any] | CountingConfig | None = None, *, midline_ras_x: float = 0.0, variant_regions: dict[str, np.ndarray] | None = None, excluded: np.ndarray | None = None, reconstruction_region: np.ndarray | None = None, trace: dict | None = None) -> tuple[np.ndarray, np.ndarray, list[dict[str, Any]], list[str]]:
     """Propose compartments in an already localized region.
 
     This low-level method supports synthetic validation. Real-volume entry points
@@ -190,14 +202,20 @@ def compartment_stage(hu: np.ndarray, roi: np.ndarray, affine: np.ndarray, confi
     # Padding is essential: the edge of a processing crop is not open-ended infinity.
     distance = ndi.distance_transform_edt(np.pad(free, 1), sampling=spacing)[1:-1, 1:-1, 1:-1]
     maxima = h_maxima(distance.astype(np.float32), cfg.seed_prominence_mm) & free
+    if trace is not None:
+        trace["seed_counts"] = {"free_maxima_voxels": int(maxima.sum()), "air_maxima_voxels": 0}
     # Thick soft-tissue contents can shift a free-space distance maximum away
     # from a small aerated chamber. Air-lumen maxima add detection seeds only;
     # the final cavity and split/merge decisions still use bone evidence.
     air_lumen = free & (values < cfg.air_hu)
     air_distance = ndi.distance_transform_edt(np.pad(air_lumen, 1), sampling=spacing)[1:-1, 1:-1, 1:-1]
     if air_lumen.any():
-        maxima |= h_maxima(air_distance.astype(np.float32), cfg.seed_prominence_mm) & air_lumen
+        air_maxima = h_maxima(air_distance.astype(np.float32), cfg.seed_prominence_mm) & air_lumen
+        maxima |= air_maxima
+        if trace is not None:
+            trace["seed_counts"]["air_maxima_voxels"] = int(air_maxima.sum())
     seeds, _ = ndi.label(maxima, structure=ndi.generate_binary_structure(3, 1))
+    initial_markers = int(seeds.max())
     components, ncomponents = ndi.label(free)
     # Small but bone-resolved enclosed spaces must not vanish solely because their
     # radius is below the seed prominence setting.
@@ -216,11 +234,19 @@ def compartment_stage(hu: np.ndarray, roi: np.ndarray, affine: np.ndarray, confi
                 next_seed += 1
     del components
     labels = watershed(-distance, markers=seeds, mask=free, connectivity=1).astype(np.int32)
-    labels, inferred_split = _merge_unsupported_separators(labels, free, bone, spacing, cfg)
+    if trace is not None:
+        trace["arrays"] = {"membership": region, "excluded": np.zeros_like(region) if excluded is None else excluded,
+            "search": search, "markers": seeds, "watershed": labels, "affine": np.asarray(affine)}
+        trace["seed_counts"].update(initial_markers=initial_markers, component_fallbacks=int(seeds.max()) - initial_markers)
+    labels, inferred_split = _merge_unsupported_separators(labels, free, bone, spacing, cfg, trace=trace)
+    if trace is not None:
+        trace["arrays"]["merged"] = labels
+        trace["proposals"] = []
     # A coarse sampling interval must not make distant bone look like enclosure.
     bone_near = ndi.distance_transform_edt(~bone, sampling=spacing) <= min(max(float(spacing.max()) * 1.01, 0.8), 1.01)
     roi_edge = search & ~ndi.binary_erosion(search)
     proposals: list[tuple[tuple[slice, ...], np.ndarray, dict[str, Any]]] = []
+    proposal_records = {} if trace is not None else None
     rejected = 0
     for value, bounds in enumerate(ndi.find_objects(labels), start=1):
         if bounds is None:
@@ -229,11 +255,22 @@ def compartment_stage(hu: np.ndarray, roi: np.ndarray, affine: np.ndarray, confi
         size = int(mask.sum())
         # A one-voxel-wide pore is not a resolvable 3D cavity on this grid.
         resolved_interior = float(distance[bounds][mask].max()) > float(spacing.max()) * 1.01
+        if trace is not None:
+            record = {"merged_label": value, "voxel_count": size,
+                "maximum_interior_radius_mm": float(distance[bounds][mask].max()), "rejection": None}
+            trace["proposals"].append(record)
+            proposal_records[value] = record
         if size < cfg.minimum_voxels or not resolved_interior:
+            if trace is not None:
+                record["rejection"] = "minimum_size" if size < cfg.minimum_voxels else "unresolved_interior"
             rejected += 1
             continue
         membership_fraction = float(np.count_nonzero(mask & region[bounds])) / size
+        if trace is not None:
+            record["membership_fraction"] = membership_fraction
         if membership_fraction < 0.5:
+            if trace is not None:
+                record["rejection"] = "membership"
             rejected += 1
             continue
         surface = mask & ~ndi.binary_erosion(mask)
@@ -244,6 +281,9 @@ def compartment_stage(hu: np.ndarray, roi: np.ndarray, affine: np.ndarray, confi
         air_count = int(np.count_nonzero(mask & (values[bounds] < cfg.air_hu)))
         # An arbitrary ROI face must not manufacture an opaque anatomical cavity.
         if enclosure < cfg.minimum_enclosure_fraction or unsupported_roi_contact > cfg.maximum_roi_boundary_fraction:
+            if trace is not None:
+                record.update(rejection="bony_enclosure" if enclosure < cfg.minimum_enclosure_fraction else "unsupported_roi_boundary",
+                    enclosure_fraction=enclosure, unsupported_roi_contact_fraction=unsupported_roi_contact)
             rejected += 1
             continue
         voxel_centroid = np.array(ndi.center_of_mass(mask)) + np.array([sl.start for sl in bounds])
@@ -287,6 +327,8 @@ def compartment_stage(hu: np.ndarray, roi: np.ndarray, affine: np.ndarray, confi
             "voxel_count": size, "air_voxel_count": air_count,
         }
         proposals.append((bounds, mask, cell))
+        if trace is not None:
+            record.update(enclosure_fraction=enclosure, unsupported_roi_contact_fraction=unsupported_roi_contact)
     if len(proposals) > cfg.max_instances:
         raise CountingError("INSTANCE_LIMIT", "The number of proposals exceeds the instance format limit.")
     # Physical coordinates, not array traversal or NIfTI axis signs, determine IDs.
@@ -297,6 +339,9 @@ def compartment_stage(hu: np.ndarray, roi: np.ndarray, affine: np.ndarray, confi
         cavities[bounds][mask] = index
         cell["id"] = index
         cells.append(cell)
+        if trace is not None:
+            merged_label = int(labels[bounds][mask][0])
+            proposal_records[merged_label]["cell_id"] = index
     air = np.where(values < cfg.air_hu, cavities, 0).astype(np.uint16)
     warnings = ["Unvalidated automatic compartment proposals; clinician reference counts are not yet available."]
     observed_air = int(np.count_nonzero(region & (values < cfg.air_hu)))
@@ -320,7 +365,7 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def analyze_volume(volume_path: str | Path, output_dir: str | Path, landmarks_dir: str | Path | None = None, config: dict[str, Any] | CountingConfig | None = None, *, acquisition: dict[str, Any] | None = None, _strategy: Any = None) -> dict[str, Any]:
+def analyze_volume(volume_path: str | Path, output_dir: str | Path, landmarks_dir: str | Path | None = None, config: dict[str, Any] | CountingConfig | None = None, *, acquisition: dict[str, Any] | None = None, _strategy: Any = None, diagnostic_stages: bool = False) -> dict[str, Any]:
     """Run a fully automatic first count and persist a source-grid result.
 
     Existing output directories must be empty; immutable prior results are never
@@ -414,13 +459,23 @@ def analyze_volume(volume_path: str | Path, output_dir: str | Path, landmarks_di
         start = np.array([sl.start for sl in crop])
         crop_affine = canonical.affine.copy()
         crop_affine[:3, 3] = nib.affines.apply_affine(canonical.affine, start)
-        cavities_crop, air_crop, cells, warnings = compartment_stage(
-            hu[crop], region[crop], crop_affine, cfg,
-            midline_ras_x=localization.midline_ras_x,
-            variant_regions={name: mask[crop] for name, mask in localization.variants.items()},
-            excluded=localization.excluded[crop],
-            reconstruction_region=search[crop],
-        )
+        trace = {} if diagnostic_stages else None
+        try:
+            cavities_crop, air_crop, cells, warnings = compartment_stage(
+                hu[crop], region[crop], crop_affine, cfg,
+                midline_ras_x=localization.midline_ras_x,
+                variant_regions={name: mask[crop] for name, mask in localization.variants.items()},
+                excluded=localization.excluded[crop], reconstruction_region=search[crop], trace=trace,
+            )
+        finally:
+            if trace is not None and "arrays" in trace:
+                # Explicit opt-in only. These protected sidecars never enter public artifacts.
+                np.savez_compressed(destination / "diagnostic-stages.local.npz", **trace.pop("arrays"))
+                trace.update(schema_version=1, source_sha256=result["source_sha256"], config=result["config"], engine_sha256=_sha256(Path(__file__)),
+                    method_version=result["method_version"], protocol_version=result["protocol_version"],
+                    crop_bounds=[[s.start, s.stop] for s in crop], midline_ras_x=localization.midline_ras_x,
+                    coordinate_system="cropped canonical voxels with physical RAS affine; not native array indices")
+                (destination / "diagnostic-stages.local.json").write_text(json.dumps(trace, indent=2, allow_nan=False) + "\n", encoding="utf-8")
         cavities = np.zeros(hu.shape, dtype=np.uint16)
         air = np.zeros(hu.shape, dtype=np.uint16)
         cavities[crop], air[crop] = cavities_crop, air_crop
