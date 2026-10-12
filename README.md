@@ -1,5 +1,7 @@
 # Ethmoid Complexity Pipeline
 
+The controlled V2 restart focuses on 3D cell counts and a minimal clinician review app. The current approved step packages existing evidence for one development-series counting disagreement; it changes no counting behavior. See [V2 scope and implementation plan](docs/V2_SCOPE.md). Earlier implementation and evaluation records below remain historical evidence.
+
 This repository contains the engineering foundation for the UCSD ethmoid-complexity project:
 
 - a fail-closed DICOM-to-NIfTI conversion pipeline with geometry and HU verification; and
