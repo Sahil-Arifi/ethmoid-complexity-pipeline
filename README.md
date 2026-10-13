@@ -1,6 +1,6 @@
 # Ethmoid Complexity Pipeline
 
-The controlled V2 restart focuses on 3D cell counts and a minimal clinician review app. The current approved step packages existing evidence for one development-series counting disagreement; it changes no counting behavior. See [V2 scope and implementation plan](docs/V2_SCOPE.md). Earlier implementation and evaluation records below remain historical evidence.
+The controlled V2 restart focuses on 3D cell counts and a minimal clinician review app. The source-bound evidence packet and approved local software setup are complete. Public annotated-data candidates were screened for free access and immediate usefulness without extra annotation or integration. None qualified: available labels cover other structures, while the closest individual-cell study requires an author request. No datasets were downloaded or integrated, and no application or counting behavior changed. See [V2 scope and implementation plan](docs/V2_SCOPE.md), [software setup and retained stack](docs/V2_SETUP.md) and [annotated-data research](docs/V2_DATASET_RESEARCH.md). Earlier implementation and evaluation records below remain historical evidence.
 
 This repository contains the engineering foundation for the UCSD ethmoid-complexity project:
 

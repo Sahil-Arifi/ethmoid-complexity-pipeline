@@ -8,6 +8,8 @@ The website has Cases and a Case Viewer with review controls. A separate Review 
 
 ## Current authorization
 
+After public tool research, the user authorized compatibility checks, installation and configuration of suitable tools on October 12, 2026, while explicitly withholding application and engine implementation. This setup is recorded in [V2 software setup](V2_SETUP.md). It does not authorize scan processing, model initialization, database migration or deployment.
+
 On October 12, 2026, the user approved a local evidence packet for one existing development-series counting disagreement. The packet uses saved sources, outputs and diagnostic views. It provides the full candidate registry, focused questions and a separate feedback sheet. Fresh file, geometry, registry and rendering checks accompany it. It does not run inference, tune thresholds, train models, edit clinical annotations, migrate the database or publish anything.
 
 The packet is held outside Git in the protected local review-packet directory. The historical reference and automated output remain separate. The exact reconstruction reviewed clinically remains unresolved, even where the documented case/series correspondence exists. Same-source application histories may use a different algorithm version and must not be substituted for a frozen research run.
