@@ -41,7 +41,11 @@ Final reports use `run-04` and `run-05`; open `run-04/report.pdf`. All 192 saved
 
 The authorized follow-up tests one fixed 50 HU mask connected to strong bone, using the existing compartment-stage exclusion hook. The production counter, default settings, localization, locks and application remain unchanged. [The frozen design](docs/SYNTHETIC_FAINT_WALL_EXPERIMENT.md) defines the 24 existing development cases and 32 new challenge constructions, complete spatial recovery rules, false-split controls and a one-candidate stop. Synthetic connectivity is an engineering convention; open bone-divider controls do not resolve the clinical cell definition.
 
-Premeasurement checks cover the mask, independent construction/image formation, physical orientation, unchanged baseline behavior, null failures, mutation isolation and complete reporting. Evaluation measurements have not started at this source checkpoint. All artifacts will remain outside Git; no patient accuracy or production readiness is claimed.
+All **186 dedicated counting tests passed without skips**. Two source-bound executions found paired recovery of **6/18 to 8/18** on development cases and **1/16 to 6/16** on new challenges. Every baseline success was preserved, with no unexpected execution errors. Both methods recovered **21/22 controls**; the same perforated-divider control retained two uncertain proposals despite the declared one-connected-space reference. The candidate therefore **failed admission**. This topology disagreement is not a clinical counting verdict. See [the findings and limits](docs/SYNTHETIC_FAINT_WALL_RESULTS.md).
+
+The fixed candidate was not tuned or promoted after this result. Canonical reports are `run-01/report.pdf` and `run-02/report.pdf`, with frozen source `4424094`, complete inputs/results and independent audit records outside Git under `%LOCALAPPDATA%/EthmoidComplexity/synthetic-experiments/faint-wall-v1/2026-10-13-01`. The original counter, previous experiments and application remain unchanged. Clinical accuracy is unmeasured.
+
+Independent audits passed **11,670 saved-array assertions** and **1,318 report checks**, confirming complete recovery scores, prior-development baseline identity, cross-process repeatability and the full report. Both [GitHub Actions jobs at the measured source](https://github.com/Sahil-Arifi/ethmoid-complexity-pipeline/actions/runs/38370734096) passed. Software validation does not override the failed candidate-admission gates.
 
 ## Study catalog and broader counting
 
