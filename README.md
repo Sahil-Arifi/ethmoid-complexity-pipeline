@@ -37,6 +37,12 @@ The unchanged detector recovered **6/18 sealed pairs** and **6/6 single-space co
 
 Final reports use `run-04` and `run-05`; open `run-04/report.pdf`. All 192 saved arrays match the original execution, and both final runs have identical protocol/results/Markdown and 25 PNGs. The final independent report audit passed. Both [GitHub Actions jobs at measured source commit `7ea483c`](https://github.com/Sahil-Arifi/ethmoid-complexity-pipeline/actions/runs/38361210220) passed; the physical recovery result remains 6/18 pairs, despite the software checks passing.
 
+## Synthetic faint-wall candidate comparison
+
+The authorized follow-up tests one fixed 50 HU mask connected to strong bone, using the existing compartment-stage exclusion hook. The production counter, default settings, localization, locks and application remain unchanged. [The frozen design](docs/SYNTHETIC_FAINT_WALL_EXPERIMENT.md) defines the 24 existing development cases and 32 new challenge constructions, complete spatial recovery rules, false-split controls and a one-candidate stop. Synthetic connectivity is an engineering convention; open bone-divider controls do not resolve the clinical cell definition.
+
+Premeasurement checks cover the mask, independent construction/image formation, physical orientation, unchanged baseline behavior, null failures, mutation isolation and complete reporting. Evaluation measurements have not started at this source checkpoint. All artifacts will remain outside Git; no patient accuracy or production readiness is claimed.
+
 ## Study catalog and broader counting
 
 The Cases page contains all **26 studies and 230 series** in this installation's local collection. It prepares supported 3D volumes automatically and starts counting only after **Run** is clicked. All existing volume IDs, annotations and original predictions are preserved. The clinician questionnaire explicitly specifies at most 1 mm nominal slice thickness; broader experimental attempts retain that warning, with thickness recorded separately from actual slice spacing. The original v1 evaluation remains immutable.

@@ -8,6 +8,8 @@ The website has Cases and a Case Viewer with review controls. A separate Review 
 
 ## Current authorization
 
+On October 13, 2026, the user authorized one fixed synthetic faint-wall candidate comparison after the thin-wall/blur experiment. The [frozen follow-up design](SYNTHETIC_FAINT_WALL_EXPERIMENT.md) retains the 24 prior development cases and adds 32 declared synthetic challenges, including one-space false-split controls. This permits the helper-only candidate, premeasurement validation, two source-bound executions and aggregate reporting. It does not authorize patient processing, review-app work, production promotion or further parameter search after the result.
+
 On October 12, 2026, the user authorized the synthetic counting experiment and explicitly excluded review-app work. The [frozen design](SYNTHETIC_COUNTING_EXPERIMENT.md) covers 20 generated cases with unchanged compartment-stage settings, exact spatial/count checks and ambiguity/rejection controls. The experiment is complete with two saved process executions and independent artifact audits; the [README](../README.md) records results and verification. This permission does not extend to patient scan processing, clinical outreach, training, engine tuning, application startup, database migration or deployment.
 
 After public tool research, the user authorized compatibility checks, installation and configuration of suitable tools on October 12, 2026, while explicitly withholding application and engine implementation. This setup is recorded in [V2 software setup](V2_SETUP.md). It does not authorize scan processing, model initialization, database migration or deployment.
