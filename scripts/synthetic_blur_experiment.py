@@ -303,10 +303,11 @@ def run(destination: Path) -> dict:
         draw = ImageDraw.Draw(page)
         draw.rectangle((20, 12, 1300, 50), fill="#f5f5f3")
         draw.text((34, 20), "SYNTHETIC THIN-WALL AND BLUR EXPERIMENT", font=font(24, True), fill="#404040")
-        draw.rectangle((20, 208, 525, 244), fill="#f5f5f3")
-        draw.text((34, 214), "Input: blurred / averaged HU", font=font(23, True), fill="#171717")
+        for column, label in enumerate(("Input: blurred / averaged HU", "Construction masks", "Detected masks")):
+            draw.rectangle((20 + 510 * column, 208, 525 + 510 * column, 244), fill="#f5f5f3")
+            draw.text((34 + 510 * column, 214), label, font=font(23, True), fill="#171717")
         draw.rectangle((20, 858, 1530, 913), fill="#f5f5f3")
-        wall_state = "visible" if result["input_visibility"]["wall_visible"] else "absent at 200 HU"
+        wall_state = "visible at 200 HU" if result["input_visibility"]["wall_visible"] else "not visible at 200 HU"
         if case.wall_mm == 0:
             wall_state = "no divider constructed"
         recovery = "met" if result["passed"] else "NOT MET"
@@ -343,7 +344,7 @@ def run(destination: Path) -> dict:
     for row in results:
         lines.append(f"| [{row['name']}]({row['name']}/comparison.png) | {row['wall_mm']} | {row['sigma_mm']} | "
                      f"{row['phase_mm']} | {row['construction_counts']['total']} | {row['candidate_counts']['total']} | "
-                     f"{row['input_visibility']['wall_visible']} | {min(match['dice'] for match in row['matches']):.4f} | "
+                     f"{'n/a' if row['wall_mm'] == 0 else 'yes' if row['input_visibility']['wall_visible'] else 'no'} | {min(match['dice'] for match in row['matches']):.4f} | "
                      f"{min(match['core_coverage'] for match in row['matches']):.1%} | "
                      f"{'met' if row['passed'] else 'NOT MET'} |")
     lines += ["", "Each result.json retains per-compartment Dice, core coverage, matched IDs, extra predictions, "
@@ -361,7 +362,7 @@ def run(destination: Path) -> dict:
     draw.text((44, 95), f"Sealed pairs recovered: {summary['sealed_recovered']}/18   Single-space controls: {summary['controls_recovered']}/6", font=font(28, True), fill="#171717")
     draw.text((44, 142), "Unchanged detector. Known physical objects. Supplied synthetic ROI. Clinical accuracy unmeasured.", font=font(22), fill="#404040")
     by_visibility = summary["sealed_by_input_visibility"]
-    draw.text((44, 174), f"Input divider visible at 200 HU: {by_visibility[0]['recovered']}/{by_visibility[0]['cases']} recovered; divider absent: {by_visibility[1]['recovered']}/{by_visibility[1]['cases']}.", font=font(22), fill="#404040")
+    draw.text((44, 174), f"Input divider visible at 200 HU: {by_visibility[0]['recovered']}/{by_visibility[0]['cases']} recovered; not visible at 200 HU: {by_visibility[1]['recovered']}/{by_visibility[1]['cases']}.", font=font(22), fill="#404040")
     columns = (44, 220, 480, 720, 1180)
     for x, label in zip(columns, ("Wall mm", "Blur sigma mm", "Phase mm", "Detected / physical", "Recovery")):
         draw.text((x, 205), label, font=font(25, True), fill="#171717")
