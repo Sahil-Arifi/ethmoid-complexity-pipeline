@@ -8,6 +8,8 @@ The website has Cases and a Case Viewer with review controls. A separate Review 
 
 ## Current authorization
 
+On October 12, 2026, the user authorized the synthetic counting experiment and explicitly excluded review-app work. The [frozen design](SYNTHETIC_COUNTING_EXPERIMENT.md) covers 20 generated cases with unchanged compartment-stage settings, exact spatial/count checks and ambiguity/rejection controls. The experiment is complete with two saved process executions and independent artifact audits; the [README](../README.md) records results and verification. This permission does not extend to patient scan processing, clinical outreach, training, engine tuning, application startup, database migration or deployment.
+
 After public tool research, the user authorized compatibility checks, installation and configuration of suitable tools on October 12, 2026, while explicitly withholding application and engine implementation. This setup is recorded in [V2 software setup](V2_SETUP.md). It does not authorize scan processing, model initialization, database migration or deployment.
 
 On October 12, 2026, the user approved a local evidence packet for one existing development-series counting disagreement. The packet uses saved sources, outputs and diagnostic views. It provides the full candidate registry, focused questions and a separate feedback sheet. Fresh file, geometry, registry and rendering checks accompany it. It does not run inference, tune thresholds, train models, edit clinical annotations, migrate the database or publish anything.
