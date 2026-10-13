@@ -53,6 +53,12 @@ The [follow-up diagnosis](docs/SYNTHETIC_FAINT_WALL_DIAGNOSIS.md) attributes the
 
 The September answered questionnaire already distinguishes real communication (one cell) from thin or incomplete separating walls (two). Earlier claims that the conceptual rule was unanswered were too broad. The next algorithm needs improved proposals and local divider/opening evidence, with uncertainty for material ambiguity; intensity-aware proposals are one candidate direction. No replacement was measured or promoted in this diagnostic phase. Its scripts, complete case table and numerical results are retained outside Git under `%LOCALAPPDATA%/EthmoidComplexity/synthetic-experiments/faint-wall-v1/2026-10-13-diagnosis-01`.
 
+## Continuous-ridge replacement experiment
+
+The user authorized implementation after the diagnosis. One isolated candidate now creates proposals from continuous HU, merges resolved passages using physical clearance and withholds counts for unresolved material or communication. Original HU supplies enclosure and air measurements; the production counter and old experiment remain unchanged. [The bounded design](docs/SYNTHETIC_RIDGE_EXPERIMENT.md) specifies the algorithm, 56 known development cases and twelve new material/opening stress constructions. Proposed boundaries and accepted experimental counts are scored separately.
+
+Premeasurement unit validation caught an orientation-dependent passage merge: recomputing intensity percentiles after each merge let an array reflection change count availability. The regression failed before freezing evidence on the original basin graph and passed afterward. Evaluation results are pending; no improved accuracy or admission is claimed at this implementation checkpoint.
+
 ## Study catalog and broader counting
 
 The Cases page contains all **26 studies and 230 series** in this installation's local collection. It prepares supported 3D volumes automatically and starts counting only after **Run** is clicked. All existing volume IDs, annotations and original predictions are preserved. The clinician questionnaire explicitly specifies at most 1 mm nominal slice thickness; broader experimental attempts retain that warning, with thickness recorded separately from actual slice spacing. The original v1 evaluation remains immutable.
