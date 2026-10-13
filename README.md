@@ -75,6 +75,10 @@ All **239 dedicated counting tests passed without skips**, including native/refl
 
 **Automatic readiness remains unmet.** The required next evidence is classification of the highlighted ambiguous structures tied to the exact reviewed reconstruction, followed by a defined clinical target and independent evaluation. The supplied synthetic regions also leave anatomical localization unvalidated. This does not establish that better algorithms are impossible; it rules out the tested shortcuts. Diagnostic scripts, full tables, saved falsifiers and audit records are outside Git under `%LOCALAPPDATA%/EthmoidComplexity/synthetic-experiments/continuous-ridge-v1/2026-10-13-diagnosis-01`.
 
+## Native passage evidence experiment
+
+The authorized next investigation measures paths through original CT intensities between proposed cells. The [fixed diagnostic design](docs/NATIVE_PASSAGE_EXPERIMENT.md) retains all 68 previous synthetic records and adds 32 physical perturbations covering sealed walls, small openings, blur, sampling phase, noise and exact reindexing. The measurements cannot override either uncertainty gate. This phase tests whether the image evidence can support a later counting change; the detector and accepted counts remain unchanged. Clinical accuracy and anatomical localization remain unvalidated.
+
 ## Study catalog and broader counting
 
 The Cases page contains all **26 studies and 230 series** in this installation's local collection. It prepares supported 3D volumes automatically and starts counting only after **Run** is clicked. All existing volume IDs, annotations and original predictions are preserved. The clinician questionnaire explicitly specifies at most 1 mm nominal slice thickness; broader experimental attempts retain that warning, with thickness recorded separately from actual slice spacing. The original v1 evaluation remains immutable.
