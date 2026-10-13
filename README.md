@@ -83,6 +83,10 @@ The [completed results](docs/NATIVE_PASSAGE_RESULTS.md) rule out a simple path-i
 
 All **278 dedicated counting tests passed without skips**, and the tracked-file guard passed. The independent audit verified all 100 records, 60 passage proofs, 32 new fine-grid references, four exact-input twin groups, 15 source hashes, 208 preserved historical files and identical bytes for all 303 files in each execution. Its **overall status is FAIL** because one of sixteen reindexing pairs has different physical proposal boundaries. Source `e974e13`, both runs and failed audit records remain outside Git under `%LOCALAPPDATA%/EthmoidComplexity/synthetic-experiments/native-passage-v1/2026-10-13-01`. The next engineering targets are the excluded wall signal and orientation-stable proposals; automatic website readiness remains unmet.
 
+## Canonical counting and communication withholding
+
+The user authorized the two repairs exposed by the native-passage experiment. The [fixed successor design](docs/CANONICAL_COUNTING_EXPERIMENT.md) makes the full proposal pipeline consistent under exact axis changes and withholds counts when disconnected native spaces have unresolved communication. A new diagnostic inspects paths through the supplied ROI, including voxels classified as bone, without interpreting the path as a real opening. Correct sealed-pair counts will also become unavailable; the comparison must report that cost. This remains an isolated synthetic candidate with clinical accuracy unmeasured.
+
 ## Study catalog and broader counting
 
 The Cases page contains all **26 studies and 230 series** in this installation's local collection. It prepares supported 3D volumes automatically and starts counting only after **Run** is clicked. All existing volume IDs, annotations and original predictions are preserved. The clinician questionnaire explicitly specifies at most 1 mm nominal slice thickness; broader experimental attempts retain that warning, with thickness recorded separately from actual slice spacing. The original v1 evaluation remains immutable.
