@@ -22,7 +22,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           uv pip sync counting-tests.lock --python ./.venv/Scripts/python.exe --require-hashes
       - name: Native geometry and compartment tests
-        run: ./.venv/Scripts/python.exe -m pytest tests/test_counting_engine.py tests/test_counting_grids.py tests/test_counting_quality.py tests/test_synthetic_counting_experiment.py -p no:cacheprovider -q
+        run: ./.venv/Scripts/python.exe -m pytest tests/test_counting_engine.py tests/test_counting_grids.py tests/test_counting_quality.py tests/test_synthetic_counting_experiment.py tests/test_synthetic_blur_experiment.py -p no:cacheprovider -q
   verify:
     runs-on: windows-latest
     timeout-minutes: 20

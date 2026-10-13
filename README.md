@@ -27,6 +27,12 @@ This repository contains the engineering foundation for the UCSD ethmoid-complex
 
 The experimental 3D cell-counting prototype is implemented. The original v1 method produced candidate counts on two of five held-out studies and withheld the other three. The broader v2 workflow is described below; clinical accuracy remains unmeasured, and no composite complexity score is defined.
 
+## Synthetic thin-wall and blur experiment
+
+The follow-up experiment draws the same physical enclosure on a 0.125 mm grid, applies a declared Gaussian blur, and averages into 0.5 mm detector voxels. Eighteen paired-space cases vary wall thickness, blur and sampling phase; six absent-wall controls contain one space. Physical reference identities and 1 mm inset cores remain independent of detection. The original engine and its defaults are unchanged. The new runner is `scripts/synthetic_blur_experiment.py`; [its frozen design](docs/SYNTHETIC_BLUR_EXPERIMENT.md) defines all 24 cases and recovery requirements.
+
+Generator tests compare wall occupancy with analytic voxel fractions and blurred profiles with independently normalized discrete convolution. Scorer checks reject merged, split, missing, extra, disconnected and incorrectly sided predictions. The runner requires a saved premeasurement plan binding source, rules, inputs and configuration, preserves existing output directories, and reports input wall visibility separately from physical recovery. All **128 dedicated counting tests passed without skips**, including 38 new checks; the tracked-file guard passed. The dedicated CPU CI job includes these checks. Measurement results will be recorded here after the frozen runs.
+
 ## Study catalog and broader counting
 
 The Cases page contains all **26 studies and 230 series** in this installation's local collection. It prepares supported 3D volumes automatically and starts counting only after **Run** is clicked. All existing volume IDs, annotations and original predictions are preserved. The clinician questionnaire explicitly specifies at most 1 mm nominal slice thickness; broader experimental attempts retain that warning, with thickness recorded separately from actual slice spacing. The original v1 evaluation remains immutable.
