@@ -311,7 +311,7 @@ def run(destination: Path) -> dict:
             wall_state = "no divider constructed"
         recovery = "met" if result["passed"] else "NOT MET"
         draw.text((34, 863), f"Physical recovery: {recovery}. Input divider: {wall_state}.", font=font(23, True), fill="#171717")
-        draw.text((34, 891), f"Worst matched Dice: {min(row['dice'] for row in result['matches']):.3f}; interior-core coverage: {min(row['core_coverage'] for row in result['matches']):.1%}. Missing matches score zero.", font=font(20), fill="#404040")
+        draw.text((34, 891), f"Smallest reference Dice: {min(row['dice'] for row in result['matches']):.3f}; interior-core coverage: {min(row['core_coverage'] for row in result['matches']):.1%}. Missing matches score zero.", font=font(20), fill="#404040")
         page.save(case_dir / "comparison.png")
         pages.append(page)
         results.append(result)
@@ -362,10 +362,14 @@ def run(destination: Path) -> dict:
     draw.text((44, 142), "Unchanged detector. Known physical objects. Supplied synthetic ROI. Clinical accuracy unmeasured.", font=font(22), fill="#404040")
     by_visibility = summary["sealed_by_input_visibility"]
     draw.text((44, 174), f"Input divider visible at 200 HU: {by_visibility[0]['recovered']}/{by_visibility[0]['cases']} recovered; divider absent: {by_visibility[1]['recovered']}/{by_visibility[1]['cases']}.", font=font(22), fill="#404040")
-    draw.text((44, 205), "Wall mm    Blur sigma mm    Phase mm     Detected / physical      Recovery", font=font(25, True), fill="#171717")
+    columns = (44, 220, 480, 720, 1180)
+    for x, label in zip(columns, ("Wall mm", "Blur sigma mm", "Phase mm", "Detected / physical", "Recovery")):
+        draw.text((x, 205), label, font=font(25, True), fill="#171717")
     for i, row in enumerate(results):
-        text = f"{row['wall_mm']:<10g}  {row['sigma_mm']:<15g}  {row['phase_mm']:<12g}  {row['candidate_counts']['total']} / {row['construction_counts']['total']}           {'met' if row['passed'] else 'NOT MET'}"
-        draw.text((44, 257 + i * 34), text, font=font(24), fill="#24613c" if row["passed"] else "#a82828")
+        values = (f"{row['wall_mm']:g}", f"{row['sigma_mm']:g}", f"{row['phase_mm']:g}",
+                  f"{row['candidate_counts']['total']} / {row['construction_counts']['total']}", "met" if row['passed'] else "NOT MET")
+        for x, value in zip(columns, values):
+            draw.text((x, 257 + i * 34), value, font=font(24), fill="#24613c" if row["passed"] else "#a82828")
     draw.text((44, 1100), "Fine physical construction -> Gaussian blur -> voxel averaging -> unchanged detector.", font=font(24), fill="#404040")
     draw.text((44, 1144), "Numbers on comparison pages identify full 3D objects. All failed cases are retained.", font=font(23), fill="#404040")
     cover.save(destination / "summary.png")
