@@ -615,7 +615,6 @@ export function Workspace({ caseId, onBack, onOpenCase, registerNavigationGuard 
             onReady={() => {
               viewerReadyRef.current = true;
               setViewerReady(true);
-              setSaveMessage("No unsaved changes");
               window.queueMicrotask(() => {
                 viewerStateSaveEnabledRef.current = true;
               });

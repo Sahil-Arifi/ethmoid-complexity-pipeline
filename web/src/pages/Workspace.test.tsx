@@ -6,6 +6,11 @@ import { api } from "../api/client";
 import type { CaseDetail } from "../api/types";
 import { Workspace } from "./Workspace";
 
+const viewerReadiness = vi.hoisted(() => ({
+  automatic: true,
+  notify: () => {},
+}));
+
 vi.mock("../api/client", () => ({
   api: {
     getCase: vi.fn(),
@@ -43,7 +48,10 @@ vi.mock("../viewer/NiiVueViewer", () => ({
       canRedo: () => false,
       resetView: vi.fn(),
     }));
-    useEffect(() => props.onReady(), []);
+    useEffect(() => {
+      viewerReadiness.notify = props.onReady;
+      if (viewerReadiness.automatic) props.onReady();
+    }, []);
     return (
       <div>
         <div role="img" aria-label="Mock linked medical viewer" />
@@ -83,6 +91,7 @@ const caseDetail: CaseDetail = {
 describe("Workspace", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    viewerReadiness.automatic = true;
     window.localStorage.setItem("ethmoid:first-run-guide", "2");
     vi.mocked(api.getCase).mockResolvedValue(caseDetail);
     vi.mocked(api.getProtocol).mockResolvedValue({
@@ -267,6 +276,31 @@ describe("Workspace", () => {
     await waitFor(() => expect(api.updateReview).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(api.finalize).toHaveBeenCalledWith("case-1"));
     expect(await screen.findByText("Finalized for review")).toBeVisible();
+  });
+
+  it("preserves finalization feedback when the viewer finishes loading later", async () => {
+    viewerReadiness.automatic = false;
+    const user = userEvent.setup();
+    render(<Workspace caseId="case-1" onBack={vi.fn()} registerNavigationGuard={vi.fn()} />);
+    await screen.findByRole("heading", { name: "Case003" });
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    for (const label of [
+      "Complete ethmoid coverage",
+      "Orientation is correct",
+      "Image quality is acceptable",
+      "Slice continuity is intact",
+    ]) {
+      await user.click(screen.getByRole("checkbox", { name: label }));
+    }
+    await user.click(screen.getByRole("button", { name: "Finalize for review" }));
+    expect(await screen.findByText("Finalized for review")).toBeVisible();
+
+    act(() => viewerReadiness.notify());
+
+    expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
+    expect(screen.getByText("Finalized for review")).toBeVisible();
+    expect(screen.getByText("Ready for review", { selector: "span" })).toBeVisible();
+    expect(api.finalize).toHaveBeenCalledTimes(1);
   });
 
   it("registers a navigation guard that saves changed review fields", async () => {
