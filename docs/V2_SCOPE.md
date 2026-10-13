@@ -8,6 +8,8 @@ The website has Cases and a Case Viewer with review controls. A separate Review 
 
 ## Current authorization
 
+The latest instruction authorizes continued algorithm work toward website readiness. When asked to define that checkpoint, the user explicitly chose an automatic counter meeting accuracy checks first; a research-review website with uncertain counts is not an equivalent deliverable. The [withheld-count diagnosis](SYNTHETIC_RIDGE_DIAGNOSIS.md), unchanged synthetic replay and narrow-opening safeguards are complete. The current counter still fails admission, and no unsupported acceptance-rule relaxation or website implementation follows from this result. Clinical evaluation evidence and targets cannot be manufactured by further synthetic tuning.
+
 After reviewing the completed diagnosis, the user explicitly authorized starting the replacement algorithm. This permits one isolated continuous-ridge candidate, unit validation, a separately frozen 68-case synthetic comparison and a repeatability execution, as specified in [the new design](SYNTHETIC_RIDGE_EXPERIMENT.md). The work remains outside production and patient processing. Proposal improvement does not override strict count-admission failures or justify post-result parameter tuning.
 
 That comparison is complete: [the results](SYNTHETIC_RIDGE_RESULTS.md) show all 34 paired proposal shapes recovered but only six pair counts available. Forty of 68 total cases withhold counts. The candidate fails strict count admission and is not promoted; the one-candidate budget is exhausted. Production behavior and all prior evidence remain preserved.

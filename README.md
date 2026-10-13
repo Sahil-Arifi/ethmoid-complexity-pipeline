@@ -65,6 +65,16 @@ The independent artifact audit recomputed all 180 spatial scores and confirmed a
 
 Source `9e66440`, the fixed plan, both fresh executions, every input/proposal/score and an illustrative comparison image remain outside Git under `%LOCALAPPDATA%/EthmoidComplexity/synthetic-experiments/continuous-ridge-v1/2026-10-13-01`. Production counting and earlier experiments remain unchanged. The next research need is material/opening evidence that resolves ambiguity while preserving necessary abstention; this experiment does not establish patient accuracy or authorize further tuning.
 
+## Withheld-count diagnosis and automatic-readiness gate
+
+The user requires the automatic counter to meet accuracy checks before website work. [The completed diagnosis](docs/SYNTHETIC_RIDGE_DIAGNOSIS.md) reproduced all **68 saved cases exactly** and preserved **430 protected hashes**. Of 28 withheld known pairs, 27 lack sufficient material evidence and retain unresolved communication; one has supported bone but unresolved communication. No final geometric rejection explains those 28 cases.
+
+Removing both vetoes would admit eight wrong-count soft-content controls. Removing only the communication veto gains one known pair but fails a new analytic real-opening control: a 0.5 mm square opening has 100% strong-bone separator support yet remains one connected space. The current abstention prevents a false count of two. Looking through adjacent slices does not distinguish full-volume identical material twins, and the existing soft-sheet controls are themselves continuous in 3D.
+
+All **239 dedicated counting tests passed without skips**, including native/reflected narrow-opening safeguards. An independent saved-array audit verified the complete census, gate calculations, three analytic falsifiers and preservation hashes. The detector and historical rules/results are unchanged. Current protocol, worksheet and correspondence reads confirmed that prior clinician counts exist, but did not establish new structure-level evidence or a numerical clinical pass target. No new patient inference or website work occurred.
+
+**Automatic readiness remains unmet.** The required next evidence is classification of the highlighted ambiguous structures tied to the exact reviewed reconstruction, followed by a defined clinical target and independent evaluation. The supplied synthetic regions also leave anatomical localization unvalidated. This does not establish that better algorithms are impossible; it rules out the tested shortcuts. Diagnostic scripts, full tables, saved falsifiers and audit records are outside Git under `%LOCALAPPDATA%/EthmoidComplexity/synthetic-experiments/continuous-ridge-v1/2026-10-13-diagnosis-01`.
+
 ## Study catalog and broader counting
 
 The Cases page contains all **26 studies and 230 series** in this installation's local collection. It prepares supported 3D volumes automatically and starts counting only after **Run** is clicked. All existing volume IDs, annotations and original predictions are preserved. The clinician questionnaire explicitly specifies at most 1 mm nominal slice thickness; broader experimental attempts retain that warning, with thickness recorded separately from actual slice spacing. The original v1 evaluation remains immutable.
