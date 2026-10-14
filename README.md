@@ -89,6 +89,10 @@ The [fixed successor design](docs/CANONICAL_COUNTING_EXPERIMENT.md) and [complet
 
 All **479 dedicated counting tests passed without skips**, along with the tracked-file guard. The independent saved-artifact audit passed all frozen repair requirements, including 18 complete bridge proofs, four exact-input material-twin groups, 15 source hashes, 820 preserved historical files and 304 byte-identical files per run. Source `7aed718`, the plan, both runs and the audit remain recorded under `%LOCALAPPDATA%/EthmoidComplexity/synthetic-experiments/canonical-component-v1/2026-10-13-01`. The new bridge diagnostic includes bone-valued voxels but does not establish an anatomical opening. Clinical accuracy remains unmeasured; production counting and patient data were not changed.
 
+## Opening detectability before count recovery
+
+The user authorized the next count-recovery phase. The [fixed diagnostic design](docs/APERTURE_IDENTIFIABILITY_EXPERIMENT.md) tests whether a sealed wall and a small real opening can produce compatible images under exact voxel averaging and illustrative error bounds. It explicitly checks the risk of omitting smaller openings from a finite model search. This prerequisite experiment keeps the counter's saved decisions unchanged and does not calibrate a scanner or define a minimum anatomical opening size.
+
 ## Study catalog and broader counting
 
 The Cases page contains all **26 studies and 230 series** in this installation's local collection. It prepares supported 3D volumes automatically and starts counting only after **Run** is clicked. All existing volume IDs, annotations and original predictions are preserved. The clinician questionnaire explicitly specifies at most 1 mm nominal slice thickness; broader experimental attempts retain that warning, with thickness recorded separately from actual slice spacing. The original v1 evaluation remains immutable.

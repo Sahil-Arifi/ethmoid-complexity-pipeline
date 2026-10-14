@@ -1,0 +1,37 @@
+# Opening detectability before count recovery: fixed design
+
+The user authorized starting count recovery after the canonical repair. This phase tests a prerequisite for a wall/opening model: whether even perfectly known geometry and image formation distinguish a sealed wall from a small real opening. Two independent advisors and one anonymous reviewer recommended this smaller competing-explanations diagnostic before fitting the 100 historical observations. The council was reduced to respect the user's usage preference and used the existing model connection.
+
+This is an idealized synthetic identifiability experiment. It does not fit patient images, change count acceptance, estimate scanner noise or supply a minimum anatomical opening size. The existing counter's saved 22 correct, zero wrong and 78 withheld results remain historical evidence; they are not recalculated or rescored as new successes.
+
+## Model and fixed observations
+
+Use a rectangular air chamber with half-extents (2.5, 2.4, 2.4) mm in surrounding bone, divided by a 1 mm central X slab. Air is -900 HU and bone is 800 HU. A sealed slab gives two spaces; any positive square aperture strictly inside its Y/Z extent connects them. This reference follows continuous geometry, so an opening does not disappear merely because a fine raster misses it.
+
+The native grid is (16, 14, 12) voxels with spacing (0.5, 0.6, 0.8) mm and its field of view centered at zero. Render continuous separable Gaussian blur before exact voxel-volume integration. Integrate each cuboid using products of one-dimensional interval occupancies. At zero blur, use exact interval overlap. At positive blur, integrate the Gaussian CDF analytically; verify against independent numerical quadrature. No reconstruction threshold or supersampling raster defines the image.
+
+Freeze five aperture widths: 0.03125, 0.125, 0.25, 0.5 and 1 mm. Use Y/Z centers (0, 0) and (0.17, -0.23) mm, and blur sigmas 0 and 0.3 mm. This gives 20 paired imaging scenarios, representing ten opening geometries under two blur settings. The sealed reference is shared within each acquisition context, not twenty independent sealed examples. Repeat each scenario under the same exact X/Z swap and Y reflection used in earlier work, giving 40 saved records.
+
+Save the sealed prediction, the matching open prediction, their midpoint observation, three coarse alternative predictions with widths 0.25, 0.5 and 1 mm at the same center/blur, and the voxel-center affine. These are known-parameter, best-case synthetic predictions. Supplying these parameters is not an observation-only detector or evidence that fitting unknown geometry would succeed.
+
+## Compatibility and the missing-alternative test
+
+Use fixed illustrative maximum voxel errors of 0, 1, 5 and 25 HU. These are deterministic bounds, not measured scanner noise, Gaussian standard deviations, probabilities or clinical tolerances. Compare full arrays with the maximum absolute residual; a hypothesis is compatible if that residual is at most the declared error bound. The compatibility function receives observed arrays and hypothesis arrays, never counts or construction labels. Count sets are assigned afterward from the declared physical hypotheses.
+
+For predictions separated by maximum residual `delta`, the two bounded-error observation sets intersect exactly when `delta <= 2 * error_bound`. Their midpoint supplies a concrete common observation. Verify both residuals directly, keeping numerical calculation tolerances separate from the observation-error bound.
+
+Also compare the exact open prediction with a restricted library containing the sealed prediction and only the three coarse opening alternatives. Record any misleading sealed-only result and whether adding the omitted, matching opening restores a compatible opening explanation. This deliberately incomplete library is a falsifier for search completeness, not a candidate counter. No failed assumption may be repaired by changing the grid after results are seen.
+
+For contrast `C`, slab thickness `t`, aperture width `a` and voxel dimensions `(sx, sy, sz)`, verify the phase-independent upper bound `delta <= C * min(t/sx, 1) * min(a/sy, 1) * min(a/sz, 1)`. Voxel averaging has this bound for every continuous translation; convolution with a normalized nonnegative blur preserves that continuous bound. Do not claim that blur must reduce the maximum over the particular unblurred native samples. For positive error tolerance, the bound approaches zero with aperture area. A sampled library with a positive minimum opening size therefore cannot certify exclusion of every smaller opening.
+
+## Validation, freeze and stopping rule
+
+Before measurement, test exact voxel overlap and volume, Gaussian integrals against quadrature, small-aperture scaling, the bound, finite-input validation, immutability and all 48 signed index permutations of compatibility calculations. Include identical hypotheses, exact error-bound equality, a changed sampling phase and a physical blind-recess control outside the full-through-aperture family. The latter must use independent fine-grid physical predicates and check both topology and voxel averages; an incomplete shape family cannot certify a count. Runner tests must cover source/runtime drift, complete retained failures, exact manifests, protected destinations and separation of illustrative bounds from numerical tolerances. Independently inspect both scalar calculations and saved images; array hashes alone do not establish correctness.
+
+Freeze source commit/hashes, runtime, this design, all scenario definitions and the full historical file inventory before execution. Protect the complete canonical-repair directory and its already protected native-passage and ridge directories. New plans and output directories must be fresh and outside Git and all protected trees. Validate all 100 previous records and their saved arrays without calling any detector. Execute the fixed 40-record batch twice in separate processes and preserve every result and failure.
+
+Report the 20 base scenarios separately from their 20 exact reindexings. For each error bound, report overlapping sealed/open explanations and misleading sealed-only decisions from the restricted library. Save per-record residuals and masks of changed voxels, retain the complete census and require identical process outputs. An independent saved-artifact audit must check analytic geometry, integrals, the upper bound, compatibility decisions, all 20 reindex pairs, hashes and historical preservation.
+
+Software/audit gates concern correct calculations, full evidence and repeatability; finding overlapping hypotheses is a scientific result, not a software failure. A count-recovery claim remains rejected if a physically valid omitted opening fits. Stop after this one frozen diagnostic and its audit. A subsequent inference model would require explicit acquisition assumptions and evaluation evidence; this experiment cannot invent those from the existing images.
+
+Implementation references: SciPy documents the [normal CDF](https://docs.scipy.org/doc/scipy/reference/generated/scipy.special.ndtr.html) and [numerical quadrature](https://docs.scipy.org/doc/scipy/reference/generated/scipy.integrate.quad.html) used for independent validation. The detectability argument above is derived for this declared model, not taken from a clinical study.
