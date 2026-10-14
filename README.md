@@ -91,7 +91,9 @@ All **479 dedicated counting tests passed without skips**, along with the tracke
 
 ## Opening detectability before count recovery
 
-The user authorized the next count-recovery phase. The [fixed diagnostic design](docs/APERTURE_IDENTIFIABILITY_EXPERIMENT.md) tests whether a sealed wall and a small real opening can produce compatible images under exact voxel averaging and illustrative error bounds. It explicitly checks the risk of omitting smaller openings from a finite model search. This prerequisite experiment keeps the counter's saved decisions unchanged and does not calibrate a scanner or define a minimum anatomical opening size.
+The [fixed diagnostic](docs/APERTURE_IDENTIFIABILITY_EXPERIMENT.md) and [completed results](docs/APERTURE_IDENTIFIABILITY_RESULTS.md) reject recovering counts merely by finding no fitting opening in a restricted model library. At illustrative maximum voxel errors of 0, 1, 5 and 25 HU, the library produces 0, 2, 4 and 7 misleading sealed-only results out of twenty paired imaging scenarios. Adding the generating opening restores a fitting opening explanation; it does not establish counting accuracy or a complete search. A separate control gives byte-identical, zero-noise voxel averages for a through-opening and opposed blind recesses with different physical counts.
+
+All **575 dedicated counting tests passed without skips**, and the independent artifact audit passed: forty saved records, twenty exact reindex pairs, thirteen source hashes, 1,432 protected files and 84 byte-identical files per execution. Independent quadrature agrees within 1.03 x 10^-12 HU. Source `716e56d` and the frozen evidence are recorded under `%LOCALAPPDATA%/EthmoidComplexity/synthetic-experiments/aperture-identifiability-v1/2026-10-13-01`. The prior counter remains at **22 correct, zero wrong and 78 withheld counts**. Recovery requires explicit acquisition/shape assumptions and independent accuracy/coverage evaluation; clinical accuracy and automatic website readiness remain unmet.
 
 ## Study catalog and broader counting
 
