@@ -95,6 +95,10 @@ The [fixed diagnostic](docs/APERTURE_IDENTIFIABILITY_EXPERIMENT.md) and [complet
 
 All **575 dedicated counting tests passed without skips**, and the independent artifact audit passed: forty saved records, twenty exact reindex pairs, thirteen source hashes, 1,432 protected files and 84 byte-identical files per execution. Independent quadrature agrees within 1.03 x 10^-12 HU. Source `716e56d` and the frozen evidence are recorded under `%LOCALAPPDATA%/EthmoidComplexity/synthetic-experiments/aperture-identifiability-v1/2026-10-13-01`. The prior counter remains at **22 correct, zero wrong and 78 withheld counts**. Recovery requires explicit acquisition/shape assumptions and independent accuracy/coverage evaluation; clinical accuracy and automatic website readiness remain unmet.
 
+## Sampling information and clinician meeting update
+
+The October 19 instruction authorizes a bounded experiment and an editable Google Doc for the clinician meeting. The [fixed design](docs/SAMPLING_INFORMATION_EXPERIMENT.md) compares original samples, linear image enlargement and a genuinely new simulated sampling grid on paired geometries with different connectivity. Both candidate shapes and imaging parameters are supplied; the result measures conditional information, not a clinical counter or recovery of historical withheld cases. Source-bound evaluation, repeatability and independent audit are pending. The original counter and patient data remain unchanged.
+
 ## Study catalog and broader counting
 
 The Cases page contains all **26 studies and 230 series** in this installation's local collection. It prepares supported 3D volumes automatically and starts counting only after **Run** is clicked. All existing volume IDs, annotations and original predictions are preserved. The clinician questionnaire explicitly specifies at most 1 mm nominal slice thickness; broader experimental attempts retain that warning, with thickness recorded separately from actual slice spacing. The original v1 evaluation remains immutable.
