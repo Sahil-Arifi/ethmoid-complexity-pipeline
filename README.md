@@ -113,6 +113,8 @@ The [scoring harness](docs/EVALUATION_SCORING.md) makes the draft's count arithm
 
 The focused scorer suite passed **73 tests**, the dedicated counting suite passed **716 without skips**, and the application suite passed **357** with its configured dependency skips and integration exclusions. The guide records the overlapping suite scope and limitations. Two separate demonstration executions produced identical report bytes; the complete staged source index passed the medical-data guard.
 
+The first remote run passed counting, application and browser tests but failed the dependency audit on the existing Vite 8.2.2 pin. Updating only Vite to the patched 8.2.4 release cleared the audit. The repaired frontend passed its production build, all 42 unit tests and three synthetic browser workflows locally. This build-tool repair changes no scoring source or saved report bytes; see the [verification record](docs/EVALUATION_SCORING.md#executed-software-verification).
+
 This preparation does not process patient files or change the counter, application or frozen experiments. A validated adapter for the protected worksheets and saved results, independent references, and the remaining clinical protocol decisions are still required before patient evaluation. See the harness guide for its input contract, command and limitations.
 
 ## Study catalog and broader counting
