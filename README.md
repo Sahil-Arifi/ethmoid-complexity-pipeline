@@ -101,6 +101,12 @@ The [fixed design](docs/SAMPLING_INFORMATION_EXPERIMENT.md) and [completed resul
 
 All **643 dedicated counting tests passed without skips**. The independent audit passed **1,326 checks**; both runs have **44 byte-identical files**, with **19 frozen source hashes** and **1,604 protected historical files** preserved. The exploratory target was met without retuning. Source `64fc1b3` and frozen evidence are recorded under `%LOCALAPPDATA%/EthmoidComplexity/synthetic-experiments/sampling-information-v1/2026-10-19-01`. The historical counter remains **22 correct, zero wrong and 78 withheld out of 100 synthetic records**. Patient counting accuracy and automatic website readiness remain unestablished. An editable meeting document presents the measured results and a synthetic illustration.
 
+## Clinician video review preparation
+
+The [review guide and worksheet schemas](docs/CLINICIAN_VIDEO_REVIEW.md) prepare for narrated manual-count recordings and additional data. Five blank local CSV worksheets cover participant/exposure tracking, exact-source review sessions, timestamped cell observations, preserved-output comparisons and endpoint counts. The [draft evaluation plan](docs/CLINICIAN_COUNT_EVALUATION_DRAFT.md) keeps count error separate from answer coverage, preserves missing cases and prevents duplicate counting across videos and revisions.
+
+An [editable online guide](https://docs.google.com/document/d/12Wck_8wLQ7duSOB3FyrK2drOq8BfA0LZOMxu8-MvkC0/edit) explains the workflow. Blank local copies are under `%LOCALAPPDATA%/EthmoidComplexity/work/clinician-video-review/preparation-20261020`; filled records and recordings must remain in protected local storage. This phase reviews no new patient evidence, assigns no cases and changes no algorithm. Clinical targets and independent evaluation remain pending; automatic website readiness is unmet. The next input is the clinician's recordings, using existing answers before any targeted follow-up.
+
 ## Study catalog and broader counting
 
 The Cases page contains all **26 studies and 230 series** in this installation's local collection. It prepares supported 3D volumes automatically and starts counting only after **Run** is clicked. All existing volume IDs, annotations and original predictions are preserved. The clinician questionnaire explicitly specifies at most 1 mm nominal slice thickness; broader experimental attempts retain that warning, with thickness recorded separately from actual slice spacing. The original v1 evaluation remains immutable.
