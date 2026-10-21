@@ -107,6 +107,14 @@ The [review guide and worksheet schemas](docs/CLINICIAN_VIDEO_REVIEW.md) prepare
 
 An [editable online guide](https://docs.google.com/document/d/12Wck_8wLQ7duSOB3FyrK2drOq8BfA0LZOMxu8-MvkC0/edit) explains the workflow. Blank local copies are under `%LOCALAPPDATA%/EthmoidComplexity/work/clinician-video-review/preparation-20261020`; filled records and recordings must remain in protected local storage. This phase reviews no new patient evidence, assigns no cases and changes no algorithm. Clinical targets and independent evaluation remain pending; automatic website readiness is unmet. The next input is the clinician's recordings, using existing answers before any targeted follow-up.
 
+## Synthetic evaluation scoring
+
+The [scoring harness](docs/EVALUATION_SCORING.md) makes the draft's count arithmetic executable with invented records and checks spatial error categories on complete synthetic labels. It retains every scheduled endpoint, reports count error separately from answer/reference coverage, preserves uncertainty and rejects malformed records. The demonstration writes a new deterministic JSON report marked `synthetic_engineering_only` with clinical accuracy `NOT_MEASURED`.
+
+The focused scorer suite passed **73 tests**, the dedicated counting suite passed **716 without skips**, and the application suite passed **357** with its configured dependency skips and integration exclusions. The guide records the overlapping suite scope and limitations. Two separate demonstration executions produced identical report bytes; the complete staged source index passed the medical-data guard.
+
+This preparation does not process patient files or change the counter, application or frozen experiments. A validated adapter for the protected worksheets and saved results, independent references, and the remaining clinical protocol decisions are still required before patient evaluation. See the harness guide for its input contract, command and limitations.
+
 ## Study catalog and broader counting
 
 The Cases page contains all **26 studies and 230 series** in this installation's local collection. It prepares supported 3D volumes automatically and starts counting only after **Run** is clicked. All existing volume IDs, annotations and original predictions are preserved. The clinician questionnaire explicitly specifies at most 1 mm nominal slice thickness; broader experimental attempts retain that warning, with thickness recorded separately from actual slice spacing. The original v1 evaluation remains immutable.

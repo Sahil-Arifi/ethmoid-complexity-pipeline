@@ -2,6 +2,8 @@
 
 Prepared October 20, 2026. This draft defines records and calculations, not a clinical pass threshold or permission to run patient inference. No new case assignments, reference counts or patient results were created. Complete and freeze the outstanding decisions before evaluation; do not invent a sample-size or error target from the synthetic results.
 
+The authorized [synthetic scoring harness](EVALUATION_SCORING.md) makes the census arithmetic and complete-label spatial checks executable using invented inputs. It does not supply independent clinical evidence or implement the patient-data preparation workflow.
+
 ## Question and unit of evaluation
 
 Can a frozen automatic method give sufficiently accurate left, right and total unique-cell counts on eligible, previously unused participants, while providing answers often enough to be useful? Report left, right and total separately. A correct total may hide compensating left/right errors.
@@ -72,4 +74,8 @@ If the third reference is unconfirmed, N stays 3 and C stays 2, while R becomes 
 
 First produce a source-matched development review with unresolved items retained. Then propose one bounded algorithm experiment based on those observations for user authorization. Clinical evaluation can proceed only after the missing design decisions and independent evidence are in place. The website remains behind the user's automatic-accuracy checkpoint.
 
-See the [review guide and blank worksheet schemas](CLINICIAN_VIDEO_REVIEW.md). No machine-readable clinical approval, training label set or runnable evaluator is created by this draft.
+The current harness accepts a normalized synthetic census with one selected reconstruction per participant and all three endpoints scheduled. Its fixed acceptance rule retains available uncertain answers with visible flags. It derives reference eligibility from the normalized state, independence, source, scope, lock and evidence fields; a manually marked pairing flag cannot override them. A different clinical acceptance rule requires a predeclared protocol revision and corresponding implementation checks.
+
+The normalization boundary remains future work: a validated adapter must resolve worksheet revisions, reconcile the planned census, verify exact source/run identity and preserve unresolved records before producing evaluation inputs. Matching field values and hashes alone cannot authenticate provenance or reference independence. Confidence intervals, grouped analyses and clinical pass thresholds are not implemented by the harness.
+
+See the [review guide and blank worksheet schemas](CLINICIAN_VIDEO_REVIEW.md). No machine-readable clinical approval or training label set is created by this draft. The executable synthetic checks do not authorize patient evaluation.
