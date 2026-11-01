@@ -1,5 +1,7 @@
 # Ethmoid Complexity Pipeline
 
+Supplied clinician counts can now be compared with repeated automatic runs using an external, source-bound manifest. The [reproduction runner](docs/CLINICIAN_REPRODUCTION.md) keeps targets out of inference, preserves attempts and requires exact bilateral counts plus stable native artifacts. This adds a development regression workflow; the counting defaults and historical results are unchanged.
+
 This repository contains the engineering foundation for the UCSD ethmoid-complexity project:
 
 - a fail-closed DICOM-to-NIfTI conversion pipeline with geometry and HU verification; and
