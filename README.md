@@ -252,6 +252,14 @@ The final implementation CI at `b50633f` passed: **152 application tests** (four
 
 The deliverable is a working presentation prototype with real preliminary outputs, correction lineage and exports. It is **not a reliable or validated clinical counter**. The posterior-boundary failures and possible merged cells are known model limitations. Next action: collect independent manual 3D counts and expert cell/boundary review, then improve the model on development data and evaluate a new freeze. Do not present the older selected-slice annotations or model-assisted corrections as independent 3D ground truth.
 
+## Clinician series reconciliation (2026-11-02)
+
+The updated clinician reference identified local series for all 24 documented views across eight studies. One image-total discrepancy remains. Five listed axial series differ from the earlier reproduction inputs and use thicker slices. These document matches establish the listed series, but not the volume imported into the recorded planning session.
+
+The unchanged research-v5 method completed 16 fresh attempts on the listed axial series: three studies produced counts and five withheld them, with no technical failures. One of eight studies matched both reference counts. Numerical outputs and withheld outcomes repeated across both passes. Independent checks verified all 26 bound source files, unchanged settings, 250 protected inputs and native result artifacts. This is a development diagnostic, not demonstrated clinical accuracy or an algorithm improvement.
+
+A bounded lineage and geometry audit found that all listed stacks contain the old accepted objects and algorithm search region. It found no explicit DICOM source-image links that identify the planning volume. Containment of algorithm outputs does not establish complete anatomical coverage or visibility of small boundaries. The private series-confirmation-20261102 folder holds the manifests, source checks, results and review records; medical data remains outside Git. One fixed physical-grid comparison completed all 16 reformatted views across 29 volumes, with zero clipping or geometry failures. Agreement varied by view and metric; no source was selected. Saved-sample metrics passed independent recomputation. The next algorithm experiment must address a demonstrated failure mechanism and preserve the full eight-study denominator.
+
 ## Documentation rule
 
 This README is the durable project handoff and must be updated after every meaningful project work session. Record completed work, important findings or decisions, current validation status, newly created outputs, unresolved questions, and the next action. Keep completed and pending work clearly separated so a future chat can resume without reconstructing prior context.
