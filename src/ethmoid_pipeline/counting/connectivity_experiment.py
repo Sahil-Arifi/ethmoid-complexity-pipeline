@@ -164,7 +164,9 @@ def _context(manifest_path):
 
 def _preserved(protocol):
     ex.require(isinstance(protocol.get("input_hashes"), dict) and bool(protocol["input_hashes"]), "PROTOCOL_INPUTS_MISSING")
-    ex.require(all(ex.sha256(ex.external(path)) == expected for path, expected in protocol["input_hashes"].items()),
+    # Integrity inputs include committed code; artifact readers separately enforce outside-Git storage.
+    ex.require(all(Path(path).is_absolute() and Path(path).is_file() and ex.sha256(path) == expected
+                   for path, expected in protocol["input_hashes"].items()),
                "FROZEN_INPUT_CHANGED")
 
 

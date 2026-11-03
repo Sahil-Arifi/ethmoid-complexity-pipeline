@@ -185,7 +185,7 @@ def test_complete_checkpoint_loads_without_changing_weights_or_file(tmp_path, mo
 
 
 @pytest.mark.parametrize('mutation', ['incomplete', 'wrong_steps', 'wrong_config', 'wrong_version',
-                                    'wrong_model', 'missing_hash'])
+                                    'wrong_model', 'missing_hash', 'nonhex_hash'])
 def test_incomplete_or_wrong_protocol_checkpoint_rejected_before_model(tmp_path, monkeypatch, mutation):
     saved = saved_fixture()
     if mutation == 'incomplete':
@@ -198,6 +198,8 @@ def test_incomplete_or_wrong_protocol_checkpoint_rejected_before_model(tmp_path,
         saved['version'] = 'different-experiment'
     elif mutation == 'wrong_model':
         saved['model_version'] = 'different-model'
+    elif mutation == 'nonhex_hash':
+        saved['protocol_sha256'] = 'z' * 64
     else:
         del saved['protocol_sha256']
     path = tmp_path / 'synthetic-invalid.pt'
@@ -210,3 +212,23 @@ def test_incomplete_or_wrong_protocol_checkpoint_rejected_before_model(tmp_path,
 def test_checkpoint_requires_external_absolute_path():
     with pytest.raises(original.ExperimentError, match='EXTERNAL_ARTIFACT_REQUIRED'):
         experiment.load_checkpoint('relative.pt', torch)
+
+
+def test_preservation_checks_committed_source_without_treating_it_as_patient_artifact(tmp_path):
+    repo = tmp_path / 'synthetic-repository'
+    repo.mkdir()
+    (repo / '.git').mkdir()
+    code = repo / 'synthetic.py'
+    code.write_text('value = 1\n', encoding='utf-8')
+    protocol = {'input_hashes': {str(code): original.sha256(code)}}
+    with pytest.raises(original.ExperimentError, match='EXTERNAL_ARTIFACT_REQUIRED'):
+        original.external(code)
+    experiment._preserved(protocol)
+    code.write_text('value = 2\n', encoding='utf-8')
+    with pytest.raises(original.ExperimentError, match='FROZEN_INPUT_CHANGED'):
+        experiment._preserved(protocol)
+
+
+def test_preservation_rejects_relative_integrity_inputs():
+    with pytest.raises(original.ExperimentError, match='FROZEN_INPUT_CHANGED'):
+        experiment._preserved({'input_hashes': {'relative.py': '0' * 64}})
