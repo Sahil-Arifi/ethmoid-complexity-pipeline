@@ -18,11 +18,11 @@ def main():
         print(result["status"])
         return 0 if result["status"] in {"READY_CONDITIONAL_DEVELOPMENT", "COMPLETE", "PASS_CONDITIONAL_DEVELOPMENT", "PASS_CONDITIONAL_MECHANISM"} else 1
     except experiment.ExperimentError as exc:
-        print(str(exc), file=sys.stderr)
+        print(experiment.record_failure(args.command,args.output,exc), file=sys.stderr)
         return 2
-    except Exception:
+    except Exception as exc:
         # Protected filenames and image headers must not escape in a traceback.
-        print("EXPERIMENT_EXECUTION_FAILED", file=sys.stderr)
+        print(experiment.record_failure(args.command,args.output,exc), file=sys.stderr)
         return 2
 
 

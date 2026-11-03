@@ -81,6 +81,34 @@ def test_artifacts_require_absolute_non_git_fresh_directories(tmp_path):
         experiment.new_output(out)
 
 
+def test_failure_metadata_is_fixed_code_external_and_never_overwrites(tmp_path):
+    output=experiment.new_output(tmp_path/"failed-run")
+    secret="synthetic-private-path-and-header"
+    error=RuntimeError("kernel does not have a deterministic implementation "+secret)
+    assert experiment.record_failure("train",output,error)=="DETERMINISTIC_KERNEL_UNAVAILABLE"
+    path=output/"failure.local.json"
+    text=path.read_text()
+    record=json.loads(text)
+    assert secret not in text and "RuntimeError"==record["exception_class"]
+    assert record["last_recorded_completed_step"]==0 and not record["exact_completed_steps_known"]
+    assert record["input_preservation"]=="NOT_CHECKED_AFTER_FAILURE"
+    experiment.record_failure("train",output,ValueError(secret))
+    assert path.read_text()==text
+    missing=tmp_path/"never-created"
+    assert experiment.record_failure("train",missing,ValueError(secret))=="EXPERIMENT_EXECUTION_FAILED"
+    assert not missing.exists()
+
+
+def test_failure_progress_is_explicit_lower_bound_and_oom_has_fixed_code(tmp_path):
+    output=experiment.new_output(tmp_path/"failed-run")
+    (output/"progress.local.jsonl").write_text(json.dumps({"step":100,"loss":.1})+"\n")
+    experiment.record_failure("train",output,experiment.ExperimentError("SYNTHETIC_FAILURE"))
+    record=json.loads((output/"failure.local.json").read_text())
+    assert record["last_recorded_completed_step"]==100
+    torch=pytest.importorskip("torch")
+    assert experiment.failure_code(torch.cuda.OutOfMemoryError("private"))=="CUDA_OUT_OF_MEMORY"
+
+
 def test_points_alone_produce_not_ready_and_training_never_initializes_torch(tmp_path, monkeypatch):
     record, _ = source(tmp_path)
     manifest = {"schema_version":1,"source":record,"annotation":None,"evidence":[],"distinct_pairs":[]}

@@ -7,11 +7,19 @@ The existing repeated-count workflow remains the baseline.
 
 ## Current status
 
-The implementation and 54 combined synthetic contracts passed in the existing
+The implementation and 62 combined synthetic contracts passed in the existing
 counting runtime. They cover label masking, geometry, graph decoding, loss,
 reference isolation, evidence rejection, repeatability reporting and the model's
 CPU forward pass. These checks establish engineering behavior, not anatomical
 accuracy. Training and the eight-case prediction comparison are pending.
+
+The first GPU attempt stopped because the installed native max-pool backward
+has no deterministic CUDA implementation. It produced no checkpoint. An
+equivalent disjoint two-cubed maximum now preserves the same forward values
+and first-argmax gradients with determinism enabled. CPU equivalence controls
+and two sequential, fresh-process CUDA forward/backward probes passed with
+identical hashes. The failed attempt and its original software freeze are
+retained; a new software freeze keeps the same annotations and configuration.
 
 The private annotation release contains small interior cores and explicitly
 observed boundary material. It does not trace complete cell extents and has no

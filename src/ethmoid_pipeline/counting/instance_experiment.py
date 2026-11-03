@@ -10,6 +10,8 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
+import sys
 import time
 import uuid
 
@@ -79,6 +81,48 @@ def new_output(path):
     require(not output.exists() and output.parent.is_dir(), "FRESH_OUTPUT_REQUIRED")
     output.mkdir()
     return output
+
+
+def failure_code(error):
+    """Classify expected runtime failures without returning protected messages."""
+    if isinstance(error, ExperimentError) and re.fullmatch(r"[A-Z][A-Z0-9_]{0,95}",str(error)):
+        return str(error)
+    torch = sys.modules.get("torch")
+    if torch is not None and isinstance(error,torch.cuda.OutOfMemoryError):
+        return "CUDA_OUT_OF_MEMORY"
+    if isinstance(error,RuntimeError) and "does not have a deterministic implementation" in str(error):
+        return "DETERMINISTIC_KERNEL_UNAVAILABLE"
+    return "EXPERIMENT_EXECUTION_FAILED"
+
+
+def record_failure(command, output_path, error):
+    """Preserve a fixed-code failure record only in an existing external run."""
+    code = failure_code(error)
+    try:
+        output = external(output_path)
+        require(output.is_dir(), "EXISTING_OUTPUT_REQUIRED")
+        last_step = 0
+        progress = output/"progress.local.jsonl"
+        if command == "train" and progress.is_file():
+            for line in progress.read_text(encoding="utf-8").splitlines():
+                row = json.loads(line)
+                step = row.get("step")
+                if type(step) is int and 0 <= step <= CONFIG["steps"]:
+                    last_step = max(last_step,step)
+        name = type(error).__name__
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,63}",name):
+            name = "Exception"
+        write_json(output/"failure.local.json",{"status":"FAILED","version":VERSION,
+            "command":command if command in {"readiness","train","infer","mechanism","report"} else "unknown",
+            "error_code":code,"exception_class":name,
+            "last_recorded_completed_step":last_step if command == "train" else None,
+            "exact_completed_steps_known":False,
+            "checkpoint_file_present":(output/"final-checkpoint.local.pt").is_file(),
+            "input_preservation":"NOT_CHECKED_AFTER_FAILURE"})
+    except Exception:
+        # Never overwrite an earlier failure or create a new unvalidated run.
+        pass
+    return code
 
 
 def source_record(value):

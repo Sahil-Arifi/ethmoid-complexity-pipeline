@@ -82,6 +82,21 @@ def build_targets(instance_ids: np.ndarray, *, distinct_pairs=(),
     return targets, known
 
 
+def deterministic_max_pool3d(inputs):
+    """Nonoverlapping 2-cubed max pooling with first-linear-index tie gradients.
+
+    The installed CUDA native max-pool backward has no deterministic kernel.
+    Disjoint groups and max over their final dimension preserve the native
+    operation and tie policy without an overlapping gradient scatter.
+    """
+    if inputs.ndim != 5 or any(size < 2 or size % 2 for size in inputs.shape[2:]):
+        raise ValueError("Pooling requires NCDHW input with even spatial sizes")
+    n, c, d, h, w = inputs.shape
+    groups = inputs.reshape(n, c, d//2, 2, h//2, 2, w//2, 2)
+    groups = groups.permute(0, 1, 2, 4, 6, 3, 5, 7)
+    return groups.reshape(n, c, d//2, h//2, w//2, 8).max(dim=-1).values
+
+
 def build_model():
     """Four-level 2-input/7-logit 3D U-Net, with no pretrained weights."""
     import torch
@@ -95,12 +110,16 @@ def build_model():
             nn.GroupNorm(4, out_channels), nn.SiLU(),
         )
 
+    class NonOverlappingMaxPool(nn.Module):
+        def forward(self, inputs):
+            return deterministic_max_pool3d(inputs)
+
     class InstanceUNet(nn.Module):
         def __init__(self):
             super().__init__()
             self.encoders = nn.ModuleList([block(2, 8), block(8, 16),
                                            block(16, 32), block(32, 64)])
-            self.pool = nn.MaxPool3d(2)
+            self.pool = NonOverlappingMaxPool()
             self.ups = nn.ModuleList([nn.ConvTranspose3d(64, 32, 2, stride=2),
                                      nn.ConvTranspose3d(32, 16, 2, stride=2),
                                      nn.ConvTranspose3d(16, 8, 2, stride=2)])

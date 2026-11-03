@@ -194,3 +194,38 @@ def test_unet_architecture_and_cpu_forward_are_finite():
             model(torch.zeros(1, 2, 15, 16, 16))
     finally:
         torch.set_num_threads(old_threads)
+
+
+@pytest.mark.parametrize("pattern",["random","ties","negative","noncontiguous","offset_ties"])
+def test_nonoverlapping_pool_matches_native_cpu_forward_and_first_tie_backward(pattern):
+    torch=pytest.importorskip("torch")
+    generator=torch.Generator().manual_seed(72)
+    values=torch.randn((2,3,4,6,8),generator=generator,dtype=torch.float64)
+    if pattern == "ties":
+        values.zero_()
+    elif pattern == "negative":
+        values=-values.abs()-1
+    elif pattern == "noncontiguous":
+        values=values.transpose(2,3)
+        assert not values.is_contiguous()
+    elif pattern == "offset_ties":
+        values.fill_(-5)
+        values[:,:,::2,1::2,::2]=-1
+        values[:,:,1::2,::2,1::2]=-1
+    actual=values.clone().requires_grad_()
+    expected=values.clone().requires_grad_()
+    a=learning.deterministic_max_pool3d(actual)
+    b=torch.nn.MaxPool3d(2)(expected)
+    assert torch.equal(a,b)
+    upstream=torch.randn(a.shape,generator=generator,dtype=torch.float64)
+    a.backward(upstream); b.backward(upstream)
+    assert torch.equal(actual.grad,expected.grad)
+    if pattern == "ties":
+        mask=torch.zeros_like(actual,dtype=torch.bool); mask[:,:,::2,::2,::2]=True
+        assert not actual.grad[~mask].any()
+
+
+def test_nonoverlapping_pool_rejects_partial_windows():
+    torch=pytest.importorskip("torch")
+    with pytest.raises(ValueError,match="even spatial sizes"):
+        learning.deterministic_max_pool3d(torch.zeros(1,1,3,4,4))
