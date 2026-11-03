@@ -308,7 +308,7 @@ Root verification passed 74 preservation, PCM, affine and saved-array checks, in
 
 ## Closure-wording clarification
 
-The user clarified the disputed first closure clause as a question about cell identity. It supplies neither an inclusion nor an exclusion decision. The append-only local rulebook amendment resolves that clause's wording status while preserving the original machine transcripts and both frozen review releases. Later closure/capture language, anatomical endpoint association and point 10's native correspondence remain unresolved; no same-cell label or new count is released. No numerical counter or training changed. The evidence gate for another automatic experiment remains unmet. The local amendment is `work/clinician-count-reproduction/audio-clarification-01/REPORT.local.md`.
+The user supplied the fuller closure passage after clarifying its initial question. The recorded reasoning now has a supported sequence: question the candidate, identify what the speaker describes as a locally closed-off area, then explicitly decide to count it separately. This is a narration-level decision from one example; it establishes no universal closure criterion or verified anatomical boundary. The append-only amendment preserves the raw user wording and all earlier releases. Exact region/marker correspondence, later capture wording and the separate continuity endpoint association remain unresolved; point 10 stays review-only and no voxel labels or new counts are released. No numerical counter or training changed. The local rulebook amendment is `work/clinician-count-reproduction/audio-clarification-02/RULEBOOK-AMENDMENT.local.md`.
 
 ## Documentation rule
 
