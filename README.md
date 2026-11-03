@@ -2,6 +2,8 @@
 
 Supplied clinician counts can now be compared with repeated automatic runs using an external, source-bound manifest. The [reproduction runner](docs/CLINICIAN_REPRODUCTION.md) keeps targets out of inference, preserves attempts and requires exact bilateral counts plus stable native artifacts. This adds a development regression workflow; the counting defaults and historical results are unchanged.
 
+The isolated [video-guided instance prototype](docs/VIDEO_GUIDED_INSTANCE_PROTOTYPE.md) implements partial-label learning and a fixed instance decoder. Its 54 combined synthetic checks passed; training and the eight-case comparison are pending. Annotations remain provisional, source correspondence is conditional, and no improved patient counts are established. Production counting and the application are unchanged.
+
 This repository contains the engineering foundation for the UCSD ethmoid-complexity project:
 
 - a fail-closed DICOM-to-NIfTI conversion pipeline with geometry and HU verification; and
