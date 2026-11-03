@@ -342,6 +342,12 @@ A source-bound review of the third recorded selection found a specific unresolve
 
 The other supplied video cases now have selected body/neighbor context pairs for Case012 and Case010, with exact timestamps, crop geometry and image-pixel uncertainty. Their existing registries contain no equivalent fitted native point coordinates. The next concrete work is image-only Case012 calibration with separate alignment checks before transferring a provisional body relationship. Existing Case024-only fit wrappers cannot be reused unchanged. Prior rejected wall/seed/cut methods were checked to avoid repeating them; no new model, training, counter, score tuning or application change ran in this evidence phase. The latest failed counter result and the automatic 8/8 goal remain unchanged. Private evidence, transfer material and reports are in `work/clinician-count-reproduction/whole-cell-evidence-01`.
 
+## Case012 video calibration
+
+Two separately frozen image-only calibration attempts now bind four supplied video panes to the preserved Case012 CT. The first failed its paired-view check: a plausible sagittal image fit landed on the opposite side of the midline from the coronal fit. The second widened only the sagittal center-X search intervals. Its selected planes have much closer image agreement and both paired-view residuals pass the declared tolerance, but the full attempt still fails: one start finds a competing branch, and the frontal checking region partly exceeds native CT coverage. The better first-frame fit lies inside the original search interval, so the original failure cannot be explained simply by an excluded plane. All starts, optimizer terminations, image regions, gates and both failures are preserved locally.
+
+The geometry and evaluator self-checks passed before fitting; input preservation passed after both runs. The later comparison reuses inspected checking regions and is exploratory, rather than unseen validation. No cell annotation was transferred, no new training or patient counter ran, and the previous eight-case results remain unchanged. Stable source correspondence and supported cell extents remain necessary before the next counting trial. Private records are in `work/clinician-count-reproduction/case012-video-calibration-01` and `case012-video-calibration-02`; production counting and interfaces are unchanged.
+
 ## Documentation rule
 
 This README is the durable project handoff and must be updated after every meaningful project work session. Record completed work, important findings or decisions, current validation status, newly created outputs, unresolved questions, and the next action. Keep completed and pending work clearly separated so a future chat can resume without reconstructing prior context.
@@ -383,7 +389,7 @@ The interface now uses a purpose-built **Ethmoid Atlas** visual system rather th
 - keyboard-, hover-, and click-accessible explanations beside the main viewer, annotation, image, validation, and QC controls;
 - grouped annotation and image-display controls that keep the CT canvas visually neutral;
 - dedicated `Brightness` (`-1000` to `2000 HU`) and `Contrast` (`100` to `5000 HU`) sliders with exact numeric entry; and
-- the exact `Bone · 300/3000` display preset.
+- the exact `Bone Â· 300/3000` display preset.
 
 Saved brightness and contrast are applied when a scan first opens. Changes made with the canvas window/level tool also synchronize back to the sliders and saved viewer state. These controls alter only the display; they do not alter the CT voxel values.
 
