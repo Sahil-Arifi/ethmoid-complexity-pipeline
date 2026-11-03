@@ -11,7 +11,25 @@ The implementation and 62 combined synthetic contracts passed in the existing
 counting runtime. They cover label masking, geometry, graph decoding, loss,
 reference isolation, evidence rejection, repeatability reporting and the model's
 CPU forward pass. These checks establish engineering behavior, not anatomical
-accuracy. Training and the eight-case prediction comparison are pending.
+accuracy. Training and the complete eight-case comparison are finished.
+
+The frozen prototype failed: zero of eight exact bilateral counts and zero of
+sixteen exact side counts, compared with one and three for the baseline. Total
+absolute side-count error rose from 37 to 151. The seven cases outside training
+worsened from error 35 to 131, and the previously exact case was lost. All
+sixteen sides regressed. Every case completed twice with identical native
+instance arrays and counts; all frozen source and evidence hashes matched.
+
+Training completed all 2,000 steps in 996 seconds. It covered all 324 known
+foreground voxels and preserved all 17 explicit wall exclusions, but all seven
+annotated cores belonged to one predicted component. All three demonstrated
+separations failed. The before/after figures show broad merged predictions,
+including objects crossing the midline. Low training loss did not produce
+individual-cell separation. Unknown regions remain unscored.
+
+The failed result, native predictions, checkpoint, independent audit and four
+image comparisons remain in protected local research storage. No threshold
+rescue, alternative checkpoint selection or production promotion followed.
 
 The first GPU attempt stopped because the installed native max-pool backward
 has no deterministic CUDA implementation. It produced no checkpoint. An
@@ -20,6 +38,12 @@ and first-argmax gradients with determinism enabled. CPU equivalence controls
 and two sequential, fresh-process CUDA forward/backward probes passed with
 identical hashes. The failed attempt and its original software freeze are
 retained; a new software freeze keeps the same annotations and configuration.
+
+The [counting CI job passed at the trained software commit](https://github.com/Sahil-Arifi/ethmoid-complexity-pipeline/actions/runs/41568859626/job/125696824206).
+The broader job passed its build, Python, frontend, worker and browser checks,
+then failed the existing dependency audit. Its final tracked-file guard was
+skipped; the local complete-index medical-data guard passed separately. No
+application dependency changes are part of this experiment.
 
 The private annotation release contains small interior cores and explicitly
 observed boundary material. It does not trace complete cell extents and has no

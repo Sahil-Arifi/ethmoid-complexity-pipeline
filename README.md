@@ -2,7 +2,7 @@
 
 Supplied clinician counts can now be compared with repeated automatic runs using an external, source-bound manifest. The [reproduction runner](docs/CLINICIAN_REPRODUCTION.md) keeps targets out of inference, preserves attempts and requires exact bilateral counts plus stable native artifacts. This adds a development regression workflow; the counting defaults and historical results are unchanged.
 
-The isolated [video-guided instance prototype](docs/VIDEO_GUIDED_INSTANCE_PROTOTYPE.md) implements partial-label learning and a fixed instance decoder. Its 62 combined synthetic checks and two fresh CUDA backward probes passed after a deterministic-pooling repair; training and the eight-case comparison are pending. Annotations remain provisional, source correspondence is conditional, and no improved patient counts are established. Production counting and the application are unchanged.
+The isolated [video-guided instance prototype](docs/VIDEO_GUIDED_INSTANCE_PROTOTYPE.md) completed 2,000 training steps and two automatic runs on each of the eight preserved scans. **It failed: exact bilateral agreement fell from 1/8 to 0/8, and total absolute side-count error rose from 37 to 151.** All three demonstrated separations were merged. Independent native-mask and source audits agreed; repeatability passed. The 62 focused software checks and two fresh CUDA backward probes passed, but this did not produce better counts. The failed experiment remains local and was not promoted. Production counting and the application are unchanged.
 
 This repository contains the engineering foundation for the UCSD ethmoid-complexity project:
 
