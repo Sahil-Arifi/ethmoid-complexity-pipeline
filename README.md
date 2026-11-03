@@ -306,6 +306,10 @@ The subsequent local review documented the original-resolution creation evidence
 
 Root verification passed 74 preservation, PCM, affine and saved-array checks, including all 45 previous review bindings. An independent reviewer caught a prominence/peak-height terminology issue in the new dossier; the report, fixture and generator were corrected and reverified. No numerical counter, training, registration, patient counting run, new provider, model download or clinician message followed. The evidence gate for a new automatic experiment remains unmet because the narrated continuation endpoints are unassigned. Private report, source-bound fixture, focused audio excerpts and independent review are in `work/clinician-count-reproduction/decision-fixtures-01/REPORT.local.md`. The next missing observation is the specific pair and connection referred to in one continuity passage, not another general request for data.
 
+## Closure-wording clarification
+
+The user clarified the disputed first closure clause as a question about cell identity. It supplies neither an inclusion nor an exclusion decision. The append-only local rulebook amendment resolves that clause's wording status while preserving the original machine transcripts and both frozen review releases. Later closure/capture language, anatomical endpoint association and point 10's native correspondence remain unresolved; no same-cell label or new count is released. No numerical counter or training changed. The evidence gate for another automatic experiment remains unmet. The local amendment is `work/clinician-count-reproduction/audio-clarification-01/REPORT.local.md`.
+
 ## Documentation rule
 
 This README is the durable project handoff and must be updated after every meaningful project work session. Record completed work, important findings or decisions, current validation status, newly created outputs, unresolved questions, and the next action. Keep completed and pending work clearly separated so a future chat can resume without reconstructing prior context.
