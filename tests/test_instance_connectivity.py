@@ -2,6 +2,8 @@
 import numpy as np
 import pytest
 
+pytest.importorskip("scipy")  # The pinned counting runtime executes this numerical suite.
+
 from ethmoid_pipeline.counting import instance_connectivity as connectivity
 from ethmoid_pipeline.counting import instance_learning as learning
 

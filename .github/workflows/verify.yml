@@ -22,7 +22,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           uv pip sync counting-tests.lock --python ./.venv/Scripts/python.exe --require-hashes
       - name: Native geometry and compartment tests
-        run: ./.venv/Scripts/python.exe -m pytest tests/test_counting_engine.py tests/test_counting_surface_fill.py tests/test_counting_crop_support.py tests/test_counting_grids.py tests/test_counting_quality.py tests/test_counting_adaptive.py tests/test_counting_adaptive_resources.py tests/test_counting_adaptive_models.py tests/test_counting_research_localization.py tests/test_research_proxy.py tests/test_research_v5.py tests/test_counting_diagnostic_trace.py tests/test_reproduce_clinician_counts.py tests/test_instance_learning.py tests/test_instance_experiment.py -p no:cacheprovider -q
+        run: ./.venv/Scripts/python.exe -m pytest tests/test_counting_engine.py tests/test_counting_surface_fill.py tests/test_counting_crop_support.py tests/test_counting_grids.py tests/test_counting_quality.py tests/test_counting_adaptive.py tests/test_counting_adaptive_resources.py tests/test_counting_adaptive_models.py tests/test_counting_research_localization.py tests/test_research_proxy.py tests/test_research_v5.py tests/test_counting_diagnostic_trace.py tests/test_reproduce_clinician_counts.py tests/test_instance_learning.py tests/test_instance_experiment.py tests/test_instance_connectivity.py -p no:cacheprovider -q
       - name: Synthetic wall research controls
         run: ./.venv/Scripts/python.exe -m pytest tests/test_synthetic_walls.py tests/test_wall_proposals.py tests/test_wall_learning.py tests/test_wall_benchmark.py tests/test_train_wall_proposal_model.py -m 'not integration' -p no:cacheprovider -q
   verify:
