@@ -21,6 +21,11 @@ def write_json(path, value):
     path.write_text(json.dumps(value), encoding="utf-8")
 
 
+def test_v2_reproduction_binds_current_counting_component():
+    from ethmoid_pipeline.counting.engine import METHOD_VERSION, PROTOCOL_VERSION
+    assert runner.METHODS["v2"] == (METHOD_VERSION, PROTOCOL_VERSION)
+
+
 @pytest.fixture
 def inputs(tmp_path):
     source = tmp_path / "synthetic.nii"

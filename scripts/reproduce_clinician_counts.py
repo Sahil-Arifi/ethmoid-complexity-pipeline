@@ -24,7 +24,7 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[1]
 NULL_COUNTS = {"left": None, "right": None, "total": None}
 ARTIFACTS = {name: name + ".nii.gz" for name in ("cavities", "air", "region")}
-METHODS = {"v2": ("native-bone-watershed-0.2.1", "ethmoid-count-prototype-v2"),
+METHODS = {"v2": ("native-bone-watershed-0.2.2", "ethmoid-count-prototype-v2"),
            "research-v5": ("research-native-0.5.0", "ethmoid-count-research-v5")}
 _spec = importlib.util.spec_from_file_location("_reproduction_native_checks", ROOT / "scripts/evaluate_counting_cohort.py")
 checks = importlib.util.module_from_spec(_spec)

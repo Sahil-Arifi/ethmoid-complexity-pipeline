@@ -20,7 +20,7 @@ from scipy import ndimage as ndi
 from skimage.morphology import h_maxima
 from skimage.segmentation import watershed
 
-METHOD_VERSION = "native-bone-watershed-0.2.1"
+METHOD_VERSION = "native-bone-watershed-0.2.2"
 PROTOCOL_VERSION = "ethmoid-count-prototype-v2"
 
 

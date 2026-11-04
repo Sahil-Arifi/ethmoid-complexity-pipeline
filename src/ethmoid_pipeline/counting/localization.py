@@ -260,10 +260,18 @@ def _near(mask: np.ndarray, distance_mm: float, spacing: np.ndarray) -> np.ndarr
     return ndi.distance_transform_edt(~mask, sampling=spacing) <= distance_mm
 
 
-def _fill_surfaces(surface: np.ndarray, valid: np.ndarray) -> np.ndarray:
+def _fill_surfaces(surface: np.ndarray, valid: np.ndarray, spacing: np.ndarray) -> np.ndarray:
+    """Fill from physically nearest valid points in the surface plane.
+
+    Spacing supplies two finite positive steps in plane-axis order. Stored
+    surface heights retain their original index units.
+    """
     if not valid.any():
         raise CountingError("ORBIT_WALL_UNRESOLVED", "The medial bony orbital boundary could not be recovered.")
-    indices = ndi.distance_transform_edt(~valid, return_distances=False, return_indices=True)
+    spacing = np.asarray(spacing, dtype=float)
+    if spacing.shape != (2,) or not np.isfinite(spacing).all() or np.any(spacing <= 0):
+        raise CountingError("INVALID_GEOMETRY", "Surface-plane spacing requires two finite positive steps.")
+    indices = ndi.distance_transform_edt(~valid, sampling=spacing, return_distances=False, return_indices=True)
     return surface[tuple(indices)]
 
 
@@ -342,7 +350,7 @@ def _medial_orbital_surface(seed: np.ndarray, bone: np.ndarray, midline: float, 
     # Suppress stair-step/local internal-bone outliers. These interpolated surfaces
     # are anatomical proposals, not voxel-exact labels of the lamina papyracea.
     size = tuple(max(1, int(np.ceil(3.0 / step))) for step in spacing[1:])
-    return ndi.median_filter(_fill_surfaces(surface, valid), size=size)
+    return ndi.median_filter(_fill_surfaces(surface, valid, spacing[1:]), size=size)
 
 
 def _intracranial_roof(hu: np.ndarray, bone: np.ndarray, brain_mask: np.ndarray, nasal: np.ndarray, spacing: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -371,7 +379,7 @@ def _intracranial_roof(hu: np.ndarray, bone: np.ndarray, brain_mask: np.ndarray,
     if np.count_nonzero(valid & nasal.any(axis=2)) < 10:
         raise CountingError("ROOF_UNRESOLVED", "The intracranial component lacks sufficient native bony support above the nasal anatomy.")
     size = tuple(max(1, int(np.ceil(3.0 / step))) for step in spacing[:2])
-    return ndi.median_filter(_fill_surfaces(roof, valid), size=size), brain
+    return ndi.median_filter(_fill_surfaces(roof, valid, spacing[:2]), size=size), brain
 
 
 def _continuous_wall(wall: np.ndarray, valid: np.ndarray, spacing: np.ndarray) -> np.ndarray:
@@ -402,7 +410,7 @@ def _continuous_wall(wall: np.ndarray, valid: np.ndarray, spacing: np.ndarray) -
     fitted[xx[inlier], zz[inlier]] = np.rint(prediction[inlier] / spacing[1]).astype(np.int32)
     supported = np.zeros_like(valid)
     supported[xx[inlier], zz[inlier]] = True
-    return _fill_surfaces(fitted, supported)
+    return _fill_surfaces(fitted, supported, spacing[[0, 2]])
 
 
 def _closed_nasal_pockets(nasal: np.ndarray, bone: np.ndarray, brain: np.ndarray) -> np.ndarray:
