@@ -12,6 +12,7 @@ pytest.importorskip("scipy")
 pytest.importorskip("skimage")
 
 from ethmoid_pipeline.counting import grids, localization, research, research_v5, worker
+from ethmoid_pipeline.counting.engine import METHOD_VERSION as COUNTING_ENGINE_VERSION
 from ethmoid_pipeline.counting.engine import CountingConfig, CountingError, compartment_stage
 from ethmoid_pipeline.counting.profiles import build_scan_profile, file_sha256, sealed
 from ethmoid_pipeline.counting.protocol import load_counting_protocol
@@ -179,6 +180,7 @@ def test_v5_actual_engine_preserves_native_ids_hu_and_measurements_through_proxy
     result = research_v5.analyze_research_volume(source, output, tmp_path / "synthetic-cache", processing_plan=plan)
     assert result["status"] == "completed", result
     assert result["method_version"] == METHOD_VERSION and result["protocol_version"] == PROTOCOL_VERSION
+    assert result["counting_engine_version"] == COUNTING_ENGINE_VERSION
     assert result["processing_plan"] == plan
     assert result["analysis_mode"] == "automatic" and result["outcome"] == "automatic_candidate_count"
     assert result["research_status"] == "NOT_ACCURACY_VALIDATED"

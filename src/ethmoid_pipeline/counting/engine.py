@@ -20,7 +20,7 @@ from scipy import ndimage as ndi
 from skimage.morphology import h_maxima
 from skimage.segmentation import watershed
 
-METHOD_VERSION = "native-bone-watershed-0.2.0"
+METHOD_VERSION = "native-bone-watershed-0.2.1"
 PROTOCOL_VERSION = "ethmoid-count-prototype-v2"
 
 
@@ -95,6 +95,10 @@ def geometry(affine: np.ndarray) -> np.ndarray:
     if np.any(spacing <= 0) or not np.allclose((matrix[:3, :3] / spacing).T @ (matrix[:3, :3] / spacing), np.eye(3), atol=1e-4):
         raise CountingError("INVALID_GEOMETRY", "Sheared or degenerate grids require a validated conversion.")
     return spacing
+
+
+def _bone_support_radius_mm(spacing: np.ndarray) -> float:
+    return min(max(float(spacing.max()) * 1.01, 0.8), 1.01)
 
 
 def _shift(mask: np.ndarray, axis: int, offset: int) -> np.ndarray:
@@ -243,7 +247,7 @@ def compartment_stage(hu: np.ndarray, roi: np.ndarray, affine: np.ndarray, confi
         trace["arrays"]["merged"] = labels
         trace["proposals"] = []
     # A coarse sampling interval must not make distant bone look like enclosure.
-    bone_near = ndi.distance_transform_edt(~bone, sampling=spacing) <= min(max(float(spacing.max()) * 1.01, 0.8), 1.01)
+    bone_near = ndi.distance_transform_edt(~bone, sampling=spacing) <= _bone_support_radius_mm(spacing)
     roi_edge = search & ~ndi.binary_erosion(search)
     proposals: list[tuple[tuple[slice, ...], np.ndarray, dict[str, Any]]] = []
     proposal_records = {} if trace is not None else None
@@ -378,6 +382,7 @@ def analyze_volume(volume_path: str | Path, output_dir: str | Path, landmarks_di
     destination.mkdir(parents=True, exist_ok=True)
     result: dict[str, Any] = {
         "schema_version": 1, "status": "failed", "method_version": METHOD_VERSION,
+        "counting_engine_version": METHOD_VERSION,
         "source_sha256": None, "protocol_version": PROTOCOL_VERSION, "config": {},
         "counts": {"left": None, "right": None, "total": None}, "cells": [],
         "warnings": [], "artifacts": {}, "diagnostics": {}, "localizer_provenance": {},
@@ -451,11 +456,14 @@ def analyze_volume(volume_path: str | Path, output_dir: str | Path, landmarks_di
         region = localization.region
         if _strategy is not None:
             _strategy.stage("counting")
-        search = ndi.distance_transform_edt(~region, sampling=geometry(canonical.affine)) <= cfg.boundary_growth_mm
+        canonical_spacing = geometry(canonical.affine)
+        search = ndi.distance_transform_edt(~region, sampling=canonical_spacing) <= cfg.boundary_growth_mm
         search &= ~localization.excluded
         search |= region
         indices = np.where(search)
-        crop = tuple(slice(max(0, int(a.min()) - 2), min(region.shape[i], int(a.max()) + 3)) for i, a in enumerate(indices))
+        # Keep all source bone within the physical support radius on fine grids.
+        padding = [max(2, int(np.ceil(_bone_support_radius_mm(canonical_spacing) / step))) for step in canonical_spacing]
+        crop = tuple(slice(max(0, int(a.min()) - padding[i]), min(region.shape[i], int(a.max()) + padding[i] + 1)) for i, a in enumerate(indices))
         start = np.array([sl.start for sl in crop])
         crop_affine = canonical.affine.copy()
         crop_affine[:3, 3] = nib.affines.apply_affine(canonical.affine, start)
