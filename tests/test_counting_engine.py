@@ -12,7 +12,7 @@ import pytest
 pytest.importorskip("scipy")
 pytest.importorskip("skimage")
 
-from ethmoid_pipeline.counting.engine import CountingConfig, CountingError, analyze_volume, compartment_stage
+from ethmoid_pipeline.counting.engine import CountingConfig, CountingError, _component_h_maxima, _merge_unsupported_separators, _physical_distance, analyze_volume, compartment_stage
 from ethmoid_pipeline.counting.localization import Localization, TASKS, _closed_nasal_pockets, _continuous_wall, _intracranial_roof, automatic_region, cache_producer_warnings, load_landmarks
 
 
@@ -177,6 +177,283 @@ def test_invalid_fixed_config_rejected(configuration):
 def test_default_config_is_serializable_and_round_trips():
     cfg = CountingConfig()
     assert CountingConfig.parse(json.loads(json.dumps(asdict(cfg)))) == cfg
+
+
+@pytest.mark.parametrize("parameters", [
+    {"bone_hu": float("nan")}, {"air_hu": 30}, {"minimum_voxels": 1.2},
+    {"seed_prominence_mm": 0}, {"max_instances": True}, {"boundary_growth_mm": -1},
+])
+def test_config_instances_are_validated_like_dictionaries(parameters):
+    for value in (parameters, CountingConfig(**parameters)):
+        with pytest.raises(CountingError) as failure:
+            CountingConfig.parse(value)
+        assert failure.value.code == "INVALID_CONFIG"
+
+
+@pytest.mark.parametrize("midline", [float("nan"), float("inf"), -float("inf"), [0, 1], [[0], [1, 2]], "0", True])
+def test_invalid_midline_cannot_silently_change_laterality(midline):
+    hu, roi, affine = volume()
+    hu[6:24, 10:32, 8:30] = -900
+    hu[25:45, 10:32, 8:30] = -900
+    with pytest.raises(CountingError) as failure:
+        run(hu, roi, affine, midline_ras_x=midline)
+    assert failure.value.code == "INVALID_GEOMETRY"
+
+
+@pytest.mark.parametrize("row", [[0, 0, 0, 0], [0, 0, 0, 2], [0.02, 0, 0, 1]])
+def test_projective_or_nonhomogeneous_affine_is_rejected(row):
+    hu, roi, affine = volume()
+    hu[12:36, 10:32, 8:30] = -900
+    affine[3] = row
+    with pytest.raises(CountingError) as failure:
+        run(hu, roi, affine)
+    assert failure.value.code == "INVALID_GEOMETRY"
+
+
+@pytest.mark.parametrize("role", ["excluded", "variant"])
+@pytest.mark.parametrize("offset", [-1, 1])
+def test_auxiliary_masks_require_the_exact_source_shape(role, offset):
+    hu, roi, affine = volume()
+    hu[12:36, 10:32, 8:30] = -900
+    mask = np.zeros((hu.shape[0] + offset, *hu.shape[1:]), bool)
+    kwargs = {"excluded": mask} if role == "excluded" else {"variant_regions": {"haller": mask}}
+    with pytest.raises(CountingError) as failure:
+        run(hu, roi, affine, **kwargs)
+    assert failure.value.code == "INVALID_GEOMETRY"
+
+
+@pytest.mark.parametrize("role", ["excluded", "variant"])
+@pytest.mark.parametrize("dtype", [np.uint8, np.float32])
+def test_numeric_auxiliary_masks_have_boolean_semantics(role, dtype):
+    hu, roi, affine = volume()
+    hu[6:24, 10:32, 8:30] = -900
+    hu[25:45, 10:32, 8:30] = -900
+    mask = np.zeros_like(roi)
+    mask[6:24, 10:32, 8:30] = True
+    kwargs = lambda m: {"excluded": m} if role == "excluded" else {"variant_regions": {"haller": m}}
+    expected = run(hu, roi, affine, **kwargs(mask))
+    actual = run(hu, roi, affine, **kwargs(mask.astype(dtype) * 2))
+    assert np.array_equal(actual[0], expected[0])
+    assert np.array_equal(actual[1], expected[1])
+    assert actual[2:] == expected[2:]
+
+
+@pytest.mark.parametrize("role", ["excluded", "variant"])
+@pytest.mark.parametrize("fill", [float("nan"), float("inf"), "false"])
+def test_nonfinite_or_text_auxiliary_masks_are_rejected(role, fill):
+    hu, roi, affine = volume()
+    hu[12:36, 10:32, 8:30] = -900
+    mask = np.full(hu.shape, fill)
+    kwargs = {"excluded": mask} if role == "excluded" else {"variant_regions": {"haller": mask}}
+    with pytest.raises(CountingError) as failure:
+        run(hu, roi, affine, **kwargs)
+    assert failure.value.code == "INVALID_GEOMETRY"
+
+
+@pytest.mark.parametrize("minimum", [0.5, 0.8])
+def test_low_coverage_warning_uses_the_configured_gate(minimum):
+    hu, roi, affine = volume()
+    hu[2:14, 4:18, 4:18] = -900
+    hu[20:21, 2:42, 2:38] = -900  # Unresolved one-voxel sheet, separate from the chamber.
+    cavities, air, cells, warnings = run(hu, roi, affine, config={"minimum_air_coverage_fraction": minimum})
+    coverage = np.count_nonzero(air) / np.count_nonzero(hu < -500)
+    assert len(cells) == 1 and 0.5 < coverage < 0.8
+    assert any(w.startswith("Low geometric coverage:") for w in warnings) == (coverage < minimum)
+    assert_consistent(cavities, air, cells)
+
+
+@pytest.mark.parametrize("transform", ["permute", "flip"])
+@pytest.mark.parametrize("spacing", [0.6, 5e-8])
+def test_equal_centroid_physical_ids_survive_axis_reorientation(transform, spacing):
+    hu, roi, affine = volume(shape=(49, 49, 49), spacing=(spacing,) * 3)
+    x, y, z = np.indices(hu.shape) - 24
+    outer = (np.sqrt(x*x + y*y) - 16)**2 + z*z < 2.8**2
+    inner = (np.sqrt(x*x + z*z) - 9)**2 + y*y < 2.8**2
+    assert not np.any(outer & inner)
+    hu[outer | inner] = -900
+    expected = run(hu, roi, affine)
+    change = np.eye(4)
+    if transform == "permute":
+        change[:3, :3] = np.eye(3)[[2, 1, 0]]
+        actual = run(hu.transpose(2, 1, 0), roi.transpose(2, 1, 0), affine @ change)
+        cavities, air = (a.transpose(2, 1, 0) for a in actual[:2])
+    else:
+        change[0, 0], change[0, 3] = -1, hu.shape[0] - 1
+        actual = run(hu[::-1], roi[::-1], affine @ change)
+        cavities, air = (a[::-1] for a in actual[:2])
+    assert len(expected[2]) == len(actual[2]) == 2
+    assert np.allclose([c["centroid_ras_mm"] for c in expected[2]], 0)
+    assert np.array_equal(cavities, expected[0])
+    assert np.array_equal(air, expected[1])
+    assert [c["voxel_count"] for c in actual[2]] == [c["voxel_count"] for c in expected[2]]
+
+
+@pytest.mark.parametrize("content", ["opaque", "air", "partial"])
+@pytest.mark.parametrize("transform", ["native", "flip", "permute"])
+def test_separate_diagonal_component_cannot_remove_an_existing_split(content, transform):
+    shape = (32, 32, 40)
+    affine = np.diag([1, 1, 0.25, 1])
+    base = np.zeros(shape, bool)
+    base[8:14, 8:14, 8:20] = True
+    base[15:25, 8:18, 2:30] = True
+    base[14:15, 10:12, 14:15] = True  # Supported incomplete septum joins two lobes.
+    addition = np.zeros(shape, bool)
+    addition[0:8, 14:24, 2:30] = True  # Only diagonal contact with the original component.
+    change = np.eye(4)
+    if transform == "flip":
+        change[0, 0], change[0, 3] = -1, shape[0] - 1
+        reorient = lambda a: a[::-1]
+    elif transform == "permute":
+        change[:3, :3] = np.eye(3)[[2, 1, 0]]
+        reorient = lambda a: a.transpose(2, 1, 0)
+    else:
+        reorient = lambda a: a
+    affine = affine @ change
+    outputs = []
+    for mask in (base, base | addition):
+        hu = np.where(mask, 35, 800).astype(np.float32)
+        if content == "air":
+            hu[mask] = -900
+        elif content == "partial":
+            hu[:, :, :16][mask[:, :, :16]] = -900
+        trace = {}
+        result = run(reorient(hu), reorient(np.ones(shape, bool)), affine, trace=trace)
+        outputs.append((result, trace))
+    before, after = (output[0] for output in outputs)
+    original = reorient(base)
+    assert len(before[2]) == 2
+    assert len(after[2]) == 3
+    assert np.count_nonzero(after[0][original]) == np.count_nonzero(original)
+    # IDs may shift when a new physical component is inserted; the old partition may not.
+    for label in np.unique(before[0][original]):
+        assert label > 0
+        assert np.unique(after[0][before[0] == label]).size == 1
+    before_markers, after_markers = (output[1]["arrays"]["markers"] > 0 for output in outputs)
+    assert np.array_equal(before_markers[original], after_markers[original])
+    assert all(output[1]["seed_counts"]["component_fallbacks"] == 0 for output in outputs)
+    assert_consistent(*after[:3])
+
+
+def test_component_maxima_ignore_foreign_members_inside_the_bounding_box():
+    from scipy import ndimage as ndi
+    first = np.zeros((32, 32, 40), bool)
+    first[8:14, 8:14, 8:20] = True
+    first[15:25, 8:18, 2:30] = True
+    first[14:15, 10:12, 14:15] = True
+    first[15:16, 8:9, 29:32] = True
+    first[0:16, 8:9, 30:31] = True  # Connected arm makes the component boxes overlap.
+    second = np.zeros_like(first)
+    second[0:8, 14:24, 2:30] = True
+    assert ndi.label(first)[1] == 1 and ndi.label(first | second)[1] == 2
+    distance = ndi.distance_transform_edt(np.pad(first | second, 1), sampling=(1, 1, 0.25))[1:-1, 1:-1, 1:-1].astype(np.float32)
+    expected = _component_h_maxima(distance, first, 0.8)
+    actual = _component_h_maxima(distance, first | second, 0.8)
+    assert expected[8:14, 8:14, 8:20].any()
+    assert np.array_equal(actual[first], expected[first])
+
+
+@pytest.mark.parametrize("seed", [14, 37, 924])
+def test_single_component_preserves_existing_26_neighbor_peak_reconstruction(seed):
+    from skimage.morphology import h_maxima
+    mask = np.zeros((9, 9, 9), bool)
+    mask[1:-1, 1:-1, 1:-1] = True
+    distance = np.random.default_rng(seed).uniform(0.1, 4, mask.shape).astype(np.float32)
+    distance[~mask] = 0
+    expected = h_maxima(distance, 0.8).astype(bool) & mask
+    assert np.array_equal(_component_h_maxima(distance, mask, 0.8), expected)
+
+
+def _ordering_phantom(trial):
+    rng = np.random.default_rng(4902)
+    base = np.zeros((15, 15, 15), bool)
+    base[2:-2, 2:-2, 2:-2] = True
+    for _ in range(trial + 1):
+        free = base.copy()
+        free[rng.random(base.shape) < rng.uniform(0.01, 0.09)] = False
+    return free
+
+
+def test_dominant_separator_axis_ties_use_physical_direction():
+    free = _ordering_phantom(1)
+    x, y, _ = np.indices(free.shape)
+    labels = np.where(free, np.where(x + y < 14, 1, 2), 0).astype(np.int32)
+    original, _ = _merge_unsupported_separators(labels, free, ~free, np.ones(3), CountingConfig(), affine=np.eye(4))
+    permutation = np.eye(4)[:, [1, 0, 2, 3]]
+    actual, _ = _merge_unsupported_separators(labels.transpose(1, 0, 2), free.transpose(1, 0, 2), (~free).transpose(1, 0, 2), np.ones(3), CountingConfig(), affine=permutation)
+    assert set(np.unique(original)) == {0, 1, 2}
+    assert np.array_equal(original, actual.transpose(1, 0, 2))
+
+
+@pytest.mark.parametrize("order,flips", [
+    ((1, 0, 2), ()), ((0, 1, 2), (0,)),
+    ((2, 0, 1), (1,)), ((0, 1, 2), (0, 1, 2)), ((2, 1, 0), ()),
+])
+def test_equal_support_merge_order_uses_physical_markers_not_traversal_ids(order, flips):
+    free = _ordering_phantom(1436)
+    hu = np.where(free, -900, 800).astype(np.float32)
+    affine = np.diag([0.6, 0.6, 0.6, 1])
+    traces = [{}, {}]
+    original = run(hu, np.ones(free.shape, bool), affine, trace=traces[0])
+    oriented = hu.transpose(order)
+    change = np.eye(4)[:, [*order, 3]]
+    for axis in flips:
+        oriented = np.flip(oriented, axis)
+        change[:3, 3] += change[:3, axis] * (oriented.shape[axis] - 1)
+        change[:3, axis] *= -1
+    actual = run(oriented, np.ones(oriented.shape, bool), affine @ change, trace=traces[1])
+
+    def align(array):
+        for axis in flips:
+            array = np.flip(array, axis)
+        return array.transpose(np.argsort(order))
+
+    first = traces[0]["arrays"]["watershed"]
+    second = align(traces[1]["arrays"]["watershed"])
+    pairs = np.unique(np.column_stack((first.ravel(), second.ravel())), axis=0)
+    # The premerge basins are identical apart from their numeric identifiers.
+    assert len(pairs) == np.unique(first).size == np.unique(second).size
+    assert len(original[2]) == len(actual[2]) == 2
+    assert np.array_equal(original[0], align(actual[0]))
+    assert np.array_equal(original[1], align(actual[1]))
+
+
+@pytest.mark.parametrize("degrees", [0, 45])
+@pytest.mark.parametrize("touches_edge", [False, True])
+@pytest.mark.parametrize("flips", [(), (0, 2)])
+def test_physical_execution_preserves_unequal_anisotropic_native_arrays(degrees, touches_edge, flips):
+    from scipy import ndimage as ndi
+    spacing = np.array([0.4, 0.6, 0.9])
+    hu, roi, affine = volume(shape=(17, 21, 25), spacing=spacing)
+    theta = np.deg2rad(degrees)
+    rotation = np.array([[np.cos(theta), -np.sin(theta), 0], [np.sin(theta), np.cos(theta), 0], [0, 0, 1]])
+    affine[:3, :3] = rotation @ affine[:3, :3]
+    hu[0 if touches_edge else 2:8, 2:18, 2:20] = -900
+    hu[10:15, 3:19, 3:23] = 35
+    initial = hu.copy(), roi.copy(), affine.copy()
+    for array in (hu, roi, affine):
+        array.flags.writeable = False
+    expected = run(hu, roi, affine)
+    distance = _physical_distance(hu < 200, spacing, affine)
+    metric_oracle = ndi.distance_transform_edt(np.pad(hu < 200, 1), sampling=spacing)[1:-1, 1:-1, 1:-1]
+    assert np.allclose(distance, metric_oracle, rtol=1e-15, atol=0)
+    change = np.eye(4)[:, [2, 1, 0, 3]]
+    moved = hu.transpose(2, 1, 0)
+    for axis in flips:
+        moved = np.flip(moved, axis)
+        change[:3, 3] += change[:3, axis] * (moved.shape[axis] - 1)
+        change[:3, axis] *= -1
+    moved_affine = affine @ change
+    actual = run(moved, np.ones(moved.shape, bool), moved_affine)
+    moved_distance = _physical_distance(moved < 200, spacing[::-1], moved_affine)
+
+    def align(array):
+        return (np.flip(array, axis=flips) if flips else array).transpose(2, 1, 0)
+
+    assert len(expected[2]) == len(actual[2]) == 2
+    assert np.array_equal(expected[0], align(actual[0]))
+    assert np.array_equal(expected[1], align(actual[1]))
+    assert np.array_equal(distance, align(moved_distance))
+    assert all(np.array_equal(before, after) for before, after in zip(initial, (hu, roi, affine)))
 
 
 def test_automatic_localization_requires_real_landmark_evidence():

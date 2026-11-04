@@ -240,7 +240,7 @@ def load_landmarks(directory: Path, source: nib.spatialimages.SpatialImage, *, s
         if source_sha256 is not None and checksums.get((task, name)) != _sha256(path):
             raise CountingError("LANDMARK_INTEGRITY", "A cached anatomical-localizer mask differs from its recorded provenance.")
         image = nib.as_closest_canonical(nib.load(path))
-        if image.shape != source.shape or not np.allclose(image.affine, source.affine, atol=1e-4):
+        if image.shape != source.shape or not np.allclose(image.affine, source.affine, atol=1e-4, rtol=0):
             raise CountingError("LANDMARK_GEOMETRY", "An anatomical-localizer mask does not match the source grid.")
         data = np.asanyarray(image.dataobj)
         if not np.isfinite(data).all() or not np.isin(data, (0, 1)).all():

@@ -11,7 +11,7 @@ pytest.importorskip("skimage")
 
 from ethmoid_pipeline.counting.engine import CountingError, analyze_volume, compartment_stage
 from ethmoid_pipeline.counting.grids import anatomy_proxy, check_proxy_limit, localization_grid
-from ethmoid_pipeline.counting.localization import Localization, localize_native
+from ethmoid_pipeline.counting.localization import Localization, MASK_TASK, TASKS, load_landmarks, localize_native
 
 
 def rotated_affine(degrees, spacing=(0.4, 0.6, 2.5)):
@@ -184,3 +184,41 @@ def test_worker_refuses_unbound_or_wrong_source_acquisition(tmp_path, acquisitio
     result = analyze_volume(source, tmp_path / "result", tmp_path / "missing", acquisition=acquisition)
     assert result["failure_code"] == "INVALID_ACQUISITION"
     assert result["counts"]["total"] is None
+
+
+@pytest.mark.parametrize("origin,translation_error_mm,accepted", [
+    (0.0, 0.00005, True), (0.0, 0.0002, False),
+    (1000.0, 0.005, False), (1_000_000.0, 0.0, True), (1_000_000.0, 2.0, False),
+])
+def test_bound_landmark_grid_tolerance_is_absolute(tmp_path, origin, translation_error_mm, accepted):
+    import json
+
+    shape = (8, 8, 8)
+    affine = np.diag([0.5, 0.5, 0.5, 1.0])
+    affine[:3, 3] = [origin, -origin, origin]
+    source_path = tmp_path / "source.nii.gz"
+    nib.save(nib.Nifti1Image(np.zeros(shape, np.float32), affine), source_path)
+    source = nib.load(source_path)
+    source_sha256 = hashlib.sha256(source_path.read_bytes()).hexdigest()
+    mask_affine = source.affine.copy()
+    mask_affine[0, 3] += translation_error_mm
+    mask = np.zeros(shape, np.uint8)
+    mask[2:6, 2:6, 2:6] = 1
+    entries = {task: [] for task in TASKS}
+    for name, task in MASK_TASK.items():
+        folder = tmp_path / task
+        folder.mkdir(exist_ok=True)
+        path = folder / f"{name}.nii.gz"
+        nib.save(nib.Nifti1Image(mask, mask_affine), path)
+        entries[task].append({"class": name, "sha256": hashlib.sha256(path.read_bytes()).hexdigest()})
+    manifest = {"source_sha256": source_sha256,
+        "tasks": [{"task": task, "masks": entries[task]} for task in TASKS]}
+    (tmp_path / "localizers.local.json").write_text(json.dumps(manifest), encoding="utf-8")
+    if accepted:
+        loaded = load_landmarks(tmp_path, source, source_sha256=source_sha256)
+        assert set(loaded) == set(MASK_TASK)
+        assert all(np.array_equal(value, mask.astype(bool)) for value in loaded.values())
+    else:
+        with pytest.raises(CountingError) as failure:
+            load_landmarks(tmp_path, source, source_sha256=source_sha256)
+        assert failure.value.code == "LANDMARK_GEOMETRY"

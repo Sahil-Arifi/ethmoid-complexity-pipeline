@@ -7,6 +7,7 @@ cell. In particular, a bone-enclosed opaque compartment can have no air voxels.
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import asdict, dataclass, fields
 import hashlib
 import json
@@ -20,7 +21,7 @@ from scipy import ndimage as ndi
 from skimage.morphology import h_maxima
 from skimage.segmentation import watershed
 
-METHOD_VERSION = "native-bone-watershed-0.2.2"
+METHOD_VERSION = "native-bone-watershed-0.2.3"
 PROTOCOL_VERSION = "ethmoid-count-prototype-v2"
 
 
@@ -52,7 +53,7 @@ class CountingConfig:
     @classmethod
     def parse(cls, value: dict[str, Any] | "CountingConfig" | None) -> "CountingConfig":
         if isinstance(value, cls):
-            return value
+            value = asdict(value)
         if value is None:
             return cls()
         if not isinstance(value, dict):
@@ -83,13 +84,18 @@ class CountingConfig:
             if int(result.max_instances) != result.max_instances or not 1 <= result.max_instances <= 65535:
                 raise ValueError
             return result
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             raise CountingError("INVALID_CONFIG", "Counting configuration values are invalid.") from None
 
 
 def geometry(affine: np.ndarray) -> np.ndarray:
-    matrix = np.asarray(affine, dtype=float)
-    if matrix.shape != (4, 4) or not np.isfinite(matrix).all():
+    try:
+        if np.iscomplexobj(affine):
+            raise ValueError
+        matrix = np.asarray(affine, dtype=float)
+    except (TypeError, ValueError, OverflowError):
+        raise CountingError("INVALID_GEOMETRY", "The volume affine is invalid.") from None
+    if matrix.shape != (4, 4) or not np.isfinite(matrix).all() or not np.array_equal(matrix[3], [0, 0, 0, 1]):
         raise CountingError("INVALID_GEOMETRY", "The volume affine is invalid.")
     spacing = np.linalg.norm(matrix[:3, :3], axis=0)
     if np.any(spacing <= 0) or not np.allclose((matrix[:3, :3] / spacing).T @ (matrix[:3, :3] / spacing), np.eye(3), atol=1e-4):
@@ -97,8 +103,88 @@ def geometry(affine: np.ndarray) -> np.ndarray:
     return spacing
 
 
+def _auxiliary_mask(value: np.ndarray, shape: tuple[int, ...]) -> np.ndarray:
+    """Use finite numeric nonzero mask semantics, as for anatomical membership."""
+    try:
+        mask = np.asarray(value)
+        if mask.shape != shape or mask.dtype.kind not in "biuf" or not np.isfinite(mask).all():
+            raise ValueError
+        return mask.astype(bool, copy=False)
+    except (TypeError, ValueError):
+        raise CountingError("INVALID_GEOMETRY", "Auxiliary masks must be finite numeric masks on the source grid.") from None
+
+
+def _physical_anchor(mask: np.ndarray, bounds: tuple[slice, ...], affine: np.ndarray) -> tuple:
+    positions = np.argwhere(mask) + np.array([sl.start for sl in bounds])
+    physical = nib.affines.apply_affine(affine, positions)
+    rounded = np.round(physical, 6)
+    first = np.lexsort(np.vstack((physical.T[::-1], rounded.T[::-1])))[0]
+    return tuple(rounded[first]) + tuple(physical[first])
+
+
 def _bone_support_radius_mm(spacing: np.ndarray) -> float:
     return min(max(float(spacing.max()) * 1.01, 0.8), 1.01)
+
+
+def _execution_axes(affine: np.ndarray, spacing: np.ndarray) -> tuple[tuple[int, ...], tuple[int, ...]]:
+    """Choose one physical lattice traversal without resampling its voxels."""
+    directions = np.round(affine[:3, :3] / spacing, 12)
+
+    def normal_key(axis):
+        direction = directions[:, axis].copy()
+        if direction[np.flatnonzero(direction)[0]] < 0:
+            direction = -direction
+        return tuple(-np.abs(direction)) + tuple(direction)
+
+    order = tuple(sorted(range(3), key=normal_key))
+    flips = tuple(i for i, axis in enumerate(order) if directions[np.argmax(np.abs(directions[:, axis])), axis] < 0)
+    return order, flips
+
+
+def _orient(array: np.ndarray, order: tuple[int, ...], flips: tuple[int, ...]) -> np.ndarray:
+    array = array.transpose(order)
+    return np.flip(array, axis=flips) if flips else array
+
+
+def _inverse_orient(array: np.ndarray, order: tuple[int, ...], flips: tuple[int, ...]) -> np.ndarray:
+    if flips:
+        array = np.flip(array, axis=flips)
+    return array.transpose(np.argsort(order))
+
+
+def _physical_distance(mask: np.ndarray, spacing: np.ndarray, affine: np.ndarray) -> np.ndarray:
+    order, flips = _execution_axes(affine, spacing)
+    moved = np.ascontiguousarray(_orient(mask, order, flips))
+    distance = ndi.distance_transform_edt(np.pad(moved, 1), sampling=spacing[list(order)])[1:-1, 1:-1, 1:-1]
+    return _inverse_orient(distance, order, flips)
+
+
+def _physical_watershed(image: np.ndarray, markers: np.ndarray, mask: np.ndarray, spacing: np.ndarray, affine: np.ndarray) -> np.ndarray:
+    order, flips = _execution_axes(affine, spacing)
+    # The kernel flattens in C order; keep strides, markers and output aligned.
+    labels = watershed(np.ascontiguousarray(_orient(image, order, flips)),
+        markers=np.ascontiguousarray(_orient(markers, order, flips)),
+        mask=np.ascontiguousarray(_orient(mask, order, flips)), connectivity=1)
+    return _inverse_orient(labels, order, flips)
+
+
+def _component_h_maxima(distance: np.ndarray, mask: np.ndarray, prominence: float) -> np.ndarray:
+    """Keep 26-neighbor peak reconstruction inside each watershed component."""
+    components, _ = ndi.label(mask, structure=ndi.generate_binary_structure(3, 1))
+    maxima = np.zeros(mask.shape, dtype=bool)
+    for component, bounds in enumerate(ndi.find_objects(components), start=1):
+        if bounds is None:
+            continue
+        member = components[bounds] == component
+        # Bounding boxes may overlap: every other component must be zeroed.
+        # A zero halo preserves the physical background at a processing edge.
+        local = np.where(member, distance[bounds], 0)
+        if local.max() < prominence:
+            continue  # The padded field has insufficient height for any h-maximum.
+        local = np.pad(local, 1)
+        selected = h_maxima(local, prominence)[1:-1, 1:-1, 1:-1]
+        maxima[bounds] |= selected.astype(bool) & member
+    return maxima
 
 
 def _shift(mask: np.ndarray, axis: int, offset: int) -> np.ndarray:
@@ -111,7 +197,7 @@ def _shift(mask: np.ndarray, axis: int, offset: int) -> np.ndarray:
     return out
 
 
-def _merge_unsupported_separators(labels: np.ndarray, free: np.ndarray, bone: np.ndarray, spacing: np.ndarray, config: CountingConfig, *, trace: dict | None = None) -> tuple[np.ndarray, set[int]]:
+def _merge_unsupported_separators(labels: np.ndarray, free: np.ndarray, bone: np.ndarray, spacing: np.ndarray, config: CountingConfig, *, affine: np.ndarray | None = None, markers: np.ndarray | None = None, trace: dict | None = None) -> tuple[np.ndarray, set[int]]:
     """Retain watershed splits only near a thin bone plate with lumen on both sides.
 
     A distance saddle alone is insufficient evidence for two cells. A plate may
@@ -127,8 +213,9 @@ def _merge_unsupported_separators(labels: np.ndarray, free: np.ndarray, bone: np
             index = int(parent[index])
         return index
 
+    axes = range(3) if affine is None else _execution_axes(affine, spacing)[0]
     evidence: dict[tuple[int, int], list[int]] = {}
-    for axis in range(3):
+    for axis in axes:
         step = max(1, int(np.ceil(config.plate_half_width_mm / spacing[axis])))
         plate = bone & _shift(free, axis, step) & _shift(free, axis, -step)
         near_plate = ndi.distance_transform_edt(~plate, sampling=spacing) <= config.separator_support_mm if plate.any() else np.zeros_like(bone)
@@ -154,8 +241,28 @@ def _merge_unsupported_separators(labels: np.ndarray, free: np.ndarray, bone: np
     # A communication around a third basin must not undo an already supported
     # septum. Preserve these cannot-merge constraints during graph contraction.
     unsupported = [(support / total, a, b) for (a, b), (total, support, _) in evidence.items() if (a, b) not in preserved]
+    if affine is not None and markers is not None:
+        tied_scores = {score for score, count in Counter(row[0] for row in unsupported).items() if count > 1}
+        marker_bounds = ndi.find_objects(markers) if tied_scores else []
+        marker_keys = {}
+
+        def edge_key(row):
+            score, a, b = row
+            if score not in tied_scores:
+                return (score,)
+            for label in (a, b):
+                if label not in marker_keys:
+                    bounds = marker_bounds[label - 1]
+                    marker_keys[label] = _physical_anchor(markers[bounds] == label, bounds, affine)
+            return (score, *sorted((marker_keys[a], marker_keys[b])))
+
+        # Traversal labels are identifiers, not evidence for which neighbor
+        # should absorb a basin when support scores tie.
+        unsupported.sort(key=edge_key)
+    else:
+        unsupported.sort()
     merge_decisions = [] if trace is not None else None
-    for _, a, b in sorted(unsupported):
+    for _, a, b in unsupported:
         left, right = root(a), root(b)
         if left == right:
             continue
@@ -190,6 +297,17 @@ def compartment_stage(hu: np.ndarray, roi: np.ndarray, affine: np.ndarray, confi
     if values.ndim != 3 or values.shape != region.shape or not np.isfinite(values).all():
         raise CountingError("INVALID_VOLUME", "A finite three-dimensional HU volume and matching region are required.")
     spacing = geometry(affine)
+    affine = np.asarray(affine, dtype=float)
+    try:
+        midline = np.asarray(midline_ras_x)
+    except (TypeError, ValueError, OverflowError):
+        raise CountingError("INVALID_GEOMETRY", "The midline must be a finite real scalar in RAS millimeters.") from None
+    if midline.ndim != 0 or midline.dtype.kind not in "iuf" or not np.isfinite(midline):
+        raise CountingError("INVALID_GEOMETRY", "The midline must be a finite real scalar in RAS millimeters.")
+    midline_ras_x = float(midline)
+    if excluded is not None:
+        excluded = _auxiliary_mask(excluded, values.shape)
+    variant_regions = {name: _auxiliary_mask(mask, values.shape) for name, mask in (variant_regions or {}).items()}
     if not region.any():
         raise CountingError("EMPTY_REGION", "Automatic anatomical localization produced no region.")
     search = region if reconstruction_region is None else np.asarray(reconstruction_region, dtype=bool)
@@ -198,23 +316,21 @@ def compartment_stage(hu: np.ndarray, roi: np.ndarray, affine: np.ndarray, confi
     bone = values >= cfg.bone_hu
     free = search & ~bone
     if excluded is not None:
-        if excluded.shape != region.shape:
-            raise CountingError("INVALID_GEOMETRY", "The exclusion geometry does not match the source.")
         free &= ~excluded
     if not free.any():
         raise CountingError("NO_COMPARTMENTS", "No non-bone compartment can be resolved in the localized region.")
     # Padding is essential: the edge of a processing crop is not open-ended infinity.
-    distance = ndi.distance_transform_edt(np.pad(free, 1), sampling=spacing)[1:-1, 1:-1, 1:-1]
-    maxima = h_maxima(distance.astype(np.float32), cfg.seed_prominence_mm) & free
+    distance = _physical_distance(free, spacing, affine)
+    maxima = _component_h_maxima(distance.astype(np.float32), free, cfg.seed_prominence_mm)
     if trace is not None:
         trace["seed_counts"] = {"free_maxima_voxels": int(maxima.sum()), "air_maxima_voxels": 0}
     # Thick soft-tissue contents can shift a free-space distance maximum away
     # from a small aerated chamber. Air-lumen maxima add detection seeds only;
     # the final cavity and split/merge decisions still use bone evidence.
     air_lumen = free & (values < cfg.air_hu)
-    air_distance = ndi.distance_transform_edt(np.pad(air_lumen, 1), sampling=spacing)[1:-1, 1:-1, 1:-1]
+    air_distance = _physical_distance(air_lumen, spacing, affine)
     if air_lumen.any():
-        air_maxima = h_maxima(air_distance.astype(np.float32), cfg.seed_prominence_mm) & air_lumen
+        air_maxima = _component_h_maxima(air_distance.astype(np.float32), air_lumen, cfg.seed_prominence_mm)
         maxima |= air_maxima
         if trace is not None:
             trace["seed_counts"]["air_maxima_voxels"] = int(air_maxima.sum())
@@ -237,12 +353,12 @@ def compartment_stage(hu: np.ndarray, roi: np.ndarray, affine: np.ndarray, confi
                 seeds[position] = next_seed
                 next_seed += 1
     del components
-    labels = watershed(-distance, markers=seeds, mask=free, connectivity=1).astype(np.int32)
+    labels = _physical_watershed(-distance, seeds, free, spacing, affine).astype(np.int32)
     if trace is not None:
         trace["arrays"] = {"membership": region, "excluded": np.zeros_like(region) if excluded is None else excluded,
             "search": search, "markers": seeds, "watershed": labels, "affine": np.asarray(affine)}
         trace["seed_counts"].update(initial_markers=initial_markers, component_fallbacks=int(seeds.max()) - initial_markers)
-    labels, inferred_split = _merge_unsupported_separators(labels, free, bone, spacing, cfg, trace=trace)
+    labels, inferred_split = _merge_unsupported_separators(labels, free, bone, spacing, cfg, affine=affine, markers=seeds, trace=trace)
     if trace is not None:
         trace["arrays"]["merged"] = labels
         trace["proposals"] = []
@@ -336,7 +452,20 @@ def compartment_stage(hu: np.ndarray, roi: np.ndarray, affine: np.ndarray, confi
     if len(proposals) > cfg.max_instances:
         raise CountingError("INSTANCE_LIMIT", "The number of proposals exceeds the instance format limit.")
     # Physical coordinates, not array traversal or NIfTI axis signs, determine IDs.
-    proposals.sort(key=lambda item: tuple(round(v, 6) for v in item[2]["centroid_ras_mm"]))
+    centroid_keys = Counter(tuple(round(v, 6) for v in item[2]["centroid_ras_mm"]) for item in proposals)
+    tied_centroids = {key for key, count in centroid_keys.items() if count > 1}
+
+    def physical_key(item):
+        key = tuple(round(v, 6) for v in item[2]["centroid_ras_mm"])
+        if key not in tied_centroids:
+            return key
+        bounds, mask, _ = item
+        # A real voxel center distinguishes disjoint masks even when their
+        # centroids and physical bounds coincide. Unrounded coordinates break
+        # remaining ties on grids finer than the usual micrometer precision.
+        return key + _physical_anchor(mask, bounds, affine)
+
+    proposals.sort(key=physical_key)
     cavities = np.zeros(values.shape, dtype=np.uint16)
     cells: list[dict[str, Any]] = []
     for index, (bounds, mask, cell) in enumerate(proposals, start=1):
@@ -352,7 +481,7 @@ def compartment_stage(hu: np.ndarray, roi: np.ndarray, affine: np.ndarray, confi
     assigned_air = int(np.count_nonzero((air > 0) & region))
     if observed_air:
         warnings.append(f"Assigned {100.0 * assigned_air / observed_air:.1f}% of aerated voxels in the inferred search region to accepted candidates; this is a geometric coverage diagnostic, not clinical sensitivity.")
-    if observed_air and assigned_air / observed_air < 0.5:
+    if observed_air and assigned_air / observed_air < cfg.minimum_air_coverage_fraction:
         warnings.append("Low geometric coverage: substantial aerated structure remains unresolved. The candidate total must not be represented as a complete anatomical count.")
     if rejected:
         warnings.append(f"{rejected} geometric candidates were rejected for insufficient size, bony support, or excessive region-edge contact; unresolved cells may remain.")

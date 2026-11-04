@@ -106,6 +106,6 @@ def test_surface_fill_component_version_survives_method_metadata(tmp_path, metho
     runner = analyze_volume if method == "native" else research_v5.analyze_research_volume
     result = runner(tmp_path / "missing-synthetic.nii", tmp_path / method)
     assert result["failure_code"] == "SOURCE_UNAVAILABLE"
-    assert result["counting_engine_version"] == "native-bone-watershed-0.2.2"
-    expected_method = "native-bone-watershed-0.2.2" if method == "native" else "research-native-0.5.0"
+    assert result["counting_engine_version"] == "native-bone-watershed-0.2.3"
+    expected_method = "native-bone-watershed-0.2.3" if method == "native" else "research-native-0.5.0"
     assert result["method_version"] == expected_method
