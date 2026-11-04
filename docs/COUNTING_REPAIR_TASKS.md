@@ -1,6 +1,6 @@
 # Cell partition repair tasks
 
-Status: causal audit completed for tasks 1-4 and 6; automatic numerical repair remains open. See [the audit](COUNTING_CAUSAL_AUDIT.md) for results and [the plan](COUNTING_REPAIR_PLAN.md) for sources, decisions and constraints.
+Status: tasks 1-4 and 6 diagnosed; one quarantined correction improves the fixed development controls from 124/132 to 126/132 with no regressions. Six failures remain. The independent 48-geometry set is frozen and unexposed to inference. See [the audit](COUNTING_CAUSAL_AUDIT.md) for results and [the plan](COUNTING_REPAIR_PLAN.md) for constraints.
 
 ## Task 1: Freeze diagnostic inputs
 
@@ -38,13 +38,13 @@ Verification: exact-reference graph checks plus original spatial oracles. Depend
 
 - [x] A ledger identifies the first causal failure and whether later failures coexist.
 - [x] Independent review accepts the intervention conclusion; oracle results are not presented as automatic accuracy.
-- [ ] A written observable rule, counterexamples and falsification criteria exist before numerical source edits.
+- [x] A written observable rule, counterexamples and falsification criteria precede the quarantined same-side correction. No complete neck/fold rule has passed.
 
 ## Task 5: Implement one demonstrated component repair
 
-- [ ] Modify only the causal component; retain original evidence, thresholds and constraints unless the reviewed specification explicitly changes them.
+- [x] Modify only the causal component in a quarantined candidate: veto two unsupported same-side hard constraints; preserve original scores, ordering and acceptance.
 - [ ] Resolve known failure families while preserving passing aperture, cantilever, foreign-wall and opaque controls.
-- [ ] Retain uncertainty where image evidence is insufficient; do not use generator truth in inference.
+- [x] The partial candidate retains constraints when normal or side evidence is unknown and uses no generator truth. This is not a complete uncertainty solution.
 
 Verification: targeted before/after witnesses and 96+36 preserved spatial controls. Dependencies: 4 and checkpoint. Likely files: engine.py or a quarantined research module, focused tests, version binding if numerical behavior changes. Scope: medium per component; split further if multiple components fail.
 
@@ -58,7 +58,7 @@ Verification: procedural assignment and exclusion accounting; unchanged gate val
 
 ## Task 7: Freeze and pass independent geometry validation
 
-- [ ] Freeze at least 48 geometries across at least eight independent structural families before candidate execution, with declared sampling/ambiguity outcomes.
+- [x] Freeze 48 unique geometries across eight families before candidate execution on them: 37 count-assessable and 11 explicit unknowns, with 144 content arrays. Independent fixture verification passed; inference has not run.
 - [ ] Pass the original 96+36 spatial controls, all known failure expectations, the 864 representation checks, and the independent family holdout without post-test tuning.
 - [ ] Pass resource, opacity, source-immutability and applicable software checks. Retain every failed attempt.
 

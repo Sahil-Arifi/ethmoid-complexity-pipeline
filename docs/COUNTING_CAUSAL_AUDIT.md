@@ -1,6 +1,6 @@
 # Causal audit of the preserved partition failures
 
-The fresh 132-case audit identifies false hard separator constraints as the next repair target. The current initial regions can represent all original synthetic expectations. Changing seed generation or installing another graph solver is therefore not justified by these failures. Automatic counting is still unchanged and the clinical development target remains unmet.
+The fresh 132-case audit identifies false hard separator constraints as the repair target. A quarantined correction now fixes two failing cases without regressions, improving the full spatial-oracle result from 124/132 to 126/132. Six cases still fail. The application counting method is unchanged and the clinical development target remains unmet.
 
 The audit binds engine `native-bone-watershed-0.2.3` to SHA-256 `ff53413471456ef78d46b601001b2d4c7a3aca1a7c555701fbe58b8de8571c2d`. Inputs, original oracles, runtime and stage arrays are preserved in external `causal-partition-audit-01` artifacts. No clinical images were decoded or rerun in this phase.
 
@@ -36,6 +36,32 @@ This explains how coverage can fall without a partition change. It does not esta
 
 The new helper passed 19 focused tests in both the numerical Python 3.12 environment and the locked application Python 3.13 environment. With the existing stage-trace tests, the numerical run passed 23 tests. Independent review additionally checked 60 small graph cases against a different exhaustive enumeration. The new helper's initial failing import and its invalid-large-cost regression were observed before their fixes.
 
-The next experiment must test observed normal, patch and side evidence against both the false and required separators. A candidate must also preserve the cantilever and unrelated-wall controls. The [repair checklist](COUNTING_REPAIR_TASKS.md) still requires a demonstrated numerical repair, independent geometry validation and the repeated eight-study development comparison. None is replaced by this diagnostic result.
+## Quarantined same-side correction
 
-External evidence groups: `stage-ledger` (132 inputs and complete stage ledger), `fixed-basin-edges` (constraint intervention), and `coverage` (fixed-partition gate contrasts). Earlier failures and all original outputs are retained locally.
+A preregistered observed-normal experiment found that two-sided lumen evidence retains all ten false constraints. Adding opposite raw-region centroid sides rejects only the two false constraints near the perforated sheet; the eight false neck/fold constraints remain. This feature was rejected as a complete discriminator, without a parameter search.
+
+The narrower candidate `normal-same-side-veto-quarantine-0.1` removes an originally hard separator only when every selected nearest-plate witness has a nondegenerate observed normal and both raw-region centroids lie strictly on the same side. Missing, degenerate or zero-sign evidence retains the original constraint. Gaussian scale comes from the existing physical plate-width setting. Reference cores, target counts and generator identities never enter this rule.
+
+Independent source review confirmed that the only merge change removes those vetoed edges from the original hard-constraint set. The full compartment stage, including acceptance, then ran once on the 132 sealed inputs with original spatial oracles:
+
+| Measurement | Result |
+| --- | --- |
+| Original 96 controls | 90 pass, six fail; baseline 88 pass |
+| Additional 36 controls | All pass |
+| Old passing cases regressed | Zero |
+| Accepted arrays changed | Only the two repaired cases; other 130 byte-identical |
+| Markers, raw basins and original interface scores | Unchanged |
+| Hard constraints vetoed | Two of 70, evaluated through 548 witnesses |
+| Execution | 54.031 seconds under assigned 120-second / 2-GiB caps |
+
+An independent stored-artifact review recomputed the original 132 oracles, compared the saved arrays and verified 1,167 source/input pins, confirming these results without rerunning counting. Its evidence is in `normal-same-side-repair-peer-review-01`; process-cap assignment was checked, but peak memory was not independently measured.
+
+The two repaired cases are air and opaque versions of one perforated-sheet geometry, not two independent geometries. Four exterior-neck cases and two open-fold cases still fail. Candidate SHA-256 is `f024f7179a44361c5b6ce1ad859570e97b552d76f10948bcf7fd5b6c9748d273`; its source, generated merge, frozen protocol and complete outputs remain in external `normal-same-side-repair-01`. The earlier feature rejection remains in `normal-feature-01`.
+
+## Independent validation set
+
+Before candidate inference on it, a separate author froze 48 unique geometries across eight structural families, with air, opaque and mixed contents giving 144 HU arrays. There are 37 count-assessable geometries and 11 explicit unknowns; unknowns cannot count as passes. Independent review reconstructed all 48 geometry equations, checked all 101 sealed files and verified 111 negative oracle contrasts. No counting method has run on this set.
+
+The narrow repair is not promoted. The [repair checklist](COUNTING_REPAIR_TASKS.md) still requires an observed rule for the neck/fold errors, all original and representation controls, independent geometry evaluation, and repeated eight-study development comparison. The remaining defect is broader separator identity: nearby thin bone and opposite centroid sides do not establish that the bone partitions a cavity. It remains an engineering obligation, separate from clinician reference questions.
+
+External evidence groups also include `stage-ledger` (132 inputs and complete stage ledger), `fixed-basin-edges` (constraint intervention), `coverage` (fixed-partition gate contrasts), and `independent-geometry` plus `independent-geometry-peer-review-01` (sealed fixtures and independent verification). Earlier failures and all original outputs are retained locally.
