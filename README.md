@@ -1,6 +1,6 @@
 # Ethmoid Complexity Pipeline
 
-The [cell partition repair plan](docs/COUNTING_REPAIR_PLAN.md) and [task checklist](docs/COUNTING_REPAIR_TASKS.md) record the tool review and the next causal tests. The plan checks initial-partition representability, separator evidence, merge optimization and coverage losses before choosing another numerical change. No replacement method or 8/8 result is established by this planning work.
+The [causal audit](docs/COUNTING_CAUSAL_AUDIT.md) now localizes the eight preserved synthetic failures to false hard separator constraints. All 132 initial partitions can represent the original spatial expectations; the existing union logic succeeds when given an oracle correction to those constraints. That correction is diagnostic, not an automatic repair. A separate coverage probe isolates search/exclusion policy effects. The [repair plan](docs/COUNTING_REPAIR_PLAN.md) and [task checklist](docs/COUNTING_REPAIR_TASKS.md) track the remaining evidence repair and validation. No new clinical result or 8/8 agreement is established.
 
 Supplied clinician counts can now be compared with repeated automatic runs using an external, source-bound manifest. The [reproduction runner](docs/CLINICIAN_REPRODUCTION.md) keeps targets out of inference, preserves attempts and requires exact bilateral counts plus stable native artifacts. This adds a development regression workflow; the counting defaults and historical results are unchanged.
 
