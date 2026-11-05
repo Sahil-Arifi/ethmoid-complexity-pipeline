@@ -2,6 +2,14 @@
 
 Research reviewed 2026-11-04. This is an implementation plan, not a validated replacement algorithm or a promise of 8/8. Tasks are tracked in [the task checklist](COUNTING_REPAIR_TASKS.md).
 
+The subsequent [native diagnosis](COUNTING_NATIVE_DIAGNOSIS.md) reproduced four
+current baseline runs exactly and found two conditional raw-basin collisions.
+The procedural audit's representability result therefore does not justify a
+merge-only native repair. A finer target-free proposal diagnostic removed those
+collisions, but its fragmentation, grouping and acceptance remain unresolved.
+Treat proposal generation, separator evidence and localization/acceptance as
+separate dependencies before task 8; the current clinical result remains 0/8.
+
 ## Starting evidence and scope
 
 The current engineering branch is `f0a6749`, with numerical replay source `8689516` and engine `native-bone-watershed-0.2.3`. The eight-study development comparison fell from 1/8 to 0/8 exact bilateral agreement. Repeat artifacts passed independent technical verification. The existing 96-scene geometry screen retains eight failures; 36 additional counterexamples pass. Current source already exposes markers, raw basins, merged labels, interface evidence and proposal rejection traces. Reuse those traces rather than adding another parallel pipeline.

@@ -2,6 +2,8 @@
 
 Status: tasks 1-4 and 6 diagnosed; one quarantined correction improves the fixed development controls from 124/132 to 126/132 with no regressions. Six failures remain. The independent 48-geometry set is frozen and unexposed to inference. See [the audit](COUNTING_CAUSAL_AUDIT.md) for results and [the plan](COUNTING_REPAIR_PLAN.md) for constraints.
 
+The subsequent [native diagnosis](COUNTING_NATIVE_DIAGNOSIS.md) adds a proposal-stage dependency: two conditional pairs share raw basins even though all 132 procedural inputs are representable. The task 3 result applies to those procedural controls, not all native scans. No clinical improvement is established.
+
 ## Task 1: Freeze diagnostic inputs
 
 - [x] Seal source/runtime, the 96+36 procedural controls, original spatial oracles and 864 representation checks in an external manifest. The 864 results are reused, not rerun.
@@ -25,6 +27,17 @@ Verification: focused scorer checks and immutable stage-array comparison. Depend
 - [x] Record whether proposal generation, merging, or both need repair; no change is selected from counts alone.
 
 Verification: fixed-input intervention pairs and source hash checks. Dependencies: 2. Likely files: external harness, engine seed/watershed adapters. Scope: medium.
+
+### Native proposal checkpoint
+
+- [x] Reproduce four current baseline results and twelve native artifacts byte for byte with unchanged localizers and inputs; independently close the stage attribution.
+- [x] Locate conditional raw collisions, a merging collision, pre-search absence and outside-heavy membership rejection without deriving labels from totals.
+- [x] Test one target-free fine-proposal diagnostic; preserve its original resource stop and separately frozen budget-only revision. The declared pairs no longer share raw IDs, but cores fragment and the missing core stays unassigned.
+- [x] Run the unchanged merger once on saved fine proposals within the fixed resource limits. All three distinctions survive, but five cores remain fragmented; verify all constraints and the complete union mapping independently.
+- [ ] Demonstrate feasible grouping and acceptance without losing those distinctions or creating unsupported compartments.
+- [ ] Add proposal-specific controls before evaluating a combined numerical candidate. Unknown native relations remain unscored.
+
+Verification: frozen crop arrays, unchanged original markers/foreground, positive-only partial-core scoring and independent stored-artifact comparison. This checkpoint does not replace the original spatial controls or task 7.
 
 ## Task 4: Isolate separator evidence and optimization
 
