@@ -132,6 +132,7 @@ def train(manifest_path, output_path):
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning.CONFIG["learning_rate"],
                                  weight_decay=learning.CONFIG["weight_decay"])
     rng = np.random.default_rng(learning.CONFIG["seed"])
+    patch_rng = np.random.default_rng(learning.CONFIG["seed"])
     best_loss, selected_step = float("inf"), 0
     checkpoint = output/"selected-checkpoint.local.pt"
     started = time.monotonic()
@@ -146,8 +147,9 @@ def train(manifest_path, output_path):
             pool = pools[((step-1)*learning.CONFIG["batch_size"]+batch) % 4]
             sample_index, positions = pool[rng.integers(len(pool))]
             hu, _, arrays = training_samples[sample_index]
-            center = np.unravel_index(positions[rng.integers(len(positions))], hu.shape)
+            anchor = np.unravel_index(positions[rng.integers(len(positions))], hu.shape)
             size = learning.CONFIG["patch_size"]
+            center = learning.sample_patch_center(hu.shape, anchor, patch_rng, size=size)
             h = old.patch(hu, center, size, -1000)
             a = {key: old.patch(arrays[key], center, size, -1)
                  for key in ("foreground_labels", "separator_labels")}

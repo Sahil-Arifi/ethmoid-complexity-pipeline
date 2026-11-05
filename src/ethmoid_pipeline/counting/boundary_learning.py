@@ -8,9 +8,11 @@ from . import instance_learning as legacy
 from .instance_experiment import require, starts
 
 VERSION = "boundary-instance-v1"
-MODEL_VERSION = "native-membership-separator-unet-1"
+MODEL_VERSION = "native-membership-separator-unet-2"
 CONFIG = {
     "patch_size": 64, "batch_size": 2, "steps": 2000,
+    "patch_sampling": "native_valid_containing_anchor-v2",
+    "patch_sampling_rng": "independent_generator_same_seed",
     "maximum_gpu_seconds": 3600, "validation_interval": 100,
     "seed": 20261105, "learning_rate": 0.001, "weight_decay": 0.0001,
     "channels": [8, 16, 32, 64], "inference_stride": 32,
@@ -18,6 +20,29 @@ CONFIG = {
     "heads": ["membership", "separator"], "threshold": 0.5,
     "minimum_native_voxels": 4, "maximum_native_voxels": 64000000,
 }
+
+
+def sample_patch_center(shape, anchor, rng, size=64):
+    """Sample a native valid window containing the anchor, matching short-axis inference padding."""
+    try:
+        dimensions, selected = np.asarray(shape), np.asarray(anchor)
+    except (TypeError, ValueError):
+        require(False, "BOUNDARY_PATCH_SAMPLER_INPUT_INVALID")
+    require(type(size) is int and size >= 8 and size % 8 == 0
+            and isinstance(rng, np.random.Generator)
+            and dimensions.shape == selected.shape == (3,)
+            and dimensions.dtype.kind in "iu" and selected.dtype.kind in "iu"
+            and np.all(dimensions > 0) and np.all(dimensions <= np.iinfo(np.intp).max - size)
+            and np.all(selected >= 0) and np.all(selected < dimensions), "BOUNDARY_PATCH_SAMPLER_INPUT_INVALID")
+    low = []
+    for length, position in zip(dimensions, selected):
+        length, position = int(length), int(position)
+        if length < size:
+            low.append(0)
+        else:
+            lower, upper = max(0, position - size + 1), min(position, length - size)
+            low.append(int(rng.integers(lower, upper + 1)))
+    return np.asarray(low, dtype=np.intp) + size // 2
 
 
 def build_model():

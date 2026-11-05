@@ -69,6 +69,17 @@ ties retained. Counts never select weights. A single group is explicitly a
 mechanism experiment and saves the last scheduled checkpoint without claiming
 patient transfer.
 
+Model revision `native-membership-separator-unet-2` corrects patch sampling.
+Each selected label lies inside a uniformly sampled valid native window,
+rather than always at its centre. Axes shorter than the patch use the same
+high-side-only padding as inference. HU and both label arrays share the window;
+padded labels remain unknown. A separate seeded origin generator preserves the
+existing anchor, flip and noise random sequence. The two sampling configuration
+fields and helper source are bound into checkpoints. The backbone, loss,
+normalization, inference tiling and partition settings are unchanged. Revision-1
+checkpoints require the preserved source at commit `9e57405`; strict CPU reload
+of both historical native checkpoints passed in a separate source checkout.
+
 Inference reloads weights with `weights_only=True`, verifies the complete
 configuration, model/geometry helper hashes and Python/Torch/CUDA runtime
 identity, and averages overlapping native patches at stride 32. Reorientation
@@ -244,6 +255,43 @@ outside background, complete extents or explicit abstention, and separate
 evidence for walls and open communications. Its coverage requirements are
 independent of predicted counts. Sparse point fitting and repeatability do not
 establish correct foreground extent, individual cell recovery or patient transfer.
+
+### Background repair and patch-context diagnosis
+
+Contiguous native CT and orthogonal review supported 1,664 additional
+membership-negative voxels outside the cavities. All original known labels,
+partial instance IDs and four separator labels were retained. The pair review
+abstained from complete masks because of an open communication; no proposal
+contour or closing plane became a training target. Another 896 background
+voxels and two air-interior points were reserved for post-training QC, unknown
+in every training field and at least three source voxels from supervision.
+These are same-patient conditional observations, not independent cell truth.
+
+With the original sampler and the same 2,000-step budget, the background
+intervention reduced held-out output false positives from 828/896 to 117/896
+(85.9%). Membership false positives fell from 828 to 120. All 324 core voxels,
+17 original exclusions and both positive QC points were preserved. The largest
+output instance shrank from 75.58% to 48.76% of the crop. Both fresh predictions
+matched exactly, but all seven cores still shared one instance and none of the
+three declared pairs separated. Counts remained withheld. Thirty expanded
+training negatives also exceeded the membership threshold during tiled inference.
+
+A five-point diagnostic then exposed a training/inference context mismatch.
+For three erroneous training negatives, centred-patch probabilities were about
+0.000001 to 0.000017; tiled probabilities were 0.5070 to 0.5084. Their training
+patches contained 26.6–28.1% artificial padding, while contributing native
+inference windows contained none. Recomputing those windows reproduced saved
+tiled averages within 0.00000003. The probe demonstrates context dependence;
+it does not separately identify padding, position and normalization effects.
+It motivated the versioned valid-window sampler above, with the background
+release and QC held byte-identical for the next controlled run.
+
+The sampler revision passed 331 boundary/partition/evaluation and counting
+regression checks, including its four new sampling tests and actual isolated
+PanSeg workers. A fresh 200-step synthetic end-to-end run selected step 100 by
+annotated validation loss, matched all four generated instances at IoU 1.0,
+and produced identical fresh-process predictions for both generated studies.
+Those generated results do not measure native accuracy.
 
 ## Verification
 
