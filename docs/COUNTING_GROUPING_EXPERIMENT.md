@@ -95,3 +95,28 @@ one archived raw basin. A second collision had only one overlapping identity,
 so that mechanism was rejected there. Original fields, markers and peak counts
 were reproduced exactly. No modified seed set, watershed or count was run by
 that diagnostic; it does not establish a repaired native cell distinction.
+
+## Seed identity follow-up: rejected
+
+A separate experiment retained distinct free-space and air peak components
+unless they shared voxels. It preserved the exact selected peak foreground,
+prominence, distance fields, fallback positions, original 0.2.3 merger and
+acceptance. Eleven analytic checks passed, including a displaced-peak
+single chamber: two raw regions correctly merged into one accepted cell.
+All original 132 full-stage accepted arrays remained byte-identical to baseline
+(124/132 passing, zero repairs or regressions), and all 864 representation
+contracts passed. Independent saved-output review confirmed those results.
+
+The subsequent fixed native-crop RAW-only test failed its declared repair gate:
+the target conditional pair still shared one initial watershed region despite
+the additional marker identities. The other previously colliding pair also
+remained joined. Coverage and within-core fragmentation were unchanged. A
+separate reviewer decoded the saved arrays and reference footprints and
+reproduced those findings; all 1,692 protected files stayed unchanged.
+
+The test stopped before merging, acceptance or counting. This rejects seed
+identity preservation as a repair for that declared native collision under the
+unchanged fields and settings. No further eight-study replay was run for it.
+Missing initial separations, false separator evidence and anatomical membership
+omissions remain unresolved; no count-improving algorithm has been established
+by either experiment.
