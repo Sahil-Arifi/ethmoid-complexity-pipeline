@@ -347,6 +347,48 @@ those failures. Native source correspondence and unresolved counting boundaries
 remain conditional review questions; the algorithm is not yet validated for
 complete cell recovery.
 
+### Join-stage diagnosis and graph isolation repair
+
+The frozen native stage audit places pair 1/5 in different watershed fragments
+(410/378) that GASP subsequently merges. Pairs 2/3 and 6/7 already occupy single
+watershed fragments (418 and 377). All pairs remain connected after excluding
+every membership voxel with separator probability at least 0.5. The native
+paths use physical face neighbors; there is no long-edge or background jump.
+Source review retains a partial septal sheet, an open route and an unresolved
+mixed-density ridge rather than inventing complete separating surfaces.
+
+The audit also exposed a separate graph correctness problem. Masking watershed
+output can leave disconnected pieces with one superpixel ID. GASP then treats
+them as one node, allowing disconnected regions to share graph costs before
+the final connected-component split. An actual pinned-GASP fixture reproduces
+the failure: changing only a remote disconnected region changes the local
+split/join decision.
+
+Partition adapter `native-boundary-panseg-average-2` assigns every six-connected
+watershed piece its own graph node before GASP. Coverage, original watershed
+boundaries, physical spacing, average linkage, merge bias and small-component
+policy are preserved. The configuration records
+`connected_watershed_superpixels=true`; diagnostics report fragment counts
+before and after splitting. The isolated CPU environment and package locks are
+unchanged; a separate v2 manifest seals the new adapter and private job path.
+Historical source and runtime records remain available for old checkpoints.
+
+The fix removes seven aliased native watershed IDs, increasing fragments from
+551 to 647. On this frozen crop the graph edge costs and final 24 output masks
+are unchanged. Two fresh official v2 workers reproduce both old NPY files byte
+for byte. This repairs a general graph invariant without explaining away the
+current anatomical merges. The expanded regression selection passed 333 tests,
+including the remote-cost fixture, and fresh synthetic export/train/reload/
+infer/partition/evaluate validation passed with exact repeated predictions.
+
+The next bounded native intervention adds only reviewed material observations:
+two exact bone membership exclusions on the joining route and nine foreground
+exclusions/positive separator samples on the visible partial septum. Old labels
+and QC remain fixed; two additional bone points stay outside loss as adaptive
+same-patient QC, including an off-path wall control. A single 2,000-step run
+uses the same learning configuration and no count/QC checkpoint selection.
+Open and unresolved regions remain unknown. Its result is pending.
+
 ## Verification
 
 The preserved counting regression selection passed 472 tests. Existing wall

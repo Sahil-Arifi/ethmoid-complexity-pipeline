@@ -26,12 +26,13 @@ if os.name == "nt" and (Path(sys.prefix) / "Library" / "bin").is_dir():
 
 import numpy as np
 
-VERSION = "native-boundary-panseg-average-1"
+VERSION = "native-boundary-panseg-average-2"
 CONFIG = {"membership_threshold": .5, "threshold": .5, "sigma_seeds": 1.,
           "sigma_weights": 0., "min_size": 0, "alpha": 1.,
           "stacked": False, "blockwise": False, "apply_nonmax_suppression": False,
           "n_threads": 1, "beta": .5, "post_minsize": 0,
-          "linkage_criteria": "average", "minimum_native_voxels": 4}
+          "linkage_criteria": "average", "minimum_native_voxels": 4,
+          "connected_watershed_superpixels": True}
 MEMORY_BUDGET = 2 * 1024**3
 TIMEOUT_SECONDS = 120
 REQUEST_FIELDS = {"schema_version", "probabilities_path", "probabilities_sha256",
@@ -164,6 +165,13 @@ def _offline_guard():
         os.environ[key] = "1"
 
 
+def _connected_watershed(watershed):
+    """Give disconnected pieces separate graph nodes without changing coverage."""
+    from skimage.measure import label
+
+    return label(watershed, background=0, connectivity=1).astype(np.uint64, copy=False)
+
+
 def _decode(values, pitch):
     from scipy import ndimage as ndi
     from skimage.measure import label
@@ -174,7 +182,8 @@ def _decode(values, pitch):
 
     foreground = values[0] >= CONFIG["membership_threshold"]
     if not foreground.any():
-        return np.zeros(foreground.shape, np.int32), {"watershed_regions": 0,
+        return np.zeros(foreground.shape, np.int32), {"watershed_regions_before_split": 0,
+            "watershed_regions": 0, "watershed_fragments_added": 0,
             "raw_gasp_regions": 0, "removed_small_components": 0, "removed_small_voxels": 0,
             "missing_foreground_voxels": 0, "foreground_components": 0, "final_regions": 0}
     boundary = np.where(foreground, values[1], 1).astype(np.float32)
@@ -183,6 +192,13 @@ def _decode(values, pitch):
         apply_nonmax_suppression=False, n_threads=1, blockwise=False, mask=foreground)
     _require(watershed.shape == foreground.shape and np.all(watershed[foreground] > 0)
              and np.all(watershed[~foreground] == 0), "PARTITION_WATERSHED_COVERAGE_FAILED")
+    watershed_regions_before_split = int(np.unique(watershed[foreground]).size)
+    # ELF applies the mask after watershed growth. A region can therefore have
+    # disconnected foreground pieces; sharing their RAG node would couple
+    # graph costs between separate foreground components before the final split.
+    watershed = _connected_watershed(watershed)
+    _require(np.array_equal(watershed > 0, foreground), "PARTITION_WATERSHED_COVERAGE_FAILED")
+    watershed_regions = int(watershed.max())
     offsets = [[0, 0, 1], [0, 1, 0], [1, 0, 0]]
     affinities = 1 - shift_affinities(np.stack([boundary] * 3), offsets)
     # PanSeg's gasp wrapper omits foreground_mask. ELF's feeder converts every
@@ -205,7 +221,9 @@ def _decode(values, pitch):
     labels = lut[components]
     _require(np.all(labels[~foreground] == 0), "PARTITION_BACKGROUND_LEAK")
     _, foreground_components = ndi.label(foreground)
-    return labels, {"watershed_regions": int(np.unique(watershed[foreground]).size),
+    return labels, {"watershed_regions_before_split": watershed_regions_before_split,
+        "watershed_regions": watershed_regions,
+        "watershed_fragments_added": watershed_regions - watershed_regions_before_split,
         "raw_gasp_regions": int(np.unique(raw[foreground]).size),
         "foreground_components": int(foreground_components),
         "removed_small_components": int(removed.sum()),

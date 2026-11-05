@@ -3,6 +3,9 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import json
+import subprocess
+import textwrap
 
 import numpy as np
 import pytest
@@ -49,6 +52,34 @@ def test_memory_preflight_rejects_large_views_without_resizing():
         backend._validate_arrays(large, np.eye(4))
 
 
+def test_real_connected_watershed_preserves_coverage_ids_and_face_connectivity(real_runtime):
+    code = textwrap.dedent(r"""
+        import json, sys
+        import numpy as np
+        from ethmoid_pipeline.counting import boundary_partition as backend
+        backend._offline_guard()
+        backend._runtime(sys.argv[1])
+        from scipy import ndimage as ndi
+
+        watershed = np.zeros((6, 6, 6), np.uint64)
+        watershed[1:3, 1:3, 1:3] = 7
+        watershed[3, 3, 3] = 7  # Diagonal contact is not six-connectivity.
+        watershed[1:3, 1:3, 3] = 9  # Adjacent IDs must remain distinct.
+        before = watershed.copy()
+        connected = backend._connected_watershed(watershed)
+        assert connected.dtype == np.uint64
+        assert np.array_equal(watershed, before)
+        assert np.array_equal(connected > 0, watershed > 0)
+        assert connected.max() == 3
+        for fragment in range(1, int(connected.max()) + 1):
+            mask = connected == fragment
+            assert ndi.label(mask)[1] == 1
+            assert np.unique(watershed[mask]).size == 1
+        print(json.dumps({"six_connected_fragments": 3}))
+    """)
+    assert _run_real_runtime(code, real_runtime) == {"six_connected_fragments": 3}
+
+
 def test_strict_worker_schema_rejects_clinical_references_before_runtime(tmp_path):
     request = tmp_path / "request.json"
     backend._write(request, {"schema_version": 1, "reference_counts": [2, 2]})
@@ -80,6 +111,21 @@ def real_runtime():
     return value
 
 
+def _run_real_runtime(code, real_runtime):
+    manifest, runtime = backend._runtime(real_runtime)
+    env = {**os.environ, "CUDA_VISIBLE_DEVICES": "", "OMP_NUM_THREADS": "1",
+           "MKL_NUM_THREADS": "1", "OPENBLAS_NUM_THREADS": "1", "NUMEXPR_NUM_THREADS": "1",
+           "PANSEG_HOME": runtime["panseg_home"],
+           "PYTHONPATH": os.pathsep.join([str(Path(backend.__file__).resolve().parents[2]),
+                                           runtime["panseg_source_root"]])}
+    prefix = Path(runtime["python_executable"]).parent
+    env["PATH"] = os.pathsep.join([str(prefix / "Library" / "bin"), env.get("PATH", "")])
+    completed = subprocess.run([runtime["python_executable"], "-s", "-c", code, str(manifest)],
+                               env=env, capture_output=True, text=True, timeout=backend.TIMEOUT_SECONDS)
+    assert completed.returncode == 0, completed.stderr
+    return json.loads(completed.stdout.strip().splitlines()[-1])
+
+
 def test_real_panseg_disconnected_foreground_cannot_bridge_and_repeats(real_runtime):
     values = boxes()
     before = values.copy()
@@ -96,7 +142,59 @@ def test_real_panseg_disconnected_foreground_cannot_bridge_and_repeats(real_runt
     assert a["array_sha256"] == b["array_sha256"]
     assert a["pixel_pitch"] == [.3, .6, 1.2]
     assert a["native_grid"] and a["offline_guard"] and not a["cannot_link_constraints"]
+    assert a["config"]["connected_watershed_superpixels"] is True
+    assert a["watershed_regions"] >= a["watershed_regions_before_split"]
+    assert a["watershed_fragments_added"] == a["watershed_regions"] - a["watershed_regions_before_split"]
     assert Path(a["result_path"]).is_file()
+
+
+def test_real_gasp_disconnected_superpixels_cannot_couple_remote_costs(real_runtime):
+    # Deliberately aliased superpixels isolate the graph failure: changing only
+    # a disconnected remote region must not change the local clustering.
+    code = textwrap.dedent(r"""
+        import json, sys
+        import numpy as np
+        from ethmoid_pipeline.counting import boundary_partition as backend
+        backend._offline_guard()
+        backend._runtime(sys.argv[1])
+        from elf.segmentation import GaspFromAffinities
+        from elf.segmentation.gasp import SegmentationFeeder
+        from panseg.functionals.segmentation.utils import shift_affinities
+
+        shape = (16, 8, 8)
+        watershed = np.zeros(shape, np.uint64)
+        watershed[1:3, 1:5, 1:5] = 1
+        watershed[3:5, 1:5, 1:5] = 2
+        watershed[10:12, 1:5, 1:5] = 1
+        watershed[12:14, 1:5, 1:5] = 2
+        foreground = watershed > 0
+        connected = backend._connected_watershed(watershed)
+        assert connected.max() == 4
+        assert np.array_equal(connected > 0, foreground)
+        offsets = [[0, 0, 1], [0, 1, 0], [1, 0, 0]]
+
+        def local_joined(boundary, superpixels):
+            affinities = 1 - shift_affinities(np.stack([boundary] * 3), offsets)
+            decoder = GaspFromAffinities(offsets, superpixel_generator=SegmentationFeeder(),
+                run_GASP_kwargs={"linkage_criteria": "average", "add_cannot_link_constraints": False,
+                                 "use_efficient_implementations": False}, n_threads=1, beta_bias=.5)
+            raw, _ = decoder(affinities, superpixels, foreground_mask=foreground)
+            assert np.all(raw[~foreground] == 0)
+            return bool(raw[1, 2, 2] == raw[4, 2, 2])
+
+        aliased, safe = [], []
+        for remote_boundary in (.95, .05):
+            boundary = np.ones(shape, np.float32)
+            boundary[1:5, 1:5, 1:5] = .25
+            boundary[10:14, 1:5, 1:5] = remote_boundary
+            aliased.append(local_joined(boundary, watershed))
+            safe.append(local_joined(boundary, connected))
+        assert aliased == [False, True]  # The fixture actually exposes the failure.
+        assert safe == [True, True]
+        print(json.dumps({"aliased": aliased, "connected": safe, "offline_guard": True}))
+    """)
+    result = _run_real_runtime(code, real_runtime)
+    assert result == {"aliased": [False, True], "connected": [True, True], "offline_guard": True}
 
 
 def test_real_panseg_excluded_separator_and_connected_channel(real_runtime):
@@ -129,6 +227,8 @@ def test_real_empty_foreground_and_small_components_are_reported(real_runtime):
     values = np.zeros((2, 20, 20, 20), np.float32)
     empty, diagnostic = backend.partition(values, np.eye(4), real_runtime)
     assert empty.max() == 0 and diagnostic["final_regions"] == 0
+    assert diagnostic["watershed_regions_before_split"] == 0
+    assert diagnostic["watershed_regions"] == diagnostic["watershed_fragments_added"] == 0
     values[0, 2:8, 2:8, 2:8] = 1
     values[0, 15, 15, 15:18] = 1
     labels, diagnostic = backend.partition(values, np.eye(4), real_runtime)
