@@ -65,17 +65,35 @@ def _torch():
 
 
 def _pools(samples):
+    """Group observed head/class labels into annotation sampling regions."""
+    from scipy.ndimage import generate_binary_structure, label
+
     pools = [[] for _ in range(4)]
+    connectivity = generate_binary_structure(3, 1)
     for sample_index, (_, _, arrays) in enumerate(samples):
         y, m = learning.targets(arrays)
         for head in range(2):
             for cls in (0, 1):
-                positions = np.flatnonzero(m[head] & (y[head] == cls))
+                observed = m[head] & (y[head] == cls)
+                components, count = label(observed, connectivity)
+                positions = np.flatnonzero(observed)
                 if len(positions):
-                    positions = positions[::max(1, len(positions)//100000)]
-                    pools[head*2+cls].append((sample_index, positions))
+                    ids = components.ravel()[positions]
+                    ordered = positions[np.argsort(ids, kind="stable")]
+                    sizes = np.bincount(ids, minlength=count+1)[1:]
+                    # Retaining every index costs CPU memory proportional to known
+                    # supervision, bounded by the release, and preserves rare regions.
+                    regions = np.split(ordered, np.cumsum(sizes)[:-1])
+                    pools[head*2+cls].append((sample_index, regions))
     old.require(all(pools), "TRAIN_PARTITION_HEAD_CLASSES_MISSING")
     return pools
+
+
+def _sample_anchor(pool, rng, component_rng):
+    """Keep eligible released samples/crops uniform, then choose component and voxel."""
+    sample_index, regions = pool[rng.integers(len(pool))]
+    positions = regions[component_rng.integers(len(regions))]
+    return sample_index, positions[rng.integers(len(positions))]
 
 
 def _validation(samples, model, torch, deadline=None):
@@ -132,6 +150,7 @@ def train(manifest_path, output_path):
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning.CONFIG["learning_rate"],
                                  weight_decay=learning.CONFIG["weight_decay"])
     rng = np.random.default_rng(learning.CONFIG["seed"])
+    component_rng = np.random.default_rng(learning.CONFIG["seed"])
     patch_rng = np.random.default_rng(learning.CONFIG["seed"])
     best_loss, selected_step = float("inf"), 0
     checkpoint = output/"selected-checkpoint.local.pt"
@@ -145,9 +164,9 @@ def train(manifest_path, output_path):
         xs, ys, masks = [], [], []
         for batch in range(learning.CONFIG["batch_size"]):
             pool = pools[((step-1)*learning.CONFIG["batch_size"]+batch) % 4]
-            sample_index, positions = pool[rng.integers(len(pool))]
+            sample_index, position = _sample_anchor(pool, rng, component_rng)
             hu, _, arrays = training_samples[sample_index]
-            anchor = np.unravel_index(positions[rng.integers(len(positions))], hu.shape)
+            anchor = np.unravel_index(position, hu.shape)
             size = learning.CONFIG["patch_size"]
             center = learning.sample_patch_center(hu.shape, anchor, patch_rng, size=size)
             h = old.patch(hu, center, size, -1000)

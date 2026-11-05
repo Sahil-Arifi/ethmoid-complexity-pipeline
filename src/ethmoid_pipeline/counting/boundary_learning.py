@@ -8,11 +8,13 @@ from . import instance_learning as legacy
 from .instance_experiment import require, starts
 
 VERSION = "boundary-instance-v1"
-MODEL_VERSION = "native-membership-separator-unet-2"
+MODEL_VERSION = "native-membership-separator-unet-3"
 CONFIG = {
     "patch_size": 64, "batch_size": 2, "steps": 2000,
     "patch_sampling": "native_valid_containing_anchor-v2",
     "patch_sampling_rng": "independent_generator_same_seed",
+    "anchor_sampling": "uniform_sample_6connected_annotation_component_voxel-v1",
+    "anchor_component_rng": "independent_generator_same_seed",
     "maximum_gpu_seconds": 3600, "validation_interval": 100,
     "seed": 20261105, "learning_rate": 0.001, "weight_decay": 0.0001,
     "channels": [8, 16, 32, 64], "inference_stride": 32,

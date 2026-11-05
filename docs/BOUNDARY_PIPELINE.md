@@ -39,6 +39,14 @@ evaluation region. These same-patient checks do not establish patient transfer
 or eight-study accuracy. Protected sampling and context audits investigate the
 remaining fit failure before another training change.
 
+Replaying all 4,000 training patches found only three direct anchors for the
+eight exterior-air negatives. Each voxel appeared in 11–19 patches, with median
+accumulated BCE coefficient 0.00536 versus 1.736 for the new material labels.
+The failed checkpoint also misclassified all twenty exterior-air occurrences
+in three exactly reconstructed augmented training inputs. Full tiled predictions
+matched the saved arrays exactly. The failure therefore persists in training
+contexts; overlap averaging alone does not explain it.
+
 ## Commands and artifacts
 
 Use the existing CUDA counting Python with `PYTHONPATH=src`:
@@ -113,6 +121,27 @@ fields and helper source are bound into checkpoints. The backbone, loss,
 normalization, inference tiling and partition settings are unchanged. Revision-1
 checkpoints require the preserved source at commit `9e57405`; strict CPU reload
 of both historical native checkpoints passed in a separate source checkout.
+
+Model revision `native-membership-separator-unet-3` changes anchor sampling.
+The four head/class pools still cycle equally. A draw first chooses an eligible
+released sample/crop uniformly, then a six-connected component of its observed
+head/class labels uniformly, then a voxel in that component uniformly. These
+are annotation fragments, not inferred anatomical cells or separators. Unknown
+voxels never join a sampling component or gain a target. The existing sample
+weighting is preserved; multiple crops of one CT remain separate released
+samples. Patient grouping still controls the training/validation split.
+
+Component draws use an independent generator with the configured seed. Stable
+component ordering and all known voxel indices are retained; the old global
+100,000-index thinning is removed so it cannot discard rare fragments. This
+increases CPU index memory in proportion to known supervision within the existing
+release limits. The two new anchor-policy/RNG fields, model version and source
+hashes prevent silently loading revision-2 weights with the changed sampler.
+The previous source is preserved at `8ce4028`. BCE, backbone, valid-window
+sampling, augmentation, inference and partitioning are unchanged. This revision
+requires measured native preservation and exterior-air checks before promotion;
+balanced anchor selection alone does not guarantee balanced batch loss or correct
+cell recovery.
 
 Inference reloads weights with `weights_only=True`, verifies the complete
 configuration, model/geometry helper hashes and Python/Torch/CUDA runtime
