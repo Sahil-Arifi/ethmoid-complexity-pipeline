@@ -1,0 +1,217 @@
+# Native boundary and instance research CLI
+
+This separate research path learns cell membership and separator probabilities
+on the native CT grid, then partitions foreground with PanSeg distance-transform
+watershed and ELF GASP average linkage. It produces native instance masks,
+registries, provisional counts and source-bound evaluation. It does not replace
+the app, revive a closed experiment or establish anatomical accuracy.
+
+## Commands and artifacts
+
+Use the existing CUDA counting Python with `PYTHONPATH=src`:
+
+```powershell
+& $CountingPython scripts/boundary_cell_pipeline.py readiness --manifest $Release --output $FreshReadiness
+& $CountingPython scripts/boundary_cell_pipeline.py export --manifest $Release --output $FreshReview
+& $CountingPython scripts/boundary_cell_pipeline.py train --manifest $TrainingRequest --output $FreshTraining
+& $CountingPython scripts/boundary_cell_pipeline.py infer --manifest $SourceRequest --output $FreshPrediction
+& $CountingPython scripts/boundary_cell_pipeline.py evaluate --manifest $Comparison --output $FreshEvaluation
+& $CountingPython scripts/boundary_cell_pipeline.py diagnose --manifest $LegacyDiagnostic --output $FreshDiagnosis
+```
+
+All manifest paths, input files and fresh output directories must be absolute
+and outside Git workspaces. Each output directory receives a private ACL for
+the current Windows account and SYSTEM before data is written (0700 on POSIX).
+Existing outputs are never overwritten. CLI errors return fixed codes and a
+`failure.local.json` when a fresh protected run can be created. Raw exceptions,
+source headers and private paths are not printed.
+
+The [annotation contract](boundary-data-format.md) defines signed foreground,
+separator and instance labels, evaluation coverage, hashes, provenance and
+patient groups. Unknown labels contribute zero loss. Separators are explicit
+annotations; instance-core edges do not supply them. Automatic proposals never
+become expert references through export or import.
+
+Training requests contain `schema_version: 1`, `version: boundary-instance-v1`,
+`dataset: {path, sha256}` and `purpose: native_development` or
+`synthetic_engineering`. Only entirely synthetic releases may specify
+`synthetic_steps` for a shorter engineering run.
+
+Inference requests contain exactly `schema_version`, `version`, `case_id`,
+`source`, `checkpoint`, `checkpoint_sha256` and
+`partition_runtime: {path, sha256}`. `source` is the existing source hash,
+canonical native crop bounds and physical midline record. Reference cores,
+pair labels, annotations and counts are rejected as inference fields.
+
+Prediction outputs include `probabilities.local.npz`, full-source native
+`instances.local.nii.gz`, and `prediction.local.json`. The latter binds original
+geometry, source/model/runtime/producer hashes, provisional registry, quality
+flags and counts. Empty, crop-truncated or cross-midline candidates withhold
+counts; candidate totals remain separately inspectable. A complete numerical
+prediction does not establish full anatomical coverage.
+
+## Fixed model and training
+
+The `boundary-instance-v1` adapter initializes a new two-logit output layer on
+the existing 8/16/32/64 U-Net and deterministic pooling. It uses the same two
+HU-normalized channels. It does not load the failed affinity checkpoint.
+
+Training uses native 64-cubed patches, batch size 2, FP32, independently masked
+class-balanced binary cross-entropy, seeded sampling/flips/HU noise and AdamW
+(learning rate 0.001, weight decay 0.0001). Initial native runs stop at 2,000
+steps or one hour, including loading and validation under the CLI supervisor.
+Each head requires positive and negative training supervision. With multiple
+patient groups, the last sorted group is held out; every reconstruction and
+patch from a patient must share its group. Each held-out head needs known
+supervision. Validation runs every 100 steps and at the final requested step.
+The lowest annotated validation loss selects the checkpoint, with earlier
+ties retained. Counts never select weights. A single group is explicitly a
+mechanism experiment and saves the last scheduled checkpoint without claiming
+patient transfer.
+
+Inference reloads weights with `weights_only=True`, verifies the complete
+configuration, model/geometry helper hashes and Python/Torch/CUDA runtime
+identity, and averages overlapping native patches at stride 32. Reorientation
+only permutes/flips axes; there is no CT resampling or native label interpolation.
+CUDA uses a 12 GiB allocator cap, available-memory preflight and peak tracking.
+The supervisor bounds inference to 1,020 seconds; patch prediction also checks
+its 900-second deadline. Allocation failures produce explicit records.
+
+## Isolated partition runtime
+
+```powershell
+& scripts/bootstrap_boundary_partition.ps1
+```
+
+This bootstraps a separate Python 3.12 CPU environment under the local tools
+directory using the SHA-256-pinned official micromamba binary. Four public lock
+files pin source/archive hashes and all 189 conda package builds; bootstrap
+audits downloaded package hashes. It leaves the working CUDA environment
+unchanged. The resulting `runtime-manifest.local.json` binds the executable,
+adapter, PanSeg source tree, dependency metadata and locks. `-RefreshSeal`
+preserves the previous seal when intentionally resealing a verified adapter.
+Cached bootstrap and inference work offline; first bootstrap requires the
+pinned public downloads. Partition workers explicitly deny network connections.
+
+The CPU worker receives only hashed probabilities, affine and runtime identity.
+Membership and watershed thresholds are 0.5. Watershed uses physical voxel pitch,
+seed smoothing 1 voxel, weight smoothing 0 and no minimum-size merging. GASP
+uses average linkage, merge bias 0.5, one thread and no minimum-size merging.
+ELF's foreground mask excludes background from graph construction; disconnected
+regions are relabeled separately. Components below 4 voxels are filtered after
+partitioning and reported separately, without forcing a merge.
+
+The partition preflight estimates `128 MiB + 384 bytes per crop voxel` against
+a 2 GiB budget and available memory, before CUDA inference. The subprocess has
+a 120-second timeout. This is a conservative estimate and preflight, not an
+OS-enforced CPU memory cap. No resizing, alternate decoder or silent fallback
+is used when limits or dependencies fail.
+
+Average GASP is a measured baseline, not a hard separator constraint. A retained
+real-library fixture creates two watershed regions across a one-voxel boundary
+plane, then merges them when membership remains connected through that plane.
+The corresponding excluded-membership plane yields two cells. Background
+isolation and separator guarantees are different properties.
+
+## Evaluation and gates
+
+Comparison manifests contain `schema_version`, `version` and `entries`. Each
+entry includes a neutral `case_id`, `source_sha256` and either two hashed
+`predictions` from distinct processes, or an empty list. Optional `failure`
+binds a fixed-code failed-inference record. Optional `reference_counts` may
+provide known left/right/total values; absent or null targets stay unavailable.
+Optional `sample` supplies a source-bound annotation record for instance scoring.
+Keep every scheduled study, including failed, withheld and not-run entries.
+
+Evaluation verifies mask geometry against the actual source and recomputes the
+registry, physical laterality, quality flags and counts from the mask. Repeats
+must agree on native arrays, geometry, crop, registry, flags, candidate counts
+and reported count status. Frozen checkpoint/configuration/producer/runtime
+identities must agree across the cohort. Repeat disagreements suppress scoring.
+Partial references score only their declared completely annotated regions;
+unknown instance/foreground targets are forbidden inside such a region.
+
+Reports include coverage, voxel Dice and reference coverage, matched/missed/
+extra instances, merges, splits, individual side errors, exact sides and exact
+bilateral studies. Scheduled denominators remain explicit. `COMPLETE` means
+evaluation executed; `validation_passes` separately records repeatability.
+Reference quality and anatomical validity remain independent of either field.
+
+For an entirely new synthetic engineering run:
+
+```powershell
+& $CountingPython scripts/validate_boundary_pipeline.py --output $FreshEngineeringRun --runtime $RuntimeManifest --steps 200
+```
+
+The driver generates two separate synthetic patient groups and new complete
+chamber geometries, exports them, checks readiness, trains, reloads the frozen
+checkpoint in two fresh inference processes per source, partitions and scores.
+Its predetermined gates require exact repeat masks, two matched instances per
+source at IoU at least 0.9 with no miss/extra/merge/split, and exact generated
+bilateral counts. It preserves failed gates. Existing 132-case and untouched
+48-case benchmarks are not used by this driver.
+
+Before an eight-study native comparison, pass mechanism and resource checks,
+freeze weights and partition settings, and obtain sufficient source-bound
+annotations. The authoritative counting protocol covers unique cells over the
+full volume, including opacified cells and specified variants. A cropped toy
+experiment or correct totals alone cannot establish correct native recovery.
+
+## Measured results
+
+The complete generated run passed after 200 steps in 74.7 seconds, selecting
+step 200 by held-out annotated loss (0.01654, compared with 0.03976 at step 100).
+Peak PyTorch allocated memory was 336,035,840 bytes. Both generated sources had
+two matched cells with IoU 1.0 and foreground Dice 1.0, no missed/extra/merged/
+split instances, exact counts on all four sides, and identical native masks,
+registries and counts across their two fresh inference processes. These are
+simple chamber geometries from two generated groups, not anatomical references
+or evidence of patient transfer. An initial export invocation produced correct
+files but an incorrect nonzero CLI exit status; that mapping was fixed and a
+regression test added before the completed training run.
+
+The original saved affinity checkpoint was reproduced on its original crop.
+Its native array matched the saved result exactly. Every supervised edge
+prediction was correct, but deterministic positive-edge paths still joined all
+three declared distinct pairs. These witnesses used alternative paths through
+unknown predicted foreground, including long edges; they did not cross known
+or predicted background. This diagnosis supports replacing that representation
+without treating unknown space as anatomical evidence.
+
+The current conditional native release preserves the original sparse labels,
+keeps all separator voxels unknown and declares no complete evaluation region.
+It is `NOT_READY`: supported separator positives and negatives are missing.
+The protected Slicer package retains those unknowns and an exact annotation
+request. Native boundary training and the eight-study replay are gated off.
+No new 8/8 result or native count improvement is established.
+
+The installed pinned Slicer core and nnInteractive extension were reused. A
+local annotation-assistance trial on a generated source completed in 54.4
+seconds and produced a 2,310-voxel automatic proposal. Peak PyTorch reserved
+memory was 5,479,858,176 bytes; whole-process GPU memory was unavailable under
+WDDM. The existing checkpoint digest and CC BY-NC-SA 4.0 license are retained
+in the protected inventory/trial metadata. Its proposal remains separate from
+training truth and expert annotations. No patient volume was used by the trial.
+
+## Verification
+
+The preserved counting regression selection passed 472 tests. Existing wall
+research controls passed 213 tests, with one Windows symlink-permission skip
+and 24 integration tests deselected. The boundary/data/evaluation/partition and
+medical-data guard selection passed 133 checks, including actual isolated
+PanSeg workers and the supervised CLI timeout path.
+
+The broad application selection passed 699 tests in a fresh Python 3.13
+environment installed from the unchanged hash-locked application requirements;
+61 numerical/host-capability checks were skipped and 74 integration checks
+deselected. Numerical boundary and counting checks ran separately in the
+existing CUDA counting runtime. The original application test environment was
+missing four mandatory JPEG decoder packages; its 14 decoder/provenance
+failures were reproduced, then all 82 affected tests passed in the complete
+locked test environment before the broad successful run. The CUDA environment
+was not reinstalled or upgraded.
+
+Whitespace checks and the staged/all-tracked medical-data guards passed.
+Only source, public dependency locks, tests and documentation enter Git.
+Patient inputs, annotations, model weights, tool installations, review packages
+and experiment results remain in protected local storage.
