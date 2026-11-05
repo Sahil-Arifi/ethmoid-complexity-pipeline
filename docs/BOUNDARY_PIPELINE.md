@@ -381,13 +381,77 @@ current anatomical merges. The expanded regression selection passed 333 tests,
 including the remote-cost fixture, and fresh synthetic export/train/reload/
 infer/partition/evaluate validation passed with exact repeated predictions.
 
-The next bounded native intervention adds only reviewed material observations:
+The next bounded native intervention added only reviewed material observations:
 two exact bone membership exclusions on the joining route and nine foreground
 exclusions/positive separator samples on the visible partial septum. Old labels
 and QC remain fixed; two additional bone points stay outside loss as adaptive
 same-patient QC, including an off-path wall control. A single 2,000-step run
-uses the same learning configuration and no count/QC checkpoint selection.
-Open and unresolved regions remain unknown. Its result is pending.
+used the same learning configuration and no count/QC checkpoint selection.
+Open and unresolved regions remain unknown.
+
+### Native partial-wall follow-up: foreground improvement, repair gate failed
+
+The frozen run completed 2,000 steps in 125.3 seconds with 336,035,840 peak
+allocated GPU bytes. The last scheduled checkpoint was selected for this
+single-patient mechanism experiment. The CUDA learning environment, sampler,
+loss, seed and other learning settings match the parent. Only the reviewed
+annotation delta and the isolated graph adapter changed; the decoder-only
+control reproduced the parent native masks byte for byte.
+
+| Fixed observation | Parent | Partial-wall follow-up |
+| --- | ---: | ---: |
+| Original background QC output errors / 896 | 15 | 0 |
+| Original background QC membership-head errors / 896 | 18 | 0 |
+| Core voxels covered / 324 | 324 | 324 |
+| Positive QC points covered / 2 | 2 | 2 |
+| Original known background errors / 1,681 | 0 | 0 |
+| Added membership exclusion errors / 11 | 6 | 0 |
+| Added partial-wall separator errors / 9 | 3 | 0 |
+| Adaptive bone-control errors / 2 | 1 | 1 |
+| Declared pairs separated / 3 | 0 | 0 |
+
+The additional bone control on the joining route remains wrongly included:
+membership probability fell from 0.560 to 0.545, above the fixed 0.5 threshold.
+The off-path control remains excluded, although its probability rose from
+0.00057 to 0.231. Both controls remain unknown in every training-loss field and
+outside the evaluation-region mask. They were selected after the parent
+failure, so they are adaptive development QC rather than independent
+validation. The original 896 background voxels are also reused development
+QC. Correct results on these samples do not establish full-volume membership.
+
+The nine partial-wall observations fit, but they do not establish a closed
+cell boundary. All seven conditional cores still share decoded instance 1.
+The stage replay shows a narrower change: pair 2/3 now has distinct watershed
+fragments (706/713), but GASP merges them. Their direct graph edge still has
+mean affinity 0.597 over 46 contacts, favoring a merge under the fixed average
+linkage. Pair 1/5 also merges after watershed; pair 6/7 still shares its initial
+watershed fragment. The official CPU replay matches both saved native masks,
+and no disconnected watershed aliases remain. Better initial proposals for
+one pair therefore do not establish final cell recovery.
+The membership head selects 417,032 crop voxels (44.5%), compared with 422,924
+(45.1%) in the parent. After the unchanged small-component filter, the native
+instance masks contain 416,746 and 422,823 nonzero voxels respectively. The
+largest decoded instance still occupies 414,914 voxels (44.3% of the crop).
+Crop contact and midline flags keep counts withheld. Broad connected
+membership, incomplete separators and open-communication interpretation
+remain unresolved; the graph correctness repair did not solve these errors.
+
+Strict source, affine, annotation-delta, runtime and checkpoint checks passed.
+Unknown voxels outside the eleven exclusions/nine separator additions were
+unchanged. Masks, probabilities, geometry, registries and count status match
+across two fresh inference processes. The source-only inference manifest
+contains no cores, pairs, QC labels or reference counts. Independent native
+scoring confirmed the result.
+
+The predefined repair checks failed on the joining-route control, and the
+whole mechanism gate still fails on all three pairs. The candidate is retained
+as a failed repair with a measured foreground-QC improvement; it is not
+promoted to application counting. No eight-study replay was run while this
+mechanism gate remains unmet. Protected evidence is in
+`boundary-native-wall-repair-20261105T164051Z`, including the frozen inputs,
+Slicer review export, strict comparison and independent native review. Expert
+review still needs to resolve conditional cell correspondence and boundaries
+around communications; algorithmic membership and separation remain work too.
 
 ## Verification
 
