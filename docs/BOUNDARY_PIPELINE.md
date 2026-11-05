@@ -453,6 +453,83 @@ Slicer review export, strict comparison and independent native review. Expert
 review still needs to resolve conditional cell correspondence and boundaries
 around communications; algorithmic membership and separation remain work too.
 
+### Voxel-boundary projection repair
+
+The next source review rejected a two-point material correction as a separation
+repair. Excluding the two reviewed material voxels in a frozen diagnostic
+removed three graph contacts but left all three pairs merged. Pair 1/5 used
+another positive path, and pair 2/3 retained 45 contacts with a net attractive
+edge. Three
+additional lateral ridge observations did not establish closure of the thin
+central band for pair 6/7. These observations remain proposals; no annotation
+or training run was added from this rejected intervention.
+
+The supervision audit also found all eleven known separator positives outside
+the predicted foreground. Setting their separator probabilities to either
+zero or one changes no effective decoder-boundary voxels. This is a direct
+observability gap, not a loading or masked-loss defect; training can still
+change other predictions indirectly. Unknown regions remain unknown.
+
+A separate synthetic counterexample exposed a projection failure. With a
+perfect one-voxel boundary plane, watershed produces two regions, but the
+original scalar-to-affinity conversion produces one attractive graph edge
+over all 256 contacts. Every contact samples the zero-boundary endpoint and
+ignores the adjacent endpoint whose boundary probability is one. There is no
+competing negative edge in this fixture, so the merge does not demonstrate
+an average-linkage limitation. The earlier test attributed this failure to
+averaging incorrectly.
+
+The old conversion faithfully follows the [PanSeg wrapper](https://kreshuklab.github.io/panseg/latest/chapters/python_api/functionals/segmentation/).
+Adapter `native-boundary-panseg-average-3` makes this pipeline's voxel-centered
+separator contract explicit: each face affinity is
+`1 - max(boundary_low, boundary_high)`. This gives a boundary voxel influence
+on either incident face regardless of watershed ownership. No labels are
+dilated or inferred. Background stays excluded, disconnected watershed pieces
+retain separate graph nodes, and spacing, seed smoothing, thresholds, average
+linkage, merge bias and component filtering are unchanged. A separate v3
+runtime manifest seals the adapter; installed packages and locks are unchanged.
+The previous adapter, source checkout and checkpoint records are preserved.
+
+Twelve fixed-fragment ownership/reflection cases now retain a uniformly
+repulsive edge and two regions; six full watershed/GASP cases retain both
+interiors across all axes and reflections. Watershed tie ownership of the wall
+voxels themselves need not reflect exactly. A genuine interrupted-wall control
+has 64 repulsive and 192 attractive contacts and still merges under average
+linkage. This correction does not introduce hard cannot-link constraints.
+
+The change passed 355 checks across the existing numerical and application
+test environments, including 18 actual partition tests. Initial collection
+attempts used the numerical environment for application-dependent tests;
+the missing FastAPI/ReportLab dependencies were resolved by running those
+checks in the existing locked application environment. Its four SciPy skips
+were covered in the numerical environment. Neither environment was modified.
+A fresh 200-step synthetic export/train/reload/infer/partition/evaluate run
+passed, recovering all four generated instances with exact repeated results.
+Two fresh native CPU workers then partitioned the exact frozen D3 probability
+bytes using v3, before loading any annotations or QC references. Repeated
+masks and registries match exactly. All 324 core voxels remain covered and
+unfragmented, all 1,692 exclusions stay clear, and original QC remains zero
+errors on 896 negative voxels with both positive points covered. The adaptive
+joining-route bone point remains wrongly included. All three declared pairs
+still merge into instance 1; counts remain withheld. The partition changes
+beyond label permutation, but foreground support remains 416,746 voxels.
+
+This is a decoder-only causal replay, not a new model or training result.
+The unchanged learning code, annotations and fixed predictions isolate the
+projection repair. Because it does not pass the native separation gate, no
+redundant native retraining or eight-study replay was run. The repaired
+voxel-boundary contract is engineering progress; anatomical membership and
+separator recovery still fail. Expert review must resolve the conditional
+cell correspondence and boundaries around communications. The remaining
+algorithm work also requires broader source-supported membership and usable
+boundary supervision; sparse material fit alone does not supply it.
+
+Protected evidence is in `boundary-native-separation-review-20261105T171519Z`,
+including the supervision audit and strict decoder comparison. The independent
+synthetic counterexample and source-contact review packages remain separate
+and unchanged. Patient artifacts, proposed labels and model files stay outside
+Git; application counting is unchanged.
+
 ## Verification
 
 The preserved counting regression selection passed 472 tests. Existing wall

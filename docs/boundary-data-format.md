@@ -33,6 +33,13 @@ The annotation archive contains exactly:
 | `evaluation_region` | Boolean region explicitly designated for evaluation. Every included voxel must have a known instance/background ID and known foreground label. It does not establish anatomical completeness or clinical validity. |
 | `affine` | Finite 4 by 4 matrix matching the canonical native crop affine within absolute tolerance 1e-6. |
 
+Separator labels describe voxel-centered boundary evidence. They are not
+directional face-affinity labels. Partition adapter v3 converts each valid
+face to `1 - max(boundary_at_low_endpoint, boundary_at_high_endpoint)` so a
+separator contributes whichever adjacent watershed region owns that voxel.
+Background remains excluded from the graph. This conversion changes no
+annotation values and does not infer a complete separator from sparse labels.
+
 All voxel arrays match that native crop, with no resizing. Instance foreground
 and explicit foreground/background labels may not contradict each other.
 Unknown voxels remain unknown; an evaluation region containing unknown instance

@@ -52,6 +52,41 @@ def test_memory_preflight_rejects_large_views_without_resizing():
         backend._validate_arrays(large, np.eye(4))
 
 
+def test_voxel_boundary_contributes_to_both_incident_faces_in_all_axes():
+    boundary = np.zeros((5, 6, 7), np.float32)
+    center = (2, 3, 4)
+    boundary[center] = .8
+    before = boundary.copy()
+    affinities = backend._voxel_boundary_affinities(boundary)
+    assert affinities.shape == (3, *boundary.shape) and affinities.dtype == np.float32
+    assert np.array_equal(boundary, before)
+    for channel, axis in enumerate((2, 1, 0)):
+        low = list(center); low[axis] -= 1
+        assert affinities[(channel, *low)] == pytest.approx(.2)
+        assert affinities[(channel, *center)] == pytest.approx(.2)
+        assert affinities[channel, 0, 0, 0] == 1
+        last = [slice(None)] * 3; last[axis] = -1
+        assert np.all(affinities[(channel, *last)] == 0)
+
+
+def test_voxel_boundary_faces_do_not_wrap_or_cross_excluded_background():
+    boundary = np.zeros((5, 6, 7), np.float32)
+    boundary[-1, 2, 3] = 1
+    affinities = backend._voxel_boundary_affinities(boundary)
+    assert affinities[2, 0, 2, 3] == 1  # No wrap from the opposite edge.
+    assert affinities[2, -2, 2, 3] == 0
+    boundary[:] = 1
+    boundary[1:4, 1:5, 1:6] = 0  # Adapter supplies boundary1 outside foreground.
+    affinities = backend._voxel_boundary_affinities(boundary)
+    for channel, axis in enumerate((2, 1, 0)):
+        low = [2, 2, 2]; low[axis] = 0
+        high = [2, 2, 2]; high[axis] = boundary.shape[axis] - 2
+        interior = [2, 2, 2]; interior[axis] = 1
+        assert affinities[(channel, *low)] == 0
+        assert affinities[(channel, *high)] == 0
+        assert affinities[(channel, *interior)] == 1
+
+
 def test_real_connected_watershed_preserves_coverage_ids_and_face_connectivity(real_runtime):
     code = textwrap.dedent(r"""
         import json, sys
@@ -124,6 +159,34 @@ def _run_real_runtime(code, real_runtime):
                                env=env, capture_output=True, text=True, timeout=backend.TIMEOUT_SECONDS)
     assert completed.returncode == 0, completed.stderr
     return json.loads(completed.stdout.strip().splitlines()[-1])
+
+
+_GASP_REGRESSION_SETUP = textwrap.dedent(r"""
+    import json, sys
+    import numpy as np
+    from ethmoid_pipeline.counting import boundary_partition as backend
+    backend._offline_guard()
+    backend._runtime(sys.argv[1])
+    from elf.segmentation import GaspFromAffinities
+    from elf.segmentation.gasp import SegmentationFeeder
+    import elf.segmentation.gasp as gasp
+
+    captured = []
+    original_gasp = gasp.run_GASP
+    def capture(graph, weights, *args, **kwargs):
+        captured.append((np.asarray(weights).copy(), np.asarray(kwargs['edge_sizes']).copy()))
+        return original_gasp(graph, weights, *args, **kwargs)
+    gasp.run_GASP = capture
+
+    def cluster(boundary, superpixels):
+        decoder = GaspFromAffinities([[0,0,1], [0,1,0], [1,0,0]],
+            superpixel_generator=SegmentationFeeder(),
+            run_GASP_kwargs={"linkage_criteria": "average", "add_cannot_link_constraints": False,
+                             "use_efficient_implementations": False}, n_threads=1, beta_bias=.5)
+        raw, _ = decoder(backend._voxel_boundary_affinities(boundary), superpixels,
+                         foreground_mask=superpixels > 0)
+        return raw, captured[-1]
+""")
 
 
 def test_real_panseg_disconnected_foreground_cannot_bridge_and_repeats(real_runtime):
@@ -211,16 +274,63 @@ def test_real_panseg_excluded_separator_and_connected_channel(real_runtime):
     assert joined.max() == 1 and diagnostic["missing_foreground_voxels"] == 0
 
 
-def test_real_average_gasp_does_not_promise_hard_separator_constraints(real_runtime):
-    # Measured limitation: these contradictory heads produce two watershed
-    # regions but one average-GASP region. Never advertise a cannot-link gate.
-    values = np.zeros((2, 20, 20, 20), np.float32)
-    values[0, 2:18, 2:18, 2:18] = 1
-    values[1, 10, 2:18, 2:18] = 1
-    labels, diagnostic = backend.partition(values, np.eye(4), real_runtime)
-    assert diagnostic["watershed_regions"] == 2
-    assert diagnostic["raw_gasp_regions"] == 1 and labels.max() == 1
-    assert not diagnostic["cannot_link_constraints"]
+def test_real_complete_voxel_wall_survives_fragment_ownership_and_reflection(real_runtime):
+    # A one-sided projection used to miss a complete wall when its voxels
+    # belonged to the high-coordinate fragment. This isolates projection from
+    # averaging, with one RAG edge and 256 uniformly repulsive contacts.
+    code = _GASP_REGRESSION_SETUP + textwrap.dedent(r"""
+        fixed_cases = 0
+        full_cases = 0
+        for axis in range(3):
+            foreground = np.zeros((20,20,20), bool)
+            foreground[2:18,2:18,2:18] = True
+            coordinates = np.indices(foreground.shape)[axis]
+            boundary = np.where(foreground, 0, 1).astype(np.float32)
+            boundary[coordinates == 10] = 1
+            for split in (10, 11):  # Wall voxels owned by either fragment.
+                superpixels = np.where(foreground, np.where(coordinates < split, 1, 2), 0)
+                for reflected in (False, True):
+                    bd = np.flip(boundary, axis).copy() if reflected else boundary.copy()
+                    ws = np.flip(superpixels, axis).copy() if reflected else superpixels.copy()
+                    raw, (weights, sizes) = cluster(bd, ws)
+                    assert weights.tolist() == [-.5] and sizes.tolist() == [256.]
+                    assert np.unique(raw[ws == 1]).size == np.unique(raw[ws == 2]).size == 1
+                    assert raw[ws == 1][0] != raw[ws == 2][0]
+                    fixed_cases += 1
+            for reflected in (False, True):
+                bd = np.flip(boundary, axis).copy() if reflected else boundary.copy()
+                fg = np.flip(foreground, axis).copy() if reflected else foreground.copy()
+                labels, diagnostic = backend._decode(np.stack([fg.astype(np.float32), bd]), [1.,1.,1.])
+                assert diagnostic['watershed_regions'] == diagnostic['raw_gasp_regions'] == 2
+                assert labels.max() == 2 and np.all(labels[fg] > 0)
+                labels = np.flip(labels, axis) if reflected else labels
+                # Watershed tie ownership of the wall itself need not reflect;
+                # both nonboundary interiors must retain the same partition.
+                lo = labels[foreground & (coordinates < 10)]
+                hi = labels[foreground & (coordinates > 10)]
+                assert np.unique(lo).size == np.unique(hi).size == 1 and lo[0] != hi[0]
+                full_cases += 1
+        print(json.dumps({'fixed_fragment_cases': fixed_cases, 'full_pipeline_cases': full_cases}))
+    """)
+    assert _run_real_runtime(code, real_runtime) == {"fixed_fragment_cases": 12, "full_pipeline_cases": 6}
+
+
+def test_real_average_gasp_partial_boundary_remains_soft_evidence(real_runtime):
+    # A real average-aggregation property: 64 repulsive and 192 attractive
+    # contacts yield mean affinity .75, not a hard cannot-link constraint.
+    code = _GASP_REGRESSION_SETUP + textwrap.dedent(r"""
+        foreground = np.zeros((20,20,20), bool)
+        foreground[2:18,2:18,2:18] = True
+        coordinates = np.indices(foreground.shape)[0]
+        ws = np.where(foreground, np.where(coordinates < 10, 1, 2), 0)
+        boundary = np.where(foreground, 0, 1).astype(np.float32)
+        boundary[10,2:6,2:18] = 1
+        raw, (weights, sizes) = cluster(boundary, ws)
+        assert weights.tolist() == [.25] and sizes.tolist() == [256.]
+        assert np.unique(raw[foreground]).size == 1
+        print(json.dumps({'mean_affinity': .75, 'groups': 1}))
+    """)
+    assert _run_real_runtime(code, real_runtime) == {"mean_affinity": .75, "groups": 1}
 
 
 def test_real_empty_foreground_and_small_components_are_reported(real_runtime):

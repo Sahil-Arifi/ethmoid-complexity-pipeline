@@ -26,13 +26,14 @@ if os.name == "nt" and (Path(sys.prefix) / "Library" / "bin").is_dir():
 
 import numpy as np
 
-VERSION = "native-boundary-panseg-average-2"
+VERSION = "native-boundary-panseg-average-3"
 CONFIG = {"membership_threshold": .5, "threshold": .5, "sigma_seeds": 1.,
           "sigma_weights": 0., "min_size": 0, "alpha": 1.,
           "stacked": False, "blockwise": False, "apply_nonmax_suppression": False,
           "n_threads": 1, "beta": .5, "post_minsize": 0,
           "linkage_criteria": "average", "minimum_native_voxels": 4,
-          "connected_watershed_superpixels": True}
+          "connected_watershed_superpixels": True,
+          "boundary_to_affinity": "max_of_face_endpoints"}
 MEMORY_BUDGET = 2 * 1024**3
 TIMEOUT_SECONDS = 120
 REQUEST_FIELDS = {"schema_version", "probabilities_path", "probabilities_sha256",
@@ -172,11 +173,20 @@ def _connected_watershed(watershed):
     return label(watershed, background=0, connectivity=1).astype(np.uint64, copy=False)
 
 
+def _voxel_boundary_affinities(boundary):
+    """A voxel-centered separator contributes to every incident graph face."""
+    affinities = np.zeros((3, *boundary.shape), np.float32)
+    for channel, axis in enumerate((2, 1, 0)):
+        low, high = [slice(None)] * 3, [slice(None)] * 3
+        low[axis], high[axis] = slice(None, -1), slice(1, None)
+        affinities[(channel, *low)] = 1 - np.maximum(boundary[tuple(low)], boundary[tuple(high)])
+    return affinities
+
+
 def _decode(values, pitch):
     from scipy import ndimage as ndi
     from skimage.measure import label
     from panseg.functionals.segmentation import dt_watershed
-    from panseg.functionals.segmentation.utils import shift_affinities
     from elf.segmentation import GaspFromAffinities
     from elf.segmentation.gasp import SegmentationFeeder
 
@@ -200,7 +210,7 @@ def _decode(values, pitch):
     _require(np.array_equal(watershed > 0, foreground), "PARTITION_WATERSHED_COVERAGE_FAILED")
     watershed_regions = int(watershed.max())
     offsets = [[0, 0, 1], [0, 1, 0], [1, 0, 0]]
-    affinities = 1 - shift_affinities(np.stack([boundary] * 3), offsets)
+    affinities = _voxel_boundary_affinities(boundary)
     # PanSeg's gasp wrapper omits foreground_mask. ELF's feeder converts every
     # background superpixel to its ignored -1 sentinel before building the RAG.
     decoder = GaspFromAffinities(offsets, superpixel_generator=SegmentationFeeder(),
