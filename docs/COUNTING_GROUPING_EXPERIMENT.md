@@ -68,5 +68,30 @@ The repository's numerical CI suite passes **456 tests**, including 34 portable
 contracts for this experimental module; 16 optional Torch checks are skipped
 in the locked CPU test environment.
 
-Status: synthetic verification complete; the eight-study comparison is next.
-No new clinical count result is established.
+## Eight-study outcome: failed
+
+The experimental grouping change did not improve the exposed development
+comparison: it achieved **0/8 bilateral matches** and **0/16 exact sides**.
+Across the same fourteen available sides, absolute count error increased from
+**28 to 57** versus the 0.2.3 baseline. The older 0.2.2 baseline had 1/8 bilateral
+matches, 3/16 exact sides and error 27. Every available study's total error
+worsened against both baselines. Availability was unchanged: seven studies
+provided counts and one withheld them.
+
+All sixteen runs closed without a technical failure. Independent native checks
+confirmed exact repeat arrays, geometry, registries, counts and coverage. On the
+four studies with saved proposal traces, original raw watershed, marker, free
+and bone arrays matched in both repeats. All 2,562 protected files and 131 closed
+output files remained unchanged. A separate count evaluator independently
+recomputed the metrics and agreed with the coordinator for both repeats.
+
+This rejects the current-group ownership rule as an accuracy improvement for
+these studies. Its synthetic repairs do not justify changing application
+counting. The candidate remains opt-in research code and was not promoted.
+
+A subsequent source-bound diagnostic found that adjacency labeling can fuse
+two already-selected, non-overlapping peak-family components into one seed in
+one archived raw basin. A second collision had only one overlapping identity,
+so that mechanism was rejected there. Original fields, markers and peak counts
+were reproduced exactly. No modified seed set, watershed or count was run by
+that diagnostic; it does not establish a repaired native cell distinction.
