@@ -88,6 +88,54 @@ pins, identical winner arrays, unchanged foreground, positive-only scoring and
 all declared relations from saved arrays. It also reconstructed the complete
 merge mapping from recorded unions and verified every preserved constraint.
 
+Saved-output attribution then found 39 preserved constraints between intact
+groups touching the same conditional core: 19 directly joined raw regions
+touching that core; 20 were inherited through earlier unions. Their original
+support scores reproduced exactly, but none had an in-radius plate witness
+whose flanks belonged to the relevant raw or final group pair. This establishes
+ownership provenance, not a safe deletion rule. An earlier true-wall control
+already falsifies a static pair-owned veto: wall endpoints can belong to other
+fragments that must first be joined. That counterexample remains binding.
+
+The existing same-side-normal veto was also evaluated without changing labels.
+On this reference-selected subset, it qualified 28 of 39 edges, including 13 of
+19 direct obstructions. Six direct constraints remained, so this rule alone
+cannot resolve all conditional-core fragmentation. The other 22,654 preserved
+edges were not evaluated. Original support assertions and input hashes passed;
+saved witness signs and qualifications passed independent verification. Removing
+only the reference-selected edges would leak oracle information and was not run.
+
+## Constraint lookup repair
+
+The graph contractor now indexes forbidden neighbors of current union roots,
+replacing a scan of every preserved edge before each proposed union. When two
+roots join, both sides of every affected constraint are redirected to the
+minimum root. Original edge order, constraints, trace rows, uncertainty and
+output IDs are preserved. This changes execution cost, not wall evidence or
+the counting policy; method version remains `0.2.3`.
+
+Five saved graphs, including all four baseline traces and the finer proposal
+graph, reproduced every recorded decision, mapping byte, uncertainty set and
+mapped-label byte. Validation reconstructed the complete original unsupported
+edge order, including edges skipped after earlier unions. On the fine graph,
+the helper alone took 0.0202 seconds; that is not comparable to the prior
+65.094-second full merge stage.
+
+A separately frozen full merge replay then measured the same call and inputs:
+65.094 seconds before the optimization, 0.406 seconds after it. Merged labels,
+affine bytes and the complete trace JSON were byte-identical. Returned
+uncertainty matched the set reconstructed from the original trace and source
+expression. All 55 pins and inputs stayed unchanged; peak committed process
+memory was 1,576,235,008 bytes under the original 2-GiB cap. This is one observed
+paired timing, not a general performance guarantee or a new cell-count result.
+
+Software checks passed 422 numerical tests, 213 wall controls and 53 application
+and real CPU-worker tests. Sixteen optional Torch tests and one host symlink
+check were skipped; 24 wall integration cases were deselected. Focused checks
+include all 729 four-node edge classifications in both orders, inherited
+constraints, shared neighbors and full-stage arrays/registry/trace comparison
+with the original scan. No clinical count improvement follows from this repair.
+
 The next implementation must preserve proposal distinctions while removing
 unsupported fragments. The saved constraints blocking unions within individual
 cores are the next diagnostic target. Separator identity still fails on six preserved
@@ -104,4 +152,7 @@ The independent 48-geometry set remains unexposed to inference.
 External evidence is grouped under `native-discrepancy-audit-01`: the baseline
 traces and peer closure, object deltas and interpretation correction, reference
 review packet, original proposal stop, budget-only revision, merge-only replay,
-and their independent verification. Patient data and detailed artifacts stay local.
+obstruction attribution, existing-rule features, graph equivalence, and their
+independent verification. Source-only optimization tests and original snapshots
+are also preserved under `causal-partition-audit-01/dsu-adjacency-01`. Patient data
+and detailed artifacts stay local.

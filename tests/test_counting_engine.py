@@ -1,6 +1,7 @@
 """Geometric algorithm validation; these phantoms are not clinical accuracy tests."""
 
 from dataclasses import asdict
+from itertools import combinations, product
 import json
 
 import nibabel as nib
@@ -12,7 +13,7 @@ import pytest
 pytest.importorskip("scipy")
 pytest.importorskip("skimage")
 
-from ethmoid_pipeline.counting.engine import CountingConfig, CountingError, _component_h_maxima, _merge_unsupported_separators, _physical_distance, analyze_volume, compartment_stage
+from ethmoid_pipeline.counting.engine import CountingConfig, CountingError, _component_h_maxima, _contract_separator_graph, _merge_unsupported_separators, _physical_distance, analyze_volume, compartment_stage
 from ethmoid_pipeline.counting.localization import Localization, TASKS, _closed_nasal_pockets, _continuous_wall, _intracranial_roof, automatic_region, cache_producer_warnings, load_landmarks
 
 
@@ -382,6 +383,82 @@ def test_dominant_separator_axis_ties_use_physical_direction():
     actual, _ = _merge_unsupported_separators(labels.transpose(1, 0, 2), free.transpose(1, 0, 2), (~free).transpose(1, 0, 2), np.ones(3), CountingConfig(), affine=permutation)
     assert set(np.unique(original)) == {0, 1, 2}
     assert np.array_equal(original, actual.transpose(1, 0, 2))
+
+
+def _scan_separator_graph(n, preserved, unsupported, *, merge_decisions=None):
+    """Original all-preserved-edge scan, retained as an independent graph oracle."""
+    parent = list(range(n + 1))
+
+    def root(node):
+        while parent[node] != node:
+            node = parent[node]
+        return node
+
+    for _, a, b in unsupported:
+        left, right = root(a), root(b)
+        if left == right:
+            continue
+        blocked = any({root(u), root(v)} == {left, right} for u, v in preserved)
+        if not blocked:
+            parent[max(left, right)] = min(left, right)
+        if merge_decisions is not None:
+            merge_decisions.append({"basins": [a, b], "merged": not blocked,
+                "reason": "supported_septum_constraint" if blocked else "insufficient_separator_support"})
+    return np.array([root(node) for node in range(n + 1)], dtype=np.int32)
+
+
+@pytest.mark.parametrize("n,preserved,edges,expected,decisions", [
+    (4, {(3, 4)}, [(1, 4), (2, 3), (1, 2)], [0, 1, 2, 2, 1], [True, True, False]),
+    (6, {(5, 6)}, [(4, 5), (3, 4), (2, 3), (1, 2), (1, 6)], [0, 1, 1, 1, 1, 1, 6], [True, True, True, True, False]),
+    (5, {(2, 3), (1, 5), (2, 5)}, [(1, 2), (1, 4), (3, 4), (4, 5), (2, 4)], [0, 1, 1, 3, 1, 5], [True, True, False, False]),
+])
+def test_separator_constraints_follow_both_roots_and_skip_internal_edges(n, preserved, edges, expected, decisions):
+    ordered = [(float(index), a, b) for index, (a, b) in enumerate(edges)]
+    initial = preserved.copy(), ordered.copy()
+    trace = []
+    mapping = _contract_separator_graph(n, preserved, ordered, merge_decisions=trace)
+    assert mapping.dtype == np.int32
+    assert mapping.tolist() == expected
+    assert trace == [{"basins": list(edge), "merged": merged,
+        "reason": "insufficient_separator_support" if merged else "supported_septum_constraint"}
+        for edge, merged in zip(edges, decisions)]
+    assert (preserved, ordered) == initial
+    assert np.array_equal(_contract_separator_graph(n, preserved, ordered), mapping)
+
+
+def test_separator_graph_matches_scan_for_every_four_node_edge_classification():
+    pairs = list(combinations(range(1, 5), 2))
+    for states in product(range(3), repeat=len(pairs)):
+        preserved = {pair for pair, state in zip(pairs, states) if state == 2}
+        edges = [pair for pair, state in zip(pairs, states) if state == 1]
+        for sequence in (edges, edges[::-1]):
+            ordered = [(float(index), a, b) for index, (a, b) in enumerate(sequence)]
+            actual_trace, expected_trace = [], []
+            expected = _scan_separator_graph(4, preserved, ordered, merge_decisions=expected_trace)
+            actual = _contract_separator_graph(4, preserved, ordered, merge_decisions=actual_trace)
+            assert np.array_equal(actual, expected), (states, sequence)
+            assert actual_trace == expected_trace, (states, sequence)
+
+
+def test_separator_graph_preserves_full_stage_arrays_registry_and_trace(monkeypatch):
+    import ethmoid_pipeline.counting.engine as engine
+
+    free = _ordering_phantom(1436)
+    hu = np.where(free, -900, 800).astype(np.float32)
+    affine = np.diag([0.6, 0.6, 0.6, 1])
+    optimized_trace, scan_trace = {}, {}
+    optimized = run(hu, np.ones(free.shape, bool), affine, trace=optimized_trace)
+    monkeypatch.setattr(engine, "_contract_separator_graph", _scan_separator_graph)
+    scanned = run(hu, np.ones(free.shape, bool), affine, trace=scan_trace)
+    for actual, expected in zip(optimized[:2], scanned[:2]):
+        assert np.array_equal(actual, expected)
+    assert optimized[2:] == scanned[2:]
+    actual_arrays, expected_arrays = optimized_trace.pop("arrays"), scan_trace.pop("arrays")
+    assert list(actual_arrays) == list(expected_arrays)
+    for name, actual in actual_arrays.items():
+        assert actual.dtype == expected_arrays[name].dtype
+        assert actual.tobytes() == expected_arrays[name].tobytes()
+    assert json.dumps(optimized_trace, allow_nan=False) == json.dumps(scan_trace, allow_nan=False)
 
 
 @pytest.mark.parametrize("order,flips", [

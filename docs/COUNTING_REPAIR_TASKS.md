@@ -34,6 +34,7 @@ Verification: fixed-input intervention pairs and source hash checks. Dependencie
 - [x] Locate conditional raw collisions, a merging collision, pre-search absence and outside-heavy membership rejection without deriving labels from totals.
 - [x] Test one target-free fine-proposal diagnostic; preserve its original resource stop and separately frozen budget-only revision. The declared pairs no longer share raw IDs, but cores fragment and the missing core stays unassigned.
 - [x] Run the unchanged merger once on saved fine proposals within the fixed resource limits. All three distinctions survive, but five cores remain fragmented; verify all constraints and the complete union mapping independently.
+- [x] Replace repeated constraint scans with current-root adjacency indexing. Verify five saved graphs and the complete merge output/trace exactly; pass 688 software checks. Same-crop merge time falls from 65.094 to 0.406 seconds in one paired observation, without changing counting policy.
 - [ ] Demonstrate feasible grouping and acceptance without losing those distinctions or creating unsupported compartments.
 - [ ] Add proposal-specific controls before evaluating a combined numerical candidate. Unknown native relations remain unscored.
 

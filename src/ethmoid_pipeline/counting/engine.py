@@ -197,6 +197,41 @@ def _shift(mask: np.ndarray, axis: int, offset: int) -> np.ndarray:
     return out
 
 
+def _contract_separator_graph(n: int, preserved: set[tuple[int, int]], unsupported: list[tuple[float, int, int]], *, merge_decisions: list[dict] | None = None) -> np.ndarray:
+    """Contract ordered unsupported edges while retaining separator constraints."""
+    parent = np.arange(n + 1)
+    cannot_merge: list[set[int]] = [set() for _ in range(n + 1)]
+    for a, b in preserved:
+        cannot_merge[a].add(b)
+        cannot_merge[b].add(a)
+
+    def root(index: int) -> int:
+        while parent[index] != index:
+            parent[index] = parent[parent[index]]
+            index = int(parent[index])
+        return index
+
+    for _, a, b in unsupported:
+        left, right = root(a), root(b)
+        if left == right:
+            continue
+        if right in cannot_merge[left]:
+            if merge_decisions is not None:
+                merge_decisions.append({"basins": [a, b], "merged": False, "reason": "supported_septum_constraint"})
+            continue
+        keep, drop = min(left, right), max(left, right)
+        # Redirect both sides so adjacency remains the quotient of fixed constraints.
+        for neighbor in cannot_merge[drop]:
+            cannot_merge[neighbor].remove(drop)
+            cannot_merge[neighbor].add(keep)
+            cannot_merge[keep].add(neighbor)
+        cannot_merge[drop].clear()
+        parent[drop] = keep
+        if merge_decisions is not None:
+            merge_decisions.append({"basins": [a, b], "merged": True, "reason": "insufficient_separator_support"})
+    return np.array([root(i) for i in range(n + 1)], dtype=np.int32)
+
+
 def _merge_unsupported_separators(labels: np.ndarray, free: np.ndarray, bone: np.ndarray, spacing: np.ndarray, config: CountingConfig, *, affine: np.ndarray | None = None, markers: np.ndarray | None = None, trace: dict | None = None) -> tuple[np.ndarray, set[int]]:
     """Retain watershed splits only near a thin bone plate with lumen on both sides.
 
@@ -205,14 +240,6 @@ def _merge_unsupported_separators(labels: np.ndarray, free: np.ndarray, bone: np
     The resulting split remains an uncertain engineering inference.
     """
     n = int(labels.max())
-    parent = np.arange(n + 1)
-
-    def root(index: int) -> int:
-        while parent[index] != index:
-            parent[index] = parent[parent[index]]
-            index = int(parent[index])
-        return index
-
     axes = range(3) if affine is None else _execution_axes(affine, spacing)[0]
     evidence: dict[tuple[int, int], list[int]] = {}
     for axis in axes:
@@ -262,18 +289,7 @@ def _merge_unsupported_separators(labels: np.ndarray, free: np.ndarray, bone: np
     else:
         unsupported.sort()
     merge_decisions = [] if trace is not None else None
-    for _, a, b in unsupported:
-        left, right = root(a), root(b)
-        if left == right:
-            continue
-        if any({root(u), root(v)} == {left, right} for u, v in preserved):
-            if merge_decisions is not None:
-                merge_decisions.append({"basins": [a, b], "merged": False, "reason": "supported_septum_constraint"})
-            continue
-        parent[max(left, right)] = min(left, right)
-        if merge_decisions is not None:
-            merge_decisions.append({"basins": [a, b], "merged": True, "reason": "insufficient_separator_support"})
-    mapping = np.array([root(i) for i in range(n + 1)], dtype=np.int32)
+    mapping = _contract_separator_graph(n, preserved, unsupported, merge_decisions=merge_decisions)
     uncertain = {int(mapping[i]) for pair in preserved for i in pair if mapping[pair[0]] != mapping[pair[1]]}
     if trace is not None:
         trace["interfaces"] = [{"basins": list(pair), "dominant_axis": axis,
