@@ -143,6 +143,33 @@ requires measured native preservation and exterior-air checks before promotion;
 balanced anchor selection alone does not guarantee balanced batch loss or correct
 cell recovery.
 
+The subsequent frozen native comparison completed 2,000 steps in 276.782 seconds
+with 336,035,840 peak allocated GPU bytes. It reused exactly the previous labels
+and QC. A complete seeded replay increased exterior-air direct anchors from 3
+to 98 and median accumulated BCE coefficient from 0.005355 to 0.029083 (5.43×).
+All 1,722 known membership negatives, 396 positives and both separator classes
+fit under native tiled inference. Two fresh predictions matched exactly.
+
+| Native check | Previous v3 control | Annotation-only run | Revised sampler |
+| --- | ---: | ---: | ---: |
+| Original negative QC false positives | 0/896 | 186/896 | 122/896 |
+| Exterior-air training false positives | 8/8 | 8/8 | 0/8 |
+| Exterior-air QC false positives | 8/8 | 8/8 | 0/8 |
+| Material QC false positives | 3/4 | 0/4 | 0/4 |
+| Interior QC retained | 12/12 | 12/12 | 12/12 |
+| Declared pairs separated | 0/3 | 0/3 | 0/3 |
+
+The revised sampler preserves all 324 original core voxels without fragmentation,
+all 1,692 original exclusions and both positive controls. Both adaptive material
+controls also pass. All remaining original-QC errors lie in the lateral tissue
+control; the brain control remains correct. Preservation still fails against the
+zero-error earlier control, so the candidate was not promoted. Counts remain
+withheld and complete-region instance scoring remains unavailable. The protected
+native-readiness report records foreground generalization, unresolved interfaces,
+missing complete cell masks/evaluation regions and the need for an independently
+annotated patient group. Those model and reference gaps remain separate from the
+verified sampling repair. No eight-study replay was run after the failed gate.
+
 Inference reloads weights with `weights_only=True`, verifies the complete
 configuration, model/geometry helper hashes and Python/Torch/CUDA runtime
 identity, and averages overlapping native patches at stride 32. Reorientation
