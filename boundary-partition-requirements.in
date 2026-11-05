@@ -1,0 +1,13 @@
+# Isolated Windows CPU partition environment; never install in the CUDA worker.
+# Resolved exact win-64/noarch builds and hashes are in the adjacent lock files.
+python=3.12
+numpy=2.5.3
+scipy=1.18.1
+scikit-image=0.26.0
+nifty=1.2.4
+python-elf=0.9.2
+vigra=1.12.3
+pyyaml=6.0.3
+pytorch=2.13.0=cpu*
+pip
+pytest

@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "micromamba_version": "2.10.0-0",
+  "micromamba_url": "https://github.com/mamba-org/micromamba-releases/releases/download/2.10.0-0/micromamba-win-64.exe",
+  "micromamba_sha256": "f8b4284bd4eb1134122eaf93b3ea6c7be567e596de5829e1a6f478e34e41974a",
+  "micromamba_checksum_provenance": "https://api.github.com/repos/mamba-org/micromamba-releases/releases/tags/2.10.0-0",
+  "panseg_version": "2.2.0",
+  "panseg_commit": "da5baa4068dd27fd01d2b120ba3d04f2758a68e7",
+  "panseg_archive_url": "https://codeload.github.com/kreshuklab/panseg/zip/da5baa4068dd27fd01d2b120ba3d04f2758a68e7",
+  "panseg_archive_sha256": "4b58299e5edcc9a7207052f122877939814113f20569db52d69479e33ca865f0",
+  "panseg_commit_provenance": "https://api.github.com/repos/kreshuklab/panseg/git/tags/6dd8550adf83a07dad612303c4a8c4d23508c840"
+}

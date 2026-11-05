@@ -26,6 +26,19 @@ def _dicom_blob() -> bytes:
     return b"\x00" * 128 + b"DICM" + b"synthetic-only"
 
 
+@pytest.mark.parametrize("filename", ["boundary-partition-conda.lock.json", "boundary-partition-source.lock.json",
+                                       "boundary-partition-requirements.in", "boundary-partition-win-64.explicit.txt"])
+def test_public_boundary_dependency_locks_still_reject_medical_blobs(tmp_path, filename):
+    repo = _repo(tmp_path)
+    path = repo/filename
+    path.write_text("public dependency version and hash only", encoding="utf-8")
+    _git(repo, "add", ".")
+    assert scan_staged(repo) == []
+    path.write_bytes(_dicom_blob())
+    _git(repo, "add", ".")
+    assert any("DICOM" in failure for failure in scan_staged(repo))
+
+
 @pytest.mark.parametrize("generation", [4, 5])
 def test_research_protocol_path_still_checks_medical_content(tmp_path: Path, generation: int) -> None:
     repo = _repo(tmp_path)
