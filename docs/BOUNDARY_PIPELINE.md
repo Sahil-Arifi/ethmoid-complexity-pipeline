@@ -178,12 +178,13 @@ unknown predicted foreground, including long edges; they did not cross known
 or predicted background. This diagnosis supports replacing that representation
 without treating unknown space as anatomical evidence.
 
-The current conditional native release preserves the original sparse labels,
+The initial conditional native release preserves the original sparse labels,
 keeps all separator voxels unknown and declares no complete evaluation region.
 It is `NOT_READY`: supported separator positives and negatives are missing.
 The protected Slicer package retains those unknowns and an exact annotation
-request. Native boundary training and the eight-study replay are gated off.
-No new 8/8 result or native count improvement is established.
+request. That release remains unchanged. A separate conditional mechanism
+release and native experiment are described below. No new 8/8 result or native
+count improvement is established.
 
 The installed pinned Slicer core and nnInteractive extension were reused. A
 local annotation-assistance trial on a generated source completed in 54.4
@@ -192,6 +193,57 @@ memory was 5,479,858,176 bytes; whole-process GPU memory was unavailable under
 WDDM. The existing checkpoint digest and CC BY-NC-SA 4.0 license are retained
 in the protected inventory/trial metadata. Its proposal remains separate from
 training truth and expert annotations. No patient volume was used by the trial.
+
+### First native mechanism experiment: failed
+
+A separate source-bound release retained all 324 membership-positive core
+voxels, 17 membership exclusions and seven partial instance IDs. Orthogonal
+native CT review supported two conditional separator positives on a short
+partial septum and two negatives in airspace interiors. All other separator
+voxels stayed unknown, and the complete-evaluation mask stayed empty. These
+four labels establish neither a complete separating surface nor expert cell
+identity. The imported video-to-native correspondence remains provisional.
+Three available independent advisors and anonymous peer review checked this
+limited design; the council was reduced to fit four concurrent agent slots.
+
+Readiness was `MECHANISM_ONLY`, with no separate annotated patient group.
+The fixed model trained for 2,000 steps in 135.25 seconds, using a peak
+336,035,840 bytes of PyTorch-allocated GPU memory. The selected checkpoint was
+the last scheduled checkpoint, step 2,000. No counts or reference pairs selected
+the checkpoint. The Slicer export/import round trip preserved every array,
+including unknown labels and conditional provenance.
+
+Two fresh inference processes produced identical probabilities, native arrays,
+registries, candidate counts and quality flags. Independent source/affine,
+checkpoint and full-volume placement checks passed. Both predictions assigned
+every voxel of all seven reference cores to the same output instance: none of
+the three declared distinct pairs separated. Membership was positive in 78.97%
+of the crop; the largest instance occupied 75.58% of it and included extensive
+surrounding tissue. Both runs produced 66 candidates, with counts withheld for
+crop contact and midline crossing. This is a failed mechanism experiment, not
+an eight-study count result.
+
+All 17 membership exclusions and all known labels for both model heads were
+classified correctly. This local fit did not constrain the surrounding unknown
+volume. A predeclared CPU control held membership and partition settings fixed
+and replaced the learned separator map with zero. It produced six regions
+instead of 66, while still merging all three declared pairs. Thus the separator
+head changed partitioning without recovering the required distinctions; it
+cannot be credited with successful separation. The control did not select a
+checkpoint or replacement configuration. Six small scorer self-checks passed;
+diagnostic failures and the completed audit are retained locally.
+
+Seven local nnInteractive proposals were also generated for review. They were
+mutually disjoint and covered 323 of the 324 existing core voxels; three touched
+the crop boundary. No proposal became a training target. The existing weight
+license and artifact hashes remain recorded in protected local storage.
+
+The native failure gate prevents an eight-study replay with this checkpoint.
+The next annotation batch is a fixed enclosed-pair review, including reviewed
+outside background, complete extents or explicit abstention, and separate
+evidence for walls and open communications. Its coverage requirements are
+independent of predicted counts. Sparse point fitting and repeatability do not
+establish correct foreground extent, individual cell recovery or patient transfer.
 
 ## Verification
 
