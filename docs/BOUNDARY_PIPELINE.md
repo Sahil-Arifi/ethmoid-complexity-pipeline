@@ -72,8 +72,9 @@ patient transfer.
 Model revision `native-membership-separator-unet-2` corrects patch sampling.
 Each selected label lies inside a uniformly sampled valid native window,
 rather than always at its centre. Axes shorter than the patch use the same
-high-side-only padding as inference. HU and both label arrays share the window;
-padded labels remain unknown. A separate seeded origin generator preserves the
+high-side-only padding as inference before augmentation. Existing whole-patch
+flips transform HU, targets and unknown masks together; augmented padding may
+move. HU and both label arrays share the window; padded labels remain unknown. A separate seeded origin generator preserves the
 existing anchor, flip and noise random sequence. The two sampling configuration
 fields and helper source are bound into checkpoints. The backbone, loss,
 normalization, inference tiling and partition settings are unchanged. Revision-1
@@ -292,6 +293,59 @@ PanSeg workers. A fresh 200-step synthetic end-to-end run selected step 100 by
 annotated validation loss, matched all four generated instances at IoU 1.0,
 and produced identical fresh-process predictions for both generated studies.
 Those generated results do not measure native accuracy.
+
+### Controlled sampler run
+
+The frozen `0c7c934` sampler then trained from new weights for 2,000 native
+steps in 126.8 seconds, with 336,035,840 peak allocated GPU bytes. The release,
+source, annotation archive and held-out QC were bound by hashes. Compared with
+the background-supervised parent, annotation and QC bytes, protocol, patient
+group, architecture, loss, optimizer and partition settings were unchanged.
+Model settings changed only through the declared sampling fields, with the
+corresponding model revision and source hashes. The single-patient run selected its last scheduled checkpoint; neither QC nor
+reference counts selected weights. A strict CPU comparison validated this
+transition and both fresh inference processes.
+
+| Partial native check | Original | Background supervision | Valid-window sampler |
+| --- | ---: | ---: | ---: |
+| Held-out background mask false positives / 896 | 828 | 117 | 15 |
+| Held-out background membership false positives / 896 | 828 | 120 | 18 |
+| Conditional core voxels covered / 324 | 324 | 324 | 324 |
+| Held-out airspace points covered / 2 | 2 | 2 | 2 |
+| Declared pairs separated / 3 | 0 | 0 | 0 |
+
+The final mask reduction is 98.2% against the original and 87.2% against the
+background-supervised parent on these fixed regions. Membership errors on the
+1,681 shared known background labels fell from 30 to zero; final-mask errors
+fell from 23 to zero. All four separator labels fit in tiled inference. Masks,
+probabilities, geometry, registries and counts matched across two fresh
+processes. Root and independent scoring used the stored native outputs.
+
+The whole conditional mechanism gate still failed. All seven partial cores
+remain in one decoded instance, and the membership head still selects 45.1%
+of the crop. Crop contact and midline flags keep counts withheld. These checks
+cover two negative regions and two positive points from the same patient,
+not full anatomical membership, opacified cells or complete cell instances.
+There is no complete-instance IoU claim or new eight-study replay.
+
+An additional padding restriction was investigated and rejected before native
+training. Keeping padding fixed after every short-axis flip was not required:
+aligned whole-patch transforms are valid augmentation. Two 200-step variants
+and one fixed 2,000-step follow-up merged the second generated validation pair;
+all failed artifacts and their candidate source patch remain protected. The
+extra restriction also has no effect on this native crop, whose valid windows
+are unpadded. The retained source exactly matches the earlier passing synthetic
+run and its 331 regression checks; the rejected variants' 332 passing unit
+checks do not override their failed instance-recovery gates.
+
+The protected final evidence is in
+`boundary-native-sampling-20261105T144558Z`, including the strict comparison,
+source transition, root three-run scoring and independent same-plane figure.
+Remaining work is anatomical membership beyond the sampled regions and
+separator/communication recovery. More background fitting alone has not solved
+those failures. Native source correspondence and unresolved counting boundaries
+remain conditional review questions; the algorithm is not yet validated for
+complete cell recovery.
 
 ## Verification
 
