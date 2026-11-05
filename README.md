@@ -1,5 +1,7 @@
 # Ethmoid Complexity Pipeline
 
+An experimental [current-group wall ownership merger](docs/COUNTING_GROUPING_EXPERIMENT.md) now passes **128/132** preserved full-stage synthetic controls, versus **124/132** for baseline, with four actual partition repairs and zero regressions. All 864 representation checks and 25 fragmented-wall controls pass; independent saved-output review agrees. Four neck failures remain. The original seeds and acceptance rules stay fixed. The eight-study count comparison is next; application defaults and the latest **0/8** clinical result are unchanged.
+
 The merger now indexes separator constraints instead of scanning them before every union. On one frozen native crop, the same merge stage fell from **65.094 to 0.406 seconds**, with byte-identical labels and complete trace. Five saved graphs and 688 software checks passed. This changes execution cost; the counting policy and latest **0/8** eight-study result are unchanged. The [native diagnosis](docs/COUNTING_NATIVE_DIAGNOSIS.md) records the evidence and remaining work.
 
 The native traces also expose a gap in the procedural controls: two conditional cell pairs already share initial watershed regions. A merge-only repair cannot separate them. Finer target-free proposals preserve all three declared distinctions through the existing merger, but leave 6,531 graph groups and fragment five reference cores. Acceptance and counts remain untested for this diagnostic. Both proposal generation and separator evidence need further work.

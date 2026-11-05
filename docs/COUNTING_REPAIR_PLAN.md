@@ -2,6 +2,12 @@
 
 Research reviewed 2026-11-04. This is an implementation plan, not a validated replacement algorithm or a promise of 8/8. Tasks are tracked in [the task checklist](COUNTING_REPAIR_TASKS.md).
 
+The [current-group ownership experiment](COUNTING_GROUPING_EXPERIMENT.md)
+explicitly permits a frozen eight-study research comparison of a partial
+numerical candidate after non-regression and resource checks. This revises the
+research sequence below; the full promotion gate remains unchanged. Known
+failures must remain visible, and the independent geometry set stays unexposed.
+
 The subsequent [native diagnosis](COUNTING_NATIVE_DIAGNOSIS.md) reproduced four
 current baseline runs exactly and found two conditional raw-basin collisions.
 The procedural audit's representability result therefore does not justify a
