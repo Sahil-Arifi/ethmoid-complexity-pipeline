@@ -6,6 +6,39 @@ watershed and ELF GASP average linkage. It produces native instance masks,
 registries, provisional counts and source-bound evaluation. It does not replace
 the app, revive a closed experiment or establish anatomical accuracy.
 
+## Conditional membership experiment
+
+The latest annotation-only experiment retained the fixed model, training budget
+and v3 partition settings. Source review froze 102 new membership targets and
+24 separate QC voxels before predictions were inspected. The new labels cover
+22 material voxels, 72 clear cavity-interior voxels and eight exterior-air
+negatives. All previous labels and QC files were preserved. Unknown margins
+remain unknown; no complete cell or separator was inferred.
+
+The fresh 2,000-step run took 200.375 seconds and peaked at 336,035,840 allocated
+GPU bytes. Two fresh-process predictions matched in probabilities, native masks,
+registries and counts. Comparison used the previous frozen probabilities decoded
+with the same v3 adapter.
+
+| Conditional check | Previous v3 control | New model |
+| --- | ---: | ---: |
+| Original negative QC false positives | 0/896 | 186/896 |
+| New material QC false positives | 3/4 | 0/4 |
+| New interior QC retained | 12/12 | 12/12 |
+| New exterior-air QC false positives | 8/8 | 8/8 |
+| Original core voxels retained | 324/324 | 324/324 |
+| Original material exclusions violated | 0/1,692 | 0/1,692 |
+| Declared cell pairs separated | 0/3 | 0/3 |
+
+The model also failed all eight exterior-air training negatives under tiled
+inference. This candidate failed the frozen preservation gate and was not
+promoted. A smaller foreground mask did not establish improvement. Counts remain
+withheld for crop contact and midline crossing. Instance scoring reports
+`NOT_SCORED_NO_COMPLETE_REGION`; the release contains no complete native
+evaluation region. These same-patient checks do not establish patient transfer
+or eight-study accuracy. Protected sampling and context audits investigate the
+remaining fit failure before another training change.
+
 ## Commands and artifacts
 
 Use the existing CUDA counting Python with `PYTHONPATH=src`:
