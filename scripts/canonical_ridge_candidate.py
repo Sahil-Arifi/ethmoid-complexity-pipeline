@@ -16,9 +16,12 @@ def _inputs(hu, roi, affine):
             or not np.issubdtype(values.dtype, np.number) or np.iscomplexobj(values)
             or not np.isfinite(values).all()):
         raise CountingError('INVALID_VOLUME', 'Finite real 3D HU and a matching boolean ROI are required.')
-    if np.iscomplexobj(affine):
-        raise CountingError('INVALID_GEOMETRY', 'A real voxel-center affine is required.')
-    matrix = np.asarray(affine, dtype=float)
+    try:
+        if np.iscomplexobj(affine):
+            raise CountingError('INVALID_GEOMETRY', 'A real voxel-center affine is required.')
+        matrix = np.asarray(affine, dtype=float)
+    except (TypeError, ValueError, OverflowError):
+        raise CountingError('INVALID_GEOMETRY', 'A real voxel-center affine is required.') from None
     spacing = geometry(matrix)
     if not np.array_equal(matrix[3], [0, 0, 0, 1]):
         raise CountingError('INVALID_GEOMETRY', 'A voxel-center affine must have a homogeneous final row.')

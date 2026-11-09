@@ -104,6 +104,26 @@ def test_entry_point_accepts_observation_only():
     assert tuple(signature(count_with_canonical_ridges).parameters) == ('hu', 'roi', 'affine')
 
 
+@pytest.mark.parametrize('defect', ('nonnumeric', 'ragged', 'nonconvertible', 'overflow'))
+def test_affine_conversion_errors_are_reported_as_invalid_geometry(defect, monkeypatch):
+    fixture = _base(.125, 0, 0).fixture
+    affine = fixture.affine.astype(object)
+    if defect == 'nonnumeric':
+        affine[0, 0] = 'bad'
+    elif defect == 'ragged':
+        affine = [[1, 0], [0]]
+    elif defect == 'nonconvertible':
+        affine[0, 0] = object()
+    else:
+        affine[0, 0] = 10 ** 1000
+    def unexpected_proposal(*args):
+        pytest.fail('Invalid geometry reached proposal generation.')
+    monkeypatch.setattr('canonical_ridge_candidate.count_with_ridges', unexpected_proposal)
+    with pytest.raises(CountingError) as error:
+        count_with_canonical_ridges(fixture.hu, fixture.roi, affine)
+    assert error.value.code == 'INVALID_GEOMETRY'
+
+
 @pytest.mark.parametrize('defect', ('nan_hu', 'complex_hu', 'integer_roi', 'empty_roi', 'empty_grid', 'complex_affine'))
 def test_invalid_observations_are_rejected(defect):
     fixture = _base(.125, 0, 0).fixture

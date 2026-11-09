@@ -4,6 +4,10 @@ The controlled V2 restart focuses on 3D cell counts. The source-bound evidence p
 
 ## Synthetic V2 counting experiment
 
+### Counter failure investigation (2026-11-08)
+
+An API-assisted review and a new isolated counting attempt reproduced the current synthetic result of **22 correct accepted, zero wrong and 78 withheld**. A conditional exact-material rule recovered three more saved observations, but accepted a wrong count on a separate tiny-opening rounding example. The rule was rejected; the current counting guards remain active. Malformed affine inputs now return the counter's `INVALID_GEOMETRY` error consistently. See the [investigation and retained evidence](docs/COUNTER_FAILURE_INVESTIGATION.md). Clinical accuracy remains unmeasured.
+
 The reproducible runner and eight focused tests live on `codex/v2-synthetic-counting`, in the isolated local checkout `%LOCALAPPDATA%/EthmoidComplexity/engineering-worktrees/v2-synthetic-counting`. Existing counting and application source, settings, locks and databases were not changed. The supplied synthetic ROI bypasses anatomical localization; this is a compartment-stage experiment rather than a full-volume automated pipeline evaluation.
 
 Executed validation: **82 existing engine/quality/grid tests and eight new experiment tests passed without skips** in the separate CPU counting-test environment. The counting CI job now includes the new tests. Two independent saved-output audits verified complete coverage, input and output hashes, registries, voxel/air measurements, physical centroids, per-instance side assignments, exact voxel correspondence and retained null failures. Numbered comparison pages and a summary were visually inspected.
