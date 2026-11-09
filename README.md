@@ -400,3 +400,10 @@ python scripts/check_staged.py
 ```
 
 All test DICOMs and NIfTIs are generated synthetically. Real medical data is never copied into the test tree or CI.
+
+
+## API failure-analysis pilot (November 8, 2026)
+
+A synthetic-only, $10-capped API debugging pilot is complete. Ten frozen GPT-5.4 Mini requests cost an estimated $0.136 at full-input standard rates. Of six proposed repairs to isolated deliberately broken scorer copies, one passed all 73 unchanged scorer tests; four retained failures and one had an unmatched patch anchor. Both unchanged-code controls exhausted the output limit. Both ambiguity answers rejected guaranteed recovery, but only one used the required status label. All 80 local scorer/runner checks passed. The scaling gate was not met; outputs require manual review and executable checks. No patient data was sent, production counter behavior was not changed, and clinical accuracy remains unmeasured.
+
+The standalone runner and frozen design/results are on `codex/sinus-api-pilot`; see `docs/API_FAILURE_ANALYSIS_PILOT.md` on that branch. Complete protected local artifacts are under `%LOCALAPPDATA%/EthmoidComplexity/api-pilots/2026-11-08-01`. The next engineering step is a separately specified comparison if further API review is desired; this run was retained without score-rescuing retries.
