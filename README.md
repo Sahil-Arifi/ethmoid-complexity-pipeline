@@ -1,5 +1,13 @@
 # Ethmoid Complexity Pipeline
 
+The [API-assisted native counter investigation](docs/NATIVE_API_COUNTER_REVIEW.md)
+did not improve the **1/8** exact bilateral study result. A revised seed rule
+passed the existing 39 ridge/merge controls and preserved a further 96 spatial
+scenes, but scored **0/8** on two fresh eight-study replays. Absolute side error
+rose from **37 to 39**, and a previously recovered provisional region disappeared
+after its larger basin failed the unchanged boundary guard. The candidate was rejected;
+application counting is unchanged.
+
 The video case now matches the reference on both sides: **13 left / 10 right**, up from 13 / 8. A third research variant allowed a measured faint wall between two proposed compartments to contribute to final enclosure. It preserved the original cutoffs and search-edge checks. A provisional video location previously rejected at this stage was recovered. On all eight original inputs the summed absolute side error fell from **37 to 35**, but exact bilateral agreement stayed **1/8** (3/16 exact sides): a different, previously exact study went from 10 / 5 to 10 / 7. Its mask had already changed during partitioning and was identical before and after the new acceptance check. Two fresh processes produced identical predictions. Only one of three tested pairs is fully separate, and one labeled interior remains outside the search region. Matching the video-case count does not verify every cell. The research change is not an application default.
 
 Two research changes tested whether faint CT walls could separate adjacent cells in the video case. The original count was 13 left / 8 right against a reference of 13 / 10. Adding wall evidence to seed proposals and merges produced 13 / 11; aligning the watershed to that evidence produced 12 / 10. Each change separated one of three provisionally identified pairs, but they separated different pairs. On the same eight scans, both changes lost the only previously exact study: **1/8 → 0/8**. The summed absolute errors across the 16 sides were 37, 39 and 40, respectively. All eight studies produced counts in two independent processes per change. Neither change replaced the baseline.
